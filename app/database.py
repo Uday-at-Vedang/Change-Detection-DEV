@@ -5,8 +5,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR.parent / "data" / "satellite_app.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Use /home/appuser/data on HF Spaces (writable), fall back to local data/ dir
+_home_data = Path.home() / "data"
+_local_data = BASE_DIR.parent / "data"
+DATA_DIR = _home_data if os.environ.get("SPACE_ID") else _local_data
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = DATA_DIR / "satellite_app.db"
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH}")
 

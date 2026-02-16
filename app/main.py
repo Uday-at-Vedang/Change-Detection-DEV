@@ -23,7 +23,7 @@ from .auth import (
     get_user_from_token,
     verify_password,
 )
-from .database import Base, engine, get_db
+from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
 from .detection_engine import run_detection
 
@@ -34,7 +34,7 @@ app = FastAPI(title="Satellite Change Detection", version="1.0.0")
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-OVERLAYS_DIR = Path(__file__).resolve().parent.parent / "data" / "overlays"
+OVERLAYS_DIR = DATA_DIR / "overlays"
 OVERLAYS_DIR.mkdir(parents=True, exist_ok=True)
 
 if STATIC_DIR.exists():
