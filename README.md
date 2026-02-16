@@ -1,3 +1,12 @@
+---
+title: SatDetect - Satellite Change Detection
+emoji: 🛰️
+colorFrom: gray
+colorTo: teal
+sdk: docker
+app_port: 7860
+---
+
 # Satellite Change Detection — Standalone Web App
 
 Standalone web application for satellite image change detection with **user accounts**, **database storage**, and a **clean, modern UI**.

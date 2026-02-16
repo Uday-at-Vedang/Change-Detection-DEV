@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user (required by Hugging Face Spaces)
+RUN useradd -m -u 1000 appuser
+
 WORKDIR /app
 
 # Install Python dependencies
@@ -18,11 +21,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directories
-RUN mkdir -p data/overlays
+# Create data directories with correct permissions
+RUN mkdir -p data/overlays && chown -R appuser:appuser /app
 
-# Expose port
-EXPOSE 10000
+USER appuser
 
-# Run with gunicorn + uvicorn workers for production
-CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:10000", "--workers", "2", "--timeout", "120"]
+# HF Spaces expects port 7860; Render expects 10000
+# Use PORT env var with 7860 as default (works for both)
+ENV PORT=7860
+EXPOSE 7860
+
+CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT} --workers 2 --timeout 120"]
