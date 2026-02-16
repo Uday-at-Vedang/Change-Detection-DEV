@@ -27,7 +27,7 @@ from .database import Base, engine, get_db
 from .models import User, DetectionRun
 from .detection_engine import run_detection
 
-Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine, checkfirst=True)
 
 app = FastAPI(title="Satellite Change Detection", version="1.0.0")
 
