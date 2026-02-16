@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.git
+.gitignore
+data/satellite_app.db
+data/overlays/*
+*.md
+.env

@@ -1,0 +1,22 @@
+# Render Blueprint — one-click deploy for SatDetect
+# https://render.com/docs/blueprint-spec
+
+databases:
+  - name: satdetect-db
+    plan: free
+    databaseName: satdetect
+    user: satdetect
+
+services:
+  - type: web
+    name: satdetect
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: satdetect-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
