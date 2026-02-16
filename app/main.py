@@ -77,27 +77,40 @@ def _auth_response(token: str, user: User):
 
 @app.post("/api/auth/register")
 def register(data: UserCreate, db: Session = Depends(get_db)):
-    if get_user_by_email(db, data.email):
-        raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(
-        email=data.email,
-        hashed_password=get_password_hash(data.password),
-        full_name=data.full_name,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    token = create_access_token(data={"sub": str(user.id)})
-    return _auth_response(token, user)
+    try:
+        if get_user_by_email(db, data.email):
+            raise HTTPException(status_code=400, detail="Email already registered")
+        hashed = get_password_hash(data.password)
+        user = User(
+            email=data.email,
+            hashed_password=hashed,
+            full_name=data.full_name,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        token = create_access_token(data={"sub": str(user.id)})
+        return _auth_response(token, user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[REGISTER] Error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {type(e).__name__}: {e}")
 
 
 @app.post("/api/auth/login")
 def login(data: UserLogin, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, data.email)
-    if not user or not verify_password(data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token(data={"sub": str(user.id)})
-    return _auth_response(token, user)
+    try:
+        user = get_user_by_email(db, data.email)
+        if not user or not verify_password(data.password, user.hashed_password):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        token = create_access_token(data={"sub": str(user.id)})
+        return _auth_response(token, user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[LOGIN] Error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Login failed: {type(e).__name__}: {e}")
 
 
 @app.post("/api/auth/logout")
