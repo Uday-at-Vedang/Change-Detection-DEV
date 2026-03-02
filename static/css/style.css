@@ -49,6 +49,7 @@ body {
   min-height: 100vh;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 body::before {
@@ -341,10 +342,13 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: -1.5rem -1.5rem 2rem;
-  padding: 1rem 1.5rem;
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  margin-top: -1.5rem;
+  margin-bottom: 2rem;
+  padding: 1rem calc((100vw - 1100px) / 2 + 1.5rem);
   background: var(--gradient-h);
-  border-radius: var(--radius) var(--radius) 0 0;
+  border-radius: 0;
   box-shadow: 0 4px 20px rgba(46, 51, 197, 0.25);
 }
 .nav-brand {
@@ -755,11 +759,14 @@ input:focus, select:focus, textarea:focus {
 
 /* ---- Footer ---- */
 .app-footer {
-  margin: 3rem -1.5rem -1.5rem;
-  padding: 1.25rem 1.5rem;
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  margin-top: 3rem;
+  margin-bottom: -1.5rem;
+  padding: 1.25rem calc((100vw - 1100px) / 2 + 1.5rem);
   background: var(--gradient-h);
   text-align: center;
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: 0;
 }
 .app-footer p {
   font-size: 0.78rem;
