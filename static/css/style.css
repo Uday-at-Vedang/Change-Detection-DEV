@@ -387,20 +387,19 @@ input:focus, select:focus, textarea:focus {
   border-color: rgba(255,255,255,0.5);
 }
 
-/* Dropdown — blends with nav gradient */
+/* Dropdown — light gradient matching nav */
 .nav-dropdown {
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
   min-width: 210px;
-  background: rgba(255,255,255,0.12);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255,255,255,0.18);
+  background: linear-gradient(135deg, #4a4ed4, #d94060);
+  border: none;
   border-radius: var(--radius-sm);
   padding: 0.5rem 0;
   animation: dropIn 0.15s ease;
   z-index: 200;
+  box-shadow: 0 8px 28px rgba(46, 51, 197, 0.3), 0 4px 12px rgba(207, 32, 64, 0.15);
 }
 @keyframes dropIn {
   from { opacity: 0; transform: translateY(-6px); }
