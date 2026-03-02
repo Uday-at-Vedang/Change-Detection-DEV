@@ -387,16 +387,17 @@ input:focus, select:focus, textarea:focus {
   border-color: rgba(255,255,255,0.5);
 }
 
-/* Dropdown */
+/* Dropdown — blends with nav gradient */
 .nav-dropdown {
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
-  min-width: 220px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  min-width: 210px;
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.18);
   border-radius: var(--radius-sm);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
   padding: 0.5rem 0;
   animation: dropIn 0.15s ease;
   z-index: 200;
@@ -407,13 +408,13 @@ input:focus, select:focus, textarea:focus {
 }
 .nav-dropdown-email {
   padding: 0.6rem 1rem;
-  font-size: 0.82rem;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.7);
   word-break: break-all;
 }
 .nav-dropdown-divider {
   height: 1px;
-  background: var(--border);
+  background: rgba(255,255,255,0.12);
   margin: 0.25rem 0;
 }
 .nav-dropdown-item {
@@ -424,16 +425,16 @@ input:focus, select:focus, textarea:focus {
   padding: 0.55rem 1rem;
   border: none;
   background: none;
-  color: var(--text);
+  color: rgba(255,255,255,0.9);
   font-family: var(--font-sans);
   font-size: 0.85rem;
   cursor: pointer;
   transition: background var(--transition);
 }
 .nav-dropdown-item:hover {
-  background: var(--bg-elevated);
+  background: rgba(255,255,255,0.1);
 }
-.nav-dropdown-item svg { color: var(--text-dim); }
+.nav-dropdown-item svg { color: rgba(255,255,255,0.6); }
 
 /* ---- Page header ---- */
 .page-header { margin-bottom: 1.75rem; }
