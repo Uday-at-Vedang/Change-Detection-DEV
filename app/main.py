@@ -121,6 +121,23 @@ def logout():
     return response
 
 
+class PasswordReset(BaseModel):
+    email: str
+    new_password: str
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    user = get_user_by_email(db, data.email)
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found with that email")
+    user.hashed_password = get_password_hash(data.new_password)
+    db.commit()
+    return {"ok": True, "message": "Password has been reset. You can now sign in."}
+
+
 @app.get("/api/me")
 def me(user: Optional[User] = Depends(get_current_user)):
     if not user:

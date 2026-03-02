@@ -75,12 +75,39 @@ document.getElementById('form-register')?.addEventListener('submit', async (e) =
   } catch (err) { showError('register-error', err.message); }
 });
 
+// ---- Forgot password ----
+document.getElementById('form-forgot')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideError('forgot-error');
+  hideError('forgot-success');
+  const email = document.getElementById('forgot-email').value.trim();
+  const new_password = document.getElementById('forgot-password').value;
+  try {
+    const data = await api('POST', '/api/auth/reset-password', { body: JSON.stringify({ email, new_password }) });
+    showSuccess('forgot-success', data.message || 'Password reset! You can now sign in.');
+    document.getElementById('form-forgot').reset();
+  } catch (err) { showError('forgot-error', err.message); }
+});
+
+// ---- Password visibility toggle ----
+document.querySelectorAll('.password-toggle').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    btn.classList.toggle('active', isPassword);
+  });
+});
+
 document.querySelectorAll('[data-view]').forEach((a) => {
   a.addEventListener('click', (e) => {
     e.preventDefault();
     showView(a.getAttribute('data-view'));
     hideError('login-error');
     hideError('register-error');
+    hideError('forgot-error');
+    hideError('forgot-success');
   });
 });
 

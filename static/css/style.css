@@ -124,6 +124,52 @@ body::before {
 }
 .toggle-auth a:hover { text-decoration: underline; }
 
+.forgot-link {
+  text-align: right;
+  margin-top: -0.5rem;
+  margin-bottom: 0.25rem;
+}
+.forgot-link a {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  text-decoration: none;
+  transition: color var(--transition);
+}
+.forgot-link a:hover { color: var(--accent); }
+
+/* ---- Password input with eye toggle ---- */
+.input-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.input-password-wrap input {
+  padding-right: 2.8rem;
+}
+.password-toggle {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition), background var(--transition);
+}
+.password-toggle:hover {
+  color: var(--accent);
+  background: rgba(45, 212, 191, 0.08);
+}
+.password-toggle svg.eye-closed { display: none; }
+.password-toggle.active svg.eye-open { display: none !important; }
+.password-toggle.active svg.eye-closed { display: block !important; }
+
 /* ---- Cards ---- */
 .card {
   background: var(--bg-card);
