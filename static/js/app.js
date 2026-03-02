@@ -94,9 +94,9 @@ document.querySelectorAll('.password-toggle').forEach((btn) => {
   btn.addEventListener('click', () => {
     const input = document.getElementById(btn.dataset.target);
     if (!input) return;
-    const isPassword = input.type === 'password';
-    input.type = isPassword ? 'text' : 'password';
-    btn.classList.toggle('active', isPassword);
+    const showing = input.type !== 'password';
+    input.type = showing ? 'password' : 'text';
+    btn.style.opacity = showing ? '' : '0.9';
   });
 });
 
