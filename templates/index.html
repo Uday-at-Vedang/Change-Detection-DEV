@@ -27,7 +27,10 @@
               <input type="email" id="login-email" required placeholder="you@example.com" />
             </div>
             <div class="form-group">
-              <label for="login-password">Password</label>
+              <div class="password-row-meta">
+                <label for="login-password">Password</label>
+                <span class="forgot-link"><a href="#" data-view="forgot">Forgot password?</a></span>
+              </div>
               <div class="input-password-wrap">
                 <input type="password" id="login-password" required placeholder="Enter your password" />
                 <button type="button" class="password-toggle" data-target="login-password" aria-label="Show password">
@@ -36,9 +39,11 @@
                 </button>
               </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+            <div class="auth-actions">
+              <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+            </div>
           </form>
-          <p class="forgot-link"><a href="#" data-view="forgot">Forgot your password?</a></p>
+          <div class="auth-divider">or</div>
           <p class="toggle-auth">Don't have an account? <a href="#" data-view="register">Create one</a></p>
         </div>
       </div>
@@ -76,8 +81,11 @@
                 </button>
               </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-block">Create account</button>
+            <div class="auth-actions">
+              <button type="submit" class="btn btn-primary btn-block">Create account</button>
+            </div>
           </form>
+          <div class="auth-divider">or</div>
           <p class="toggle-auth">Already have an account? <a href="#" data-view="login">Sign in</a></p>
         </div>
       </div>
@@ -93,13 +101,16 @@
           <span>SatDetect</span>
         </div>
         <div class="card">
-          <h2>Reset password</h2>
-          <p class="sub">Enter your email and choose a new password.</p>
+          <div class="forgot-header-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          </div>
+          <h2 style="text-align:center;">Reset your password</h2>
+          <p class="sub" style="text-align:center;">Enter the email you registered with and choose a new password.</p>
           <div id="forgot-error" class="alert alert-error hidden"></div>
           <div id="forgot-success" class="alert alert-success hidden"></div>
           <form id="form-forgot">
             <div class="form-group">
-              <label for="forgot-email">Email</label>
+              <label for="forgot-email">Email address</label>
               <input type="email" id="forgot-email" required placeholder="you@example.com" />
             </div>
             <div class="form-group">
@@ -112,9 +123,16 @@
                 </button>
               </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-block">Reset password</button>
+            <div class="auth-actions">
+              <button type="submit" class="btn btn-primary btn-block">Reset password</button>
+            </div>
           </form>
-          <p class="toggle-auth">Remember your password? <a href="#" data-view="login">Sign in</a></p>
+          <div style="text-align:center;">
+            <a href="#" class="back-to-login" data-view="login">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Back to sign in
+            </a>
+          </div>
         </div>
       </div>
     </section>
@@ -271,6 +289,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=6"></script>
+  <script src="/static/js/app.js?v=7"></script>
 </body>
 </html>
