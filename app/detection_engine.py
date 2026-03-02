@@ -439,14 +439,35 @@ def visualize_changes(img1, img2, change_mask, regions=None):
     for c in range(3):
         overlay[:, :, c] = overlay[:, :, c] * (1 - mask_float * alpha) + red_layer[:, :, c] * mask_float * alpha
 
-    # Draw thin white outlines around each region for clarity
+    # Draw outlines and labels for each region
     if regions:
-        contour_mask = np.zeros(change_mask.shape[:2], dtype=np.uint8)
+        overlay_uint8 = np.clip(overlay, 0, 255).astype(np.uint8)
         for r in regions:
             x, y, w, h = r["bbox"]
-            cv2.rectangle(contour_mask, (x, y), (x + w, y + h), 255, 1)
-        outline = contour_mask > 0
-        overlay[outline] = [255, 255, 255]
+            cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), (255, 255, 255), 1)
+
+            # Annotate building regions with 3D info
+            stories = r.get("estimated_stories")
+            stage = r.get("construction_stage")
+            if stories is not None or stage is not None:
+                parts = []
+                if stories is not None:
+                    parts.append(f"{stories}F")
+                if stage and stage != "Unknown":
+                    parts.append(stage)
+                label = " | ".join(parts)
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = max(0.35, min(0.55, w / 200))
+                thickness = 1
+                (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
+                lx = x
+                ly = max(th + 4, y - 6)
+                # Background rectangle for readability
+                cv2.rectangle(overlay_uint8, (lx, ly - th - 4), (lx + tw + 6, ly + 2),
+                              (0, 0, 0), cv2.FILLED)
+                cv2.putText(overlay_uint8, label, (lx + 3, ly - 2), font,
+                            font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        return overlay_uint8
 
     return np.clip(overlay, 0, 255).astype(np.uint8)
 
@@ -760,13 +781,239 @@ def classify_with_ensemble(image_region, bbox, num_sub=4):
 
 
 # ---------------------------------------------------------------------------
-# 11. Region analysis
+# 11. 3D Building Analysis — height estimation + construction stage
 # ---------------------------------------------------------------------------
 
-def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True):
+_BUILDING_TYPES = {"New Construction/Building", "Demolition/Clearing"}
+_STORY_HEIGHT_M = 3.0  # assumed metres per story
+
+
+def _detect_shadow_region(before_gray, after_gray, bbox, expand=0.6):
+    """
+    Find new shadow pixels adjacent to a building bbox.
+    Returns a binary mask of likely shadow pixels in the expanded bbox area.
+    """
+    x, y, w, h = bbox
+    img_h, img_w = after_gray.shape[:2]
+
+    # Expand bbox to capture shadows cast beside the building
+    ex = int(w * expand)
+    ey = int(h * expand)
+    x1 = max(0, x - ex)
+    y1 = max(0, y - ey)
+    x2 = min(img_w, x + w + ex)
+    y2 = min(img_h, y + h + ey)
+
+    before_crop = before_gray[y1:y2, x1:x2].astype(np.float32)
+    after_crop = after_gray[y1:y2, x1:x2].astype(np.float32)
+
+    if before_crop.size == 0 or after_crop.size == 0:
+        return None, 0
+
+    # New shadow = pixels that got significantly darker in the after image
+    darkening = before_crop - after_crop
+    dark_thresh = max(25, np.std(darkening) * 1.5)
+    shadow_mask = (darkening > dark_thresh).astype(np.uint8) * 255
+
+    # Remove shadow pixels inside the building footprint itself
+    bx1, by1 = x - x1, y - y1
+    bx2, by2 = bx1 + w, by1 + h
+    bx1, by1 = max(0, bx1), max(0, by1)
+    bx2 = min(shadow_mask.shape[1], bx2)
+    by2 = min(shadow_mask.shape[0], by2)
+    shadow_mask[by1:by2, bx1:bx2] = 0
+
+    # Clean noise
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    shadow_mask = cv2.morphologyEx(shadow_mask, cv2.MORPH_OPEN, kernel)
+
+    shadow_pixels = np.sum(shadow_mask > 0)
+    return shadow_mask, shadow_pixels
+
+
+def estimate_building_height(before_img, after_img, bbox, features):
+    """
+    Estimate building stories and height from shadow length and footprint geometry.
+    Returns (estimated_stories, estimated_height_m).
+    """
+    before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY)
+    after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY)
+    x, y, w, h = bbox
+
+    shadow_mask, shadow_px = _detect_shadow_region(before_gray, after_gray, bbox)
+
+    short_side = max(min(w, h), 1)
+    footprint_area = w * h
+
+    # --- Shadow-based estimate ---
+    shadow_ratio = 0.0
+    if shadow_mask is not None and shadow_px > 20:
+        # Measure max extent of shadow perpendicular to building edge
+        coords = np.column_stack(np.where(shadow_mask > 0))
+        if len(coords) > 5:
+            # Shadow length = extent along the longer axis of shadow cluster
+            spread_y = coords[:, 0].max() - coords[:, 0].min()
+            spread_x = coords[:, 1].max() - coords[:, 1].min()
+            shadow_length = max(spread_y, spread_x)
+            shadow_ratio = shadow_length / short_side
+
+    # --- Footprint-based estimate ---
+    aspect = max(w, h) / max(short_side, 1)
+    # Compact footprints (aspect < 2.5) tend to be multi-story; elongated are single-story
+    footprint_factor = 1.0
+    if aspect > 3.0:
+        footprint_factor = 0.5  # likely single-story warehouse/industrial
+    elif aspect < 1.5 and footprint_area > 2000:
+        footprint_factor = 1.3  # compact large footprint = likely taller
+
+    # --- Texture regularity bonus ---
+    # Buildings with low orientation entropy (regular structure) tend to be taller
+    regularity_bonus = 0.0
+    if features and features.get("orientation_entropy", 3.0) < 2.2:
+        regularity_bonus = 0.5
+
+    # --- Combine signals ---
+    # Base: shadow ratio maps ~0.3-0.5 per story in typical nadir imagery
+    if shadow_ratio > 0.1:
+        raw_stories = shadow_ratio / 0.35
+    else:
+        # No clear shadow: use footprint area as rough proxy
+        if footprint_area > 5000:
+            raw_stories = 3.0
+        elif footprint_area > 2000:
+            raw_stories = 2.0
+        else:
+            raw_stories = 1.0
+
+    raw_stories = raw_stories * footprint_factor + regularity_bonus
+    stories = max(1, min(50, int(round(raw_stories))))
+    height_m = round(stories * _STORY_HEIGHT_M, 1)
+
+    return stories, height_m
+
+
+def classify_construction_stage(features, bbox):
+    """
+    Classify construction stage from visual features.
+    Returns (stage_name, confidence).
+    """
+    if features is None:
+        return "Unknown", 0.0
+
+    w, h = bbox[2], bbox[3]
+    area = w * h
+
+    scores = {
+        "Foundation": 0.0,
+        "Structural": 0.0,
+        "Under Construction": 0.0,
+        "Complete": 0.0,
+    }
+
+    tex = features.get("texture_std", 30)
+    edge = features.get("edge_density", 40)
+    orient = features.get("orientation_entropy", 2.5)
+    homog = features.get("color_homogeneity", 25)
+    bright = features.get("brightness", 60)
+    sat = features.get("saturation", 50)
+    glcm = features.get("glcm_contrast", 500)
+    lbp_var = features.get("lbp_variance", 0.04)
+
+    # --- Foundation ---
+    # Flat, low-texture, soil/concrete colored, homogeneous
+    if tex < 22:
+        scores["Foundation"] += 0.25
+    if edge < 30:
+        scores["Foundation"] += 0.20
+    if homog < 20:
+        scores["Foundation"] += 0.20
+    if 40 <= bright <= 75:
+        scores["Foundation"] += 0.15
+    if sat < 60:
+        scores["Foundation"] += 0.10
+    if lbp_var < 0.03:
+        scores["Foundation"] += 0.10
+
+    # --- Structural/Framing ---
+    # High edges, geometric regularity, high contrast grid patterns
+    if edge > 50:
+        scores["Structural"] += 0.25
+    if orient < 2.2:
+        scores["Structural"] += 0.20
+    if glcm > 800:
+        scores["Structural"] += 0.20
+    if tex > 30:
+        scores["Structural"] += 0.15
+    if homog > 30:
+        scores["Structural"] += 0.10
+    if area > 1000:
+        scores["Structural"] += 0.10
+
+    # --- Under Construction ---
+    # Mixed materials, irregular texture, medium-high edge density
+    if 25 < tex < 50:
+        scores["Under Construction"] += 0.20
+    if 35 < edge < 65:
+        scores["Under Construction"] += 0.20
+    if orient > 2.6:
+        scores["Under Construction"] += 0.20
+    if homog > 25:
+        scores["Under Construction"] += 0.15
+    if 0.03 < lbp_var < 0.07:
+        scores["Under Construction"] += 0.15
+    if sat < 80:
+        scores["Under Construction"] += 0.10
+
+    # --- Complete ---
+    # Uniform roof, clean edges, low entropy, consistent color
+    if tex < 28:
+        scores["Complete"] += 0.20
+    if orient < 2.3:
+        scores["Complete"] += 0.25
+    if homog < 22:
+        scores["Complete"] += 0.20
+    if edge > 25:
+        scores["Complete"] += 0.10
+    if lbp_var < 0.04:
+        scores["Complete"] += 0.15
+    if bright > 50:
+        scores["Complete"] += 0.10
+
+    best = max(scores, key=scores.get)
+    conf = scores[best]
+
+    if conf < 0.25:
+        return "Unknown", conf
+    return best, min(conf, 1.0)
+
+
+def analyze_building_3d(before_img, after_img, region, features):
+    """
+    Run 3D analysis on a single building/construction region.
+    Enriches the region dict with stories, height, and construction stage.
+    """
+    bbox = region["bbox"]
+
+    stories, height_m = estimate_building_height(before_img, after_img, bbox, features)
+    stage, stage_conf = classify_construction_stage(features, bbox)
+
+    region["estimated_stories"] = stories
+    region["estimated_height_m"] = height_m
+    region["construction_stage"] = stage
+    region["construction_stage_confidence"] = stage_conf
+    return region
+
+
+# ---------------------------------------------------------------------------
+# 12. Region analysis
+# ---------------------------------------------------------------------------
+
+def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
+                           before_img=None):
     """
     Find connected change regions, classify as ground-level changes only.
     Transient objects (people, cars, animals) are filtered out.
+    Building regions get enriched with 3D analysis (stories, height, stage).
     """
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(change_mask, connectivity=8)
     change_regions = []
@@ -788,19 +1035,34 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True):
         else:
             object_type, confidence = classify_object_type(image, (x, y, w, h))
 
-        # None means transient / irrelevant → skip
         if object_type is None:
             continue
 
         region_id += 1
-        change_regions.append({
+        region = {
             "id": region_id,
             "area": area,
             "bbox": (x, y, w, h),
             "center": (int(cx), int(cy)),
             "object_type": object_type,
             "confidence": confidence,
-        })
+            "estimated_stories": None,
+            "estimated_height_m": None,
+            "construction_stage": None,
+        }
+
+        # 3D analysis for building/construction regions
+        if object_type in _BUILDING_TYPES and before_img is not None:
+            pad = 5
+            ry1 = max(0, y - pad)
+            ry2 = min(image.shape[0], y + h + pad)
+            rx1 = max(0, x - pad)
+            rx2 = min(image.shape[1], x + w + pad)
+            crop = image[ry1:ry2, rx1:rx2]
+            feats = extract_advanced_features(crop) if crop.size > 0 else None
+            analyze_building_3d(before_img, image, region, feats)
+
+        change_regions.append(region)
 
     change_regions.sort(key=lambda r: r["area"], reverse=True)
     return change_regions
@@ -830,9 +1092,10 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     else:
         change_mask = hybrid_method(before_array, after_array)
 
-    change_regions = analyze_change_regions(change_mask, after_array, min_area=200)
+    change_regions = analyze_change_regions(
+        change_mask, after_array, min_area=200, before_img=before_array
+    )
 
-    # Color-coded visualization using region classifications
     result_image = visualize_changes(before_array, after_array, change_mask, regions=change_regions)
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])

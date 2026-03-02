@@ -262,11 +262,17 @@ function showResult(data) {
   tbody.innerHTML = '';
   (data.regions || []).slice(0, 50).forEach((r) => {
     const tr = document.createElement('tr');
+    const stories = r.estimatedStories != null ? r.estimatedStories : '—';
+    const height = r.estimatedHeightM != null ? r.estimatedHeightM + ' m' : '—';
+    const stage = r.constructionStage && r.constructionStage !== 'Unknown' ? r.constructionStage : '—';
     tr.innerHTML = `
       <td>${r.id}</td>
       <td>${r.objectType}</td>
       <td>${(r.confidence * 100).toFixed(1)}%</td>
       <td>${r.area.toLocaleString()}</td>
+      <td>${stories}</td>
+      <td>${height}</td>
+      <td>${stage}</td>
       <td>(${r.center.x}, ${r.center.y})</td>
     `;
     tbody.appendChild(tr);
