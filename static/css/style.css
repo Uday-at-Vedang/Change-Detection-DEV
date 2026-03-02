@@ -8,29 +8,29 @@
   --grad-end: #cf2040;
   --grad-mid: #7a2a82;
 
-  --bg-deep: #080b12;
-  --bg-surface: #0f1320;
-  --bg-elevated: #161c2e;
-  --bg-card: #121828;
-  --bg-hover: #1c2540;
-  --border: rgba(148, 163, 184, 0.10);
-  --border-hover: rgba(148, 163, 184, 0.22);
-  --border-focus: rgba(46, 51, 197, 0.5);
-  --text: #f1f5f9;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
+  --bg-deep: #ffffff;
+  --bg-surface: #f8f9fb;
+  --bg-elevated: #f1f3f7;
+  --bg-card: #ffffff;
+  --bg-hover: #edf0f5;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.16);
+  --border-focus: rgba(46, 51, 197, 0.45);
+  --text: #1a1a2e;
+  --text-muted: #555770;
+  --text-dim: #8890a4;
   --accent: #7a6aed;
   --accent-dim: #6358d4;
   --accent-glow: rgba(122, 106, 237, 0.2);
-  --danger: #f87171;
-  --danger-dim: #ef4444;
-  --danger-glow: rgba(248, 113, 113, 0.15);
-  --success: #34d399;
+  --danger: #dc2626;
+  --danger-dim: #b91c1c;
+  --danger-glow: rgba(220, 38, 38, 0.1);
+  --success: #16a34a;
   --radius: 14px;
   --radius-sm: 10px;
   --radius-xs: 6px;
-  --shadow: 0 4px 32px rgba(0, 0, 0, 0.45);
-  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.3);
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --transition: 0.2s ease;
@@ -56,8 +56,8 @@ body::before {
   position: fixed;
   inset: 0;
   background-image:
-    radial-gradient(ellipse at 20% 0%, rgba(46, 51, 197, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 100%, rgba(207, 32, 64, 0.06) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 0%, rgba(46, 51, 197, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(207, 32, 64, 0.03) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -187,7 +187,7 @@ body::before {
   background: none;
   border: none;
   cursor: pointer;
-  color: #64748b;
+  color: #8890a4;
   padding: 0.2rem;
   display: flex;
   align-items: center;
@@ -195,8 +195,8 @@ body::before {
   transition: color var(--transition);
   line-height: 0;
 }
-.password-toggle:hover { color: #94a3b8; }
-.password-toggle.active { color: #94a3b8; }
+.password-toggle:hover { color: #555770; }
+.password-toggle.active { color: #555770; }
 
 /* ---- Cards ---- */
 .card {
@@ -310,7 +310,7 @@ input:focus, select:focus, textarea:focus {
   color: var(--text-muted);
   padding: 0.5rem 0.75rem;
 }
-.btn-ghost:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.btn-ghost:hover { color: var(--text); background: rgba(0,0,0,0.04); }
 
 .btn-danger {
   background: var(--danger);
@@ -364,11 +364,11 @@ input:focus, select:focus, textarea:focus {
 }
 .user-badge {
   font-size: 0.8rem;
-  color: rgba(255,255,255,0.85);
-  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.15);
   padding: 0.3rem 0.7rem;
   border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.25);
 }
 .nav .btn-ghost {
   color: rgba(255,255,255,0.8);
@@ -583,9 +583,10 @@ input:focus, select:focus, textarea:focus {
 }
 .compare-label-left {
   left: 10px;
-  background: rgba(10, 14, 23, 0.8);
+  background: rgba(255, 255, 255, 0.85);
   color: var(--text);
   backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
 }
 .compare-label-right {
   right: 10px;
@@ -658,7 +659,7 @@ input:focus, select:focus, textarea:focus {
 }
 .history-meta .tag {
   display: inline-block;
-  background: var(--bg-card);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   padding: 0.1rem 0.45rem;
   border-radius: var(--radius-xs);
@@ -680,7 +681,7 @@ input:focus, select:focus, textarea:focus {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.35);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -698,7 +699,7 @@ input:focus, select:focus, textarea:focus {
   padding: 1.75rem;
   max-width: 400px;
   width: 90%;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.12);
 }
 .modal h3 {
   font-size: 1.1rem;
@@ -725,13 +726,13 @@ input:focus, select:focus, textarea:focus {
   margin-bottom: 1rem;
 }
 .alert-error {
-  background: var(--danger-glow);
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
   color: var(--danger);
 }
 .alert-success {
-  background: rgba(52, 211, 153, 0.12);
-  border: 1px solid rgba(52, 211, 153, 0.3);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
   color: var(--success);
 }
 
