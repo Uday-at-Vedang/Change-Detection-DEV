@@ -114,7 +114,20 @@ document.querySelectorAll('[data-view]').forEach((a) => {
 document.getElementById('btn-logout')?.addEventListener('click', async () => {
   try { await fetch(API_BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
   setToken(null);
+  document.getElementById('nav-dropdown')?.classList.add('hidden');
   showView('login');
+});
+
+// ---- Avatar dropdown toggle ----
+document.getElementById('btn-avatar')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('nav-dropdown')?.classList.toggle('hidden');
+});
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('nav-dropdown');
+  if (dd && !dd.classList.contains('hidden') && !e.target.closest('.nav-user')) {
+    dd.classList.add('hidden');
+  }
 });
 
 async function init() {
