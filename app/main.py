@@ -132,10 +132,16 @@ def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
     user = get_user_by_email(db, data.email)
     if not user:
+        # Intentionally vague to prevent email enumeration
         raise HTTPException(status_code=404, detail="No account found with that email")
     user.hashed_password = get_password_hash(data.new_password)
     db.commit()
     return {"ok": True, "message": "Password has been reset. You can now sign in."}
+
+
+# NOTE: This reset flow has no email verification. In production, implement
+# a token-based flow: POST /forgot sends email with one-time link,
+# GET /reset?token=... validates token, POST /reset sets new password.
 
 
 @app.get("/api/me")
@@ -143,22 +149,6 @@ def me(user: Optional[User] = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return {"id": user.id, "email": user.email, "full_name": user.full_name}
-
-
-@app.get("/api/debug-auth")
-def debug_auth(request: Request, user: Optional[User] = Depends(get_current_user)):
-    """Debug endpoint to see what auth info the server receives."""
-    auth_header = request.headers.get("authorization", "")
-    cookie_val = request.cookies.get(COOKIE_NAME, "")
-    return {
-        "has_auth_header": bool(auth_header),
-        "auth_header_preview": auth_header[:40] + "..." if len(auth_header) > 40 else auth_header,
-        "has_cookie": bool(cookie_val),
-        "cookie_preview": cookie_val[:20] + "..." if len(cookie_val) > 20 else cookie_val,
-        "authenticated": user is not None,
-        "user_id": user.id if user else None,
-        "user_email": user.email if user else None,
-    }
 
 
 # --- Detection route ---
@@ -186,9 +176,17 @@ async def detect(
     user = get_user_from_token(token, db) if token else None
     if not user:
         raise HTTPException(status_code=401, detail="Login required")
+    MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
     try:
-        before_pil = Image.open(io.BytesIO(await before.read())).convert("RGB")
-        after_pil = Image.open(io.BytesIO(await after.read())).convert("RGB")
+        before_bytes = await before.read()
+        after_bytes = await after.read()
+        if len(before_bytes) > MAX_UPLOAD_BYTES or len(after_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
+        before_pil = Image.open(io.BytesIO(before_bytes)).convert("RGB")
+        after_pil = Image.open(io.BytesIO(after_bytes)).convert("RGB")
+        del before_bytes, after_bytes
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
     change_mask, result_image, stats, change_regions = run_detection(

@@ -21,13 +21,16 @@ def preprocess_image(image):
     img_array = np.array(image)
     if img_array.ndim == 2:
         img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
-    if img_array.shape[2] == 4:
+    elif img_array.ndim == 3 and img_array.shape[2] == 4:
         img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
+    elif img_array.ndim != 3 or img_array.shape[2] != 3:
+        raise ValueError(f"Unsupported image shape: {img_array.shape}")
     max_size = 2000
     height, width = img_array.shape[:2]
     if max(height, width) > max_size:
         scale = max_size / max(height, width)
-        img_array = cv2.resize(img_array, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
+        new_w, new_h = max(1, int(width * scale)), max(1, int(height * scale))
+        img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
     return img_array
 
 
@@ -68,9 +71,13 @@ def register_images(img1, img2, max_features=2000):
     if homography is None:
         return img1, img2, False
 
-    # Only accept if enough inliers
     inlier_ratio = np.sum(mask) / len(mask) if mask is not None else 0
     if inlier_ratio < 0.3:
+        return img1, img2, False
+
+    # Reject degenerate homographies (near-singular or extreme distortion)
+    det = np.linalg.det(homography)
+    if abs(det) < 0.1 or abs(det) > 10.0:
         return img1, img2, False
 
     h, w = img1.shape[:2]
@@ -83,7 +90,7 @@ def register_images(img1, img2, max_features=2000):
 # ---------------------------------------------------------------------------
 
 def normalize_radiometry(img1, img2):
-    """Histogram-matching normalization in LAB space for all channels."""
+    """Histogram-matching normalization in LAB space. CLAHE applied symmetrically."""
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
 
@@ -94,13 +101,17 @@ def normalize_radiometry(img1, img2):
         if std2 > 1e-6:
             result[:, :, ch] = (lab2[:, :, ch] - mean2) * (std1 / std2) + mean1
 
-    # Also apply CLAHE on L channel for contrast equalization
     result_uint8 = np.clip(result, 0, 255).astype(np.uint8)
+
+    # CLAHE on L channel of BOTH images so downstream comparison is symmetric
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    lab1_uint8 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB)
+    lab1_uint8[:, :, 0] = clahe.apply(lab1_uint8[:, :, 0])
     result_uint8[:, :, 0] = clahe.apply(result_uint8[:, :, 0])
 
-    img2_normalized = cv2.cvtColor(result_uint8, cv2.COLOR_LAB2RGB)
-    return img1, img2_normalized
+    img1_out = cv2.cvtColor(lab1_uint8, cv2.COLOR_LAB2RGB)
+    img2_out = cv2.cvtColor(result_uint8, cv2.COLOR_LAB2RGB)
+    return img1_out, img2_out
 
 
 # ---------------------------------------------------------------------------
@@ -122,12 +133,13 @@ def compute_ssim_change_map(img1, img2, win_size=7):
     mu2_sq = mu2 * mu2
     mu1_mu2 = mu1 * mu2
 
-    sigma1_sq = cv2.GaussianBlur(gray1 * gray1, (win_size, win_size), 1.5) - mu1_sq
-    sigma2_sq = cv2.GaussianBlur(gray2 * gray2, (win_size, win_size), 1.5) - mu2_sq
+    # Clamp to zero: E[X²]-E[X]² can go slightly negative from float rounding
+    sigma1_sq = np.maximum(cv2.GaussianBlur(gray1 * gray1, (win_size, win_size), 1.5) - mu1_sq, 0)
+    sigma2_sq = np.maximum(cv2.GaussianBlur(gray2 * gray2, (win_size, win_size), 1.5) - mu2_sq, 0)
     sigma12 = cv2.GaussianBlur(gray1 * gray2, (win_size, win_size), 1.5) - mu1_mu2
 
-    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
-               ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+    denom = (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2)
+    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / (denom + 1e-12)
 
     # Structural dissimilarity: 0 = identical, 1 = completely different
     dssim = np.clip((1.0 - ssim_map) / 2.0, 0, 1)
@@ -224,7 +236,6 @@ def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    # Combine LAB and HSV differences for richer features
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
     hsv1 = cv2.cvtColor(img1, cv2.COLOR_RGB2HSV).astype(np.float32)
@@ -234,18 +245,40 @@ def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
     diff_hsv = np.abs(hsv1 - hsv2)
 
     h, w, _ = diff_lab.shape
-    features = np.concatenate([diff_lab, diff_hsv[:, :, 1:]], axis=2)  # 5 channels
-    features_flat = features.reshape(-1, features.shape[2])
+    features = np.concatenate([diff_lab, diff_hsv[:, :, 1:]], axis=2)
 
+    # Downsample for KMeans (full-res is too slow for >1M pixels)
+    MAX_PIXELS = 250_000
+    total = h * w
+    if total > MAX_PIXELS:
+        scale = np.sqrt(MAX_PIXELS / total)
+        sh, sw = max(1, int(h * scale)), max(1, int(w * scale))
+        features_small = cv2.resize(features, (sw, sh))
+    else:
+        features_small = features
+        sh, sw = h, w
+
+    features_flat = features_small.reshape(-1, features_small.shape[2])
     scaler = StandardScaler()
     features_scaled = scaler.fit_transform(features_flat)
 
     kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(features_scaled)
+    labels_small = kmeans.fit_predict(features_scaled)
 
-    # Find the cluster with highest mean difference (= change)
-    cluster_means = [np.mean(np.linalg.norm(features_flat[labels == i], axis=1)) for i in range(num_clusters)]
+    cluster_means = [
+        np.mean(np.linalg.norm(features_flat[labels_small == i], axis=1))
+        if np.any(labels_small == i) else 0.0
+        for i in range(num_clusters)
+    ]
     change_cluster_idx = np.argmax(cluster_means)
+
+    # Map labels back to full resolution by predicting on all pixels
+    if total > MAX_PIXELS:
+        full_flat = features.reshape(-1, features.shape[2])
+        full_scaled = scaler.transform(full_flat)
+        labels = kmeans.predict(full_scaled)
+    else:
+        labels = labels_small
 
     change_mask = (labels == change_cluster_idx).astype(np.uint8) * 255
     change_mask = change_mask.reshape(h, w)
@@ -667,12 +700,8 @@ def classify_object_type(image_region, bbox):
         soil += 0.10
     scores["Bare Land/Soil Change"] = soil
 
-    # Normalize scores
-    max_score = max(scores.values()) if scores else 0
-    if max_score > 0:
-        for k in scores:
-            scores[k] /= max_score
-
+    # Use raw scores as confidence (each rule set sums to ~1.0 max)
+    # Do NOT normalize by max_score — that inflates weak matches to 1.0
     best = max(scores, key=scores.get)
     conf = scores[best]
 
@@ -698,13 +727,19 @@ def classify_with_ensemble(image_region, bbox, num_sub=4):
 
     classifications = []
     confidences = []
+    transient_count = 0
     for sb in sub_boxes:
         obj_type, conf = classify_object_type(image_region, sb)
         if obj_type is None:
-            return None, 0.0  # transient → exclude
+            transient_count += 1
+            continue
         if obj_type != "Unclassified":
             classifications.append(obj_type)
             confidences.append(conf)
+
+    # Only exclude if majority of sub-regions are transient
+    if transient_count > len(sub_boxes) // 2:
+        return None, 0.0
 
     if not classifications:
         return classify_object_type(image_region, (x, y, w, h))
@@ -795,8 +830,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     else:
         change_mask = hybrid_method(before_array, after_array)
 
-    # Classify regions
-    change_regions = analyze_change_regions(change_mask, after_array, min_area=80)
+    change_regions = analyze_change_regions(change_mask, after_array, min_area=200)
 
     # Color-coded visualization using region classifications
     result_image = visualize_changes(before_array, after_array, change_mask, regions=change_regions)
