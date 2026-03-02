@@ -1,7 +1,13 @@
-/* SatDetect — Modern dark design system */
+/* SatDetect — Gradient theme (#2e33c5 → #cf2040) */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
+  --gradient: linear-gradient(135deg, #2e33c5, #cf2040);
+  --gradient-h: linear-gradient(90deg, #2e33c5, #cf2040);
+  --grad-start: #2e33c5;
+  --grad-end: #cf2040;
+  --grad-mid: #7a2a82;
+
   --bg-deep: #080b12;
   --bg-surface: #0f1320;
   --bg-elevated: #161c2e;
@@ -9,13 +15,13 @@
   --bg-hover: #1c2540;
   --border: rgba(148, 163, 184, 0.10);
   --border-hover: rgba(148, 163, 184, 0.22);
-  --border-focus: rgba(45, 212, 191, 0.5);
+  --border-focus: rgba(46, 51, 197, 0.5);
   --text: #f1f5f9;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
-  --accent: #2dd4bf;
-  --accent-dim: #14b8a6;
-  --accent-glow: rgba(45, 212, 191, 0.2);
+  --accent: #7a6aed;
+  --accent-dim: #6358d4;
+  --accent-glow: rgba(122, 106, 237, 0.2);
   --danger: #f87171;
   --danger-dim: #ef4444;
   --danger-glow: rgba(248, 113, 113, 0.15);
@@ -50,8 +56,8 @@ body::before {
   position: fixed;
   inset: 0;
   background-image:
-    radial-gradient(ellipse at 20% 0%, rgba(45, 212, 191, 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 100%, rgba(99, 102, 241, 0.04) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 0%, rgba(46, 51, 197, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(207, 32, 64, 0.06) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -95,7 +101,7 @@ body::before {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--accent), #6366f1);
+  background: var(--gradient);
   color: #fff;
 }
 
@@ -125,7 +131,7 @@ body::before {
   text-decoration: none;
   transition: color var(--transition);
 }
-.forgot-link a:hover { color: var(--accent); }
+.forgot-link a:hover { color: var(--grad-start); }
 
 .toggle-auth {
   text-align: center;
@@ -134,7 +140,7 @@ body::before {
   font-size: 0.88rem;
 }
 .toggle-auth a {
-  color: var(--accent);
+  color: var(--grad-start);
   text-decoration: none;
   font-weight: 500;
 }
@@ -145,13 +151,13 @@ body::before {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--gradient);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1rem;
-  color: var(--accent);
+  color: #fff;
 }
 .back-to-login {
   display: inline-flex;
@@ -163,7 +169,7 @@ body::before {
   margin-top: 1.75rem;
   transition: color var(--transition);
 }
-.back-to-login:hover { color: var(--accent); }
+.back-to-login:hover { color: var(--grad-start); }
 
 /* ---- Password input with eye toggle ---- */
 .input-password-wrap {
@@ -246,7 +252,7 @@ textarea {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: 0 0 0 3px rgba(46, 51, 197, 0.18);
 }
 
 .checkbox-group label {
@@ -260,7 +266,7 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0;
 }
 .checkbox-group input[type="checkbox"] {
-  accent-color: var(--accent);
+  accent-color: var(--grad-start);
   width: 16px;
   height: 16px;
 }
@@ -286,11 +292,11 @@ input:focus, select:focus, textarea:focus {
 .btn:active { transform: scale(0.97); }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent), #14b8a6);
-  color: var(--bg-deep);
+  background: var(--gradient);
+  color: #fff;
   font-weight: 600;
 }
-.btn-primary:hover { filter: brightness(1.1); box-shadow: 0 4px 20px var(--accent-glow); }
+.btn-primary:hover { filter: brightness(1.15); box-shadow: 0 4px 24px rgba(46, 51, 197, 0.35), 0 4px 16px rgba(207, 32, 64, 0.2); }
 
 .btn-secondary {
   background: var(--bg-elevated);
@@ -335,9 +341,11 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border);
+  margin: -1.5rem -1.5rem 2rem;
+  padding: 1rem 1.5rem;
+  background: var(--gradient-h);
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 4px 20px rgba(46, 51, 197, 0.25);
 }
 .nav-brand {
   font-weight: 700;
@@ -346,7 +354,9 @@ input:focus, select:focus, textarea:focus {
   align-items: center;
   gap: 0.5rem;
   letter-spacing: -0.02em;
+  color: #fff;
 }
+.nav-brand svg { stroke: #fff !important; }
 .nav-user {
   display: flex;
   align-items: center;
@@ -354,11 +364,18 @@ input:focus, select:focus, textarea:focus {
 }
 .user-badge {
   font-size: 0.8rem;
-  color: var(--text-muted);
-  background: var(--bg-elevated);
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.12);
   padding: 0.3rem 0.7rem;
   border-radius: 20px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.nav .btn-ghost {
+  color: rgba(255,255,255,0.8);
+}
+.nav .btn-ghost:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.1);
 }
 
 /* ---- Page header ---- */
@@ -396,9 +413,9 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer;
 }
 .upload-zone:hover, .upload-zone.dragover {
-  border-color: var(--accent);
-  background: rgba(45, 212, 191, 0.04);
-  box-shadow: 0 0 0 4px var(--accent-glow);
+  border-color: var(--grad-start);
+  background: rgba(46, 51, 197, 0.04);
+  box-shadow: 0 0 0 4px rgba(46, 51, 197, 0.15);
 }
 .upload-zone input[type="file"] {
   position: absolute;
@@ -411,7 +428,7 @@ input:focus, select:focus, textarea:focus {
   margin-bottom: 0.5rem;
   transition: color var(--transition);
 }
-.upload-zone:hover .upload-icon { color: var(--accent); }
+.upload-zone:hover .upload-icon { color: var(--grad-start); }
 .upload-zone label {
   cursor: pointer;
   display: block;
@@ -421,7 +438,7 @@ input:focus, select:focus, textarea:focus {
 .upload-zone .filename {
   margin-top: 0.4rem;
   font-size: 0.8rem;
-  color: var(--accent);
+  color: var(--grad-start);
   font-family: var(--font-mono);
 }
 .upload-preview {
@@ -471,7 +488,10 @@ input:focus, select:focus, textarea:focus {
 .stat-box .value {
   font-size: 1.35rem;
   font-weight: 700;
-  color: var(--accent);
+  background: var(--gradient-h);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-family: var(--font-mono);
 }
 .stat-box .label {
@@ -535,18 +555,18 @@ input:focus, select:focus, textarea:focus {
 .compare-handle-line {
   flex: 1;
   width: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
+  background: var(--gradient);
+  box-shadow: 0 0 10px rgba(46, 51, 197, 0.3);
 }
 .compare-handle-knob {
   width: 36px; height: 36px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg-deep);
+  background: var(--gradient);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.5), 0 0 20px var(--accent-glow);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.5), 0 0 20px rgba(46, 51, 197, 0.3);
   flex-shrink: 0;
 }
 .compare-label {
@@ -569,7 +589,7 @@ input:focus, select:focus, textarea:focus {
 }
 .compare-label-right {
   right: 10px;
-  background: rgba(248, 113, 113, 0.85);
+  background: rgba(207, 32, 64, 0.85);
   color: #fff;
   backdrop-filter: blur(6px);
 }
@@ -597,7 +617,7 @@ input:focus, select:focus, textarea:focus {
   top: 0;
 }
 .regions-table td { color: var(--text-muted); }
-.regions-table tr:hover td { background: rgba(45, 212, 191, 0.03); }
+.regions-table tr:hover td { background: rgba(46, 51, 197, 0.04); }
 .regions-table td:nth-child(2) { color: var(--text); font-weight: 500; }
 
 /* ---- History ---- */
@@ -726,7 +746,7 @@ input:focus, select:focus, textarea:focus {
 .spinner {
   width: 18px; height: 18px;
   border: 2px solid var(--border);
-  border-top-color: var(--accent);
+  border-top-color: var(--grad-start);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -734,14 +754,15 @@ input:focus, select:focus, textarea:focus {
 
 /* ---- Footer ---- */
 .app-footer {
-  margin-top: 3rem;
-  padding: 1.25rem 0;
-  border-top: 1px solid var(--border);
+  margin: 3rem -1.5rem -1.5rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--gradient-h);
   text-align: center;
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 .app-footer p {
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: rgba(255,255,255,0.75);
 }
 
 /* ---- Utility ---- */
