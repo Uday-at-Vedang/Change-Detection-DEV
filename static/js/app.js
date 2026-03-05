@@ -236,6 +236,12 @@ function readFileAsDataURL(file) {
   });
 }
 
+function formatCompact(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 10_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return n.toLocaleString();
+}
+
 function showResult(data) {
   const card = document.getElementById('result-card');
   const statsEl = document.getElementById('result-stats');
@@ -243,8 +249,8 @@ function showResult(data) {
 
   statsEl.innerHTML = `
     <div class="stat-box"><div class="value">${data.statistics.changePercentage.toFixed(2)}%</div><div class="label">Changed</div></div>
-    <div class="stat-box"><div class="value">${data.statistics.changedPixels.toLocaleString()}</div><div class="label">Changed px</div></div>
-    <div class="stat-box"><div class="value">${data.statistics.totalPixels.toLocaleString()}</div><div class="label">Total px</div></div>
+    <div class="stat-box"><div class="value" title="${data.statistics.changedPixels.toLocaleString()}">${formatCompact(data.statistics.changedPixels)}</div><div class="label">Changed px</div></div>
+    <div class="stat-box"><div class="value" title="${data.statistics.totalPixels.toLocaleString()}">${formatCompact(data.statistics.totalPixels)}</div><div class="label">Total px</div></div>
     <div class="stat-box"><div class="value">${(data.regions || []).length}</div><div class="label">Regions</div></div>
   `;
 

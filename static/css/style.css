@@ -529,7 +529,7 @@ input:focus, select:focus, textarea:focus {
 /* ---- Result stats ---- */
 .result-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1.25rem;
 }
@@ -543,13 +543,17 @@ input:focus, select:focus, textarea:focus {
 }
 .stat-box:hover { border-color: var(--border-hover); }
 .stat-box .value {
-  font-size: 1.35rem;
+  font-size: clamp(0.85rem, 3.5vw, 1.35rem);
   font-weight: 700;
   background: var(--gradient-h);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
 }
 .stat-box .label {
   font-size: 0.7rem;
