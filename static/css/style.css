@@ -448,6 +448,29 @@ input:focus, select:focus, textarea:focus {
   font-size: 0.9rem;
 }
 
+/* ---- Location row ---- */
+.location-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.location-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.location-row label svg {
+  color: var(--grad-start);
+  flex-shrink: 0;
+}
+.location-row select {
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .location-row { grid-template-columns: 1fr; }
+}
+
 /* ---- Upload zones ---- */
 .upload-grid {
   display: grid;
@@ -561,6 +584,15 @@ input:focus, select:focus, textarea:focus {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-top: 0.2rem;
+}
+.stat-box-wide {
+  grid-column: span 2;
+}
+.stat-box .value-sm {
+  font-size: clamp(0.75rem, 3vw, 1.05rem);
+}
+@media (max-width: 640px) {
+  .stat-box-wide { grid-column: span 1; }
 }
 
 /* ---- Compare slider ---- */
@@ -728,6 +760,12 @@ input:focus, select:focus, textarea:focus {
   font-family: var(--font-mono);
   color: var(--text-muted);
   margin-right: 0.3rem;
+}
+.history-meta .tag-loc {
+  background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
+  color: #fff;
+  border-color: transparent;
+  font-family: var(--font);
 }
 
 .history-actions {

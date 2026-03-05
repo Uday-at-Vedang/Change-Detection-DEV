@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,7 +30,18 @@ from .detection_engine import run_detection
 
 Base.metadata.create_all(bind=engine, checkfirst=True)
 
-app = FastAPI(title="Satellite Change Detection", version="1.0.0")
+# Lightweight migration: add columns introduced after initial schema
+with engine.connect() as conn:
+    for col, col_type in [("zone", "VARCHAR(128) DEFAULT ''"),
+                          ("village", "VARCHAR(128) DEFAULT ''")]:
+        try:
+            conn.execute(sa_text(
+                f"ALTER TABLE detection_runs ADD COLUMN {col} {col_type}"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+app = FastAPI(title="AI Change Detection", version="2.0.0")
 
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -159,6 +171,8 @@ async def detect(
     after: UploadFile = File(...),
     method: str = Form("AI-Based Deep Learning"),
     title: str = Form("Untitled run"),
+    zone: str = Form(""),
+    village: str = Form(""),
     enable_registration: bool = Form(True),
     enable_normalization: bool = Form(True),
     access_token: Optional[str] = Form(None),
@@ -221,6 +235,8 @@ async def detect(
         user_id=user.id,
         title=title,
         method=method,
+        zone=zone,
+        village=village,
         total_pixels=total_px,
         changed_pixels=changed_px,
         change_percentage=change_pct,
@@ -240,6 +256,8 @@ async def detect(
         "id": run.id,
         "title": run.title,
         "method": run.method,
+        "zone": run.zone or "",
+        "village": run.village or "",
         "statistics": {
             "totalPixels": total_px,
             "changedPixels": changed_px,
@@ -281,6 +299,8 @@ def history(
             "id": r.id,
             "title": r.title,
             "method": r.method,
+            "zone": r.zone or "",
+            "village": r.village or "",
             "changePercentage": r.change_percentage,
             "regionsCount": r.regions_count,
             "overlayUrl": f"/api/overlay/{r.overlay_path}" if r.overlay_path else None,

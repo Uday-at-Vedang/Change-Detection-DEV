@@ -182,6 +182,97 @@ function setupUploadZone(inputId, nameId, zoneId, previewId) {
 setupUploadZone('file-before', 'name-before', 'zone-before', 'preview-before');
 setupUploadZone('file-after', 'name-after', 'zone-after', 'preview-after');
 
+// ---- Delhi Zone → Village cascading dropdowns ----
+const DELHI_ZONES = {
+  "Central Delhi": [
+    "Karol Bagh", "Paharganj", "Daryaganj", "Rajinder Nagar", "Patel Nagar",
+    "Anand Parbat", "Bapa Nagar", "Prasad Nagar", "Dev Nagar", "Old Rajinder Nagar"
+  ],
+  "New Delhi": [
+    "Connaught Place", "Chanakyapuri", "Lodhi Road", "Mandi House",
+    "India Gate", "Khan Market", "Barakhamba", "Gole Market", "Sansad Marg"
+  ],
+  "North Delhi": [
+    "Civil Lines", "Model Town", "Sadar Bazaar", "Timarpur", "Gulabi Bagh",
+    "Kamla Nagar", "Shakti Nagar", "Roop Nagar", "Vijay Nagar", "Mukherjee Nagar",
+    "GTB Nagar", "Adarsh Nagar", "Azadpur", "Wazirabad"
+  ],
+  "North West Delhi": [
+    "Rohini", "Narela", "Bawana", "Alipur", "Shalimar Bagh",
+    "Pitampura", "Kanjhawala", "Mundka", "Sultanpuri", "Mangolpuri",
+    "Begumpur", "Pooth Kalan", "Holambi Kalan", "Bankner", "Siraspur"
+  ],
+  "North East Delhi": [
+    "Seelampur", "Jafrabad", "Mustafabad", "Babarpur", "Gokulpuri",
+    "Yamuna Vihar", "Karawal Nagar", "Dayalpur", "Khajuri Khas",
+    "Bhajanpura", "Harsh Vihar", "Brahmpuri", "Ghonda"
+  ],
+  "East Delhi": [
+    "Preet Vihar", "Laxmi Nagar", "Mayur Vihar Phase I", "Mayur Vihar Phase II",
+    "Mayur Vihar Phase III", "Patparganj", "Pandav Nagar", "Shakarpur",
+    "Mandawali", "Kalyanpuri", "Trilokpuri", "Kondli", "Gharoli",
+    "Khichripur", "Anand Vihar"
+  ],
+  "Shahdara": [
+    "Shahdara", "Vivek Vihar", "Dilshad Garden", "Seema Puri", "New Seelampur",
+    "Nand Nagri", "Harsh Vihar", "Jhilmil Colony", "Mansarovar Park"
+  ],
+  "South Delhi": [
+    "Hauz Khas", "Mehrauli", "Saket", "Kalkaji", "Greater Kailash",
+    "Malviya Nagar", "Vasant Kunj", "Chattarpur", "Lado Sarai",
+    "Fatehpur Beri", "Mandi Village", "Dera Village", "Aaya Nagar",
+    "Sultanpur", "Ghitorni", "Satbari", "Jonapur", "Asola"
+  ],
+  "South East Delhi": [
+    "Defence Colony", "Okhla", "Jamia Nagar", "Badarpur", "Jaitpur",
+    "Madanpur Khadar", "Sarita Vihar", "Jasola", "Sukhdev Vihar",
+    "Tughlakabad", "Sangam Vihar", "Mithapur", "Pul Pehlad"
+  ],
+  "South West Delhi": [
+    "Dwarka", "Najafgarh", "Kapashera", "Palam", "Dabri",
+    "Mahavir Enclave", "Bindapur", "Uttam Nagar", "Nasirpur",
+    "Chhawla", "Dichaon Kalan", "Ghumanhera", "Jhatikara",
+    "Rawta", "Pochanpur", "Bijwasan", "Sarangpur", "Paprawat"
+  ],
+  "West Delhi": [
+    "Rajouri Garden", "Janakpuri", "Tilak Nagar", "Vikaspuri",
+    "Hari Nagar", "Subhash Nagar", "Tagore Garden", "Moti Nagar",
+    "Kirti Nagar", "Punjabi Bagh", "Nangloi Jat", "Nilothi",
+    "Mundka", "Madipur", "Paschim Vihar"
+  ]
+};
+
+(function initZoneVillage() {
+  const zoneSel = document.getElementById('detect-zone');
+  const villageSel = document.getElementById('detect-village');
+  if (!zoneSel || !villageSel) return;
+
+  Object.keys(DELHI_ZONES).sort().forEach(z => {
+    const opt = document.createElement('option');
+    opt.value = z;
+    opt.textContent = z;
+    zoneSel.appendChild(opt);
+  });
+
+  zoneSel.addEventListener('change', () => {
+    const zone = zoneSel.value;
+    villageSel.innerHTML = '';
+    if (!zone) {
+      villageSel.disabled = true;
+      villageSel.innerHTML = '<option value="">— Select Zone first —</option>';
+      return;
+    }
+    villageSel.disabled = false;
+    villageSel.innerHTML = '<option value="">— Select Village / Area —</option>';
+    (DELHI_ZONES[zone] || []).forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      villageSel.appendChild(opt);
+    });
+  });
+})();
+
 // ---- Run detection ----
 document.getElementById('form-detect')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -204,6 +295,8 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   form.append('after', after);
   form.append('method', document.getElementById('detect-method').value);
   form.append('title', document.getElementById('detect-title').value || 'Untitled run');
+  form.append('zone', document.getElementById('detect-zone').value || '');
+  form.append('village', document.getElementById('detect-village').value || '');
   form.append('enable_registration', document.getElementById('detect-registration').checked);
   form.append('enable_normalization', document.getElementById('detect-normalization').checked);
   if (token) form.append('access_token', token);
@@ -247,11 +340,15 @@ function showResult(data) {
   const statsEl = document.getElementById('result-stats');
   const tbody = document.getElementById('regions-tbody');
 
+  const locParts = [data.village, data.zone].filter(Boolean);
+  const locLabel = locParts.length ? locParts.join(', ') : '—';
+
   statsEl.innerHTML = `
     <div class="stat-box"><div class="value">${data.statistics.changePercentage.toFixed(2)}%</div><div class="label">Changed</div></div>
     <div class="stat-box"><div class="value" title="${data.statistics.changedPixels.toLocaleString()}">${formatCompact(data.statistics.changedPixels)}</div><div class="label">Changed px</div></div>
     <div class="stat-box"><div class="value" title="${data.statistics.totalPixels.toLocaleString()}">${formatCompact(data.statistics.totalPixels)}</div><div class="label">Total px</div></div>
     <div class="stat-box"><div class="value">${(data.regions || []).length}</div><div class="label">Regions</div></div>
+    <div class="stat-box stat-box-wide"><div class="value value-sm" title="${locLabel}">${locLabel}</div><div class="label">Location</div></div>
   `;
 
   const beforeImg = document.getElementById('compare-before-img');
@@ -331,12 +428,15 @@ async function loadHistory() {
       list.innerHTML = '<div class="history-empty">No detection runs yet. Upload images above to get started.</div>';
       return;
     }
-    list.innerHTML = items.map((r) => `
+    list.innerHTML = items.map((r) => {
+      const loc = [r.village, r.zone].filter(Boolean).join(', ');
+      return `
       <div class="history-item" data-id="${r.id}">
         <div class="history-info">
           <div class="history-title">${escapeHtml(r.title)}</div>
           <div class="history-meta">
             <span class="tag">${r.method}</span>
+            ${loc ? `<span class="tag tag-loc">${escapeHtml(loc)}</span>` : ''}
             ${r.changePercentage.toFixed(2)}% changed &middot; ${r.regionsCount} regions &middot; ${formatDate(r.createdAt)}
           </div>
         </div>
@@ -346,8 +446,8 @@ async function loadHistory() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           </button>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   } catch (_) {
     list.innerHTML = '<div class="history-empty">Could not load history.</div>';
   }
