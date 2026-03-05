@@ -1,5 +1,5 @@
 ---
-title: SatDetect - Satellite Change Detection
+title: AI Change Detection
 emoji: 🛰️
 colorFrom: gray
 colorTo: green
