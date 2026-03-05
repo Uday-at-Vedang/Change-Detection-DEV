@@ -205,6 +205,8 @@ async def detect(
             "bbox": {"x": int(r["bbox"][0]), "y": int(r["bbox"][1]), "w": int(r["bbox"][2]), "h": int(r["bbox"][3])},
             "objectType": str(r["object_type"]),
             "confidence": float(r["confidence"]),
+            "subType": r.get("sub_type"),
+            "subTypeConfidence": float(r["sub_type_confidence"]) if r.get("sub_type_confidence") is not None else None,
             "estimatedStories": r.get("estimated_stories"),
             "estimatedHeightM": float(r["estimated_height_m"]) if r.get("estimated_height_m") is not None else None,
             "constructionStage": r.get("construction_stage"),

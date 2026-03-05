@@ -446,23 +446,26 @@ def visualize_changes(img1, img2, change_mask, regions=None):
             x, y, w, h = r["bbox"]
             cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), (255, 255, 255), 1)
 
-            # Annotate building regions with 3D info
+            # Build annotation label from sub-type and 3D info
+            parts = []
+            sub = r.get("sub_type")
+            if sub:
+                parts.append(sub)
             stories = r.get("estimated_stories")
             stage = r.get("construction_stage")
-            if stories is not None or stage is not None:
-                parts = []
-                if stories is not None:
-                    parts.append(f"{stories}F")
-                if stage and stage != "Unknown":
-                    parts.append(stage)
+            if stories is not None:
+                parts.append(f"{stories}F")
+            if stage and stage != "Unknown":
+                parts.append(stage)
+
+            if parts:
                 label = " | ".join(parts)
                 font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = max(0.35, min(0.55, w / 200))
+                font_scale = max(0.30, min(0.50, w / 220))
                 thickness = 1
                 (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
                 lx = x
                 ly = max(th + 4, y - 6)
-                # Background rectangle for readability
                 cv2.rectangle(overlay_uint8, (lx, ly - th - 4), (lx + tw + 6, ly + 2),
                               (0, 0, 0), cv2.FILLED)
                 cv2.putText(overlay_uint8, label, (lx + 3, ly - 2), font,
@@ -781,7 +784,336 @@ def classify_with_ensemble(image_region, bbox, num_sub=4):
 
 
 # ---------------------------------------------------------------------------
-# 11. 3D Building Analysis — height estimation + construction stage
+# 11. Vegetation sub-classification
+# ---------------------------------------------------------------------------
+
+_VEGETATION_TYPES = {"Vegetation Change"}
+
+
+def _compute_region_greenness(crop):
+    """Return (ndvi, green_ratio, mean_saturation) for an RGB crop."""
+    if crop.size == 0 or crop.shape[0] < 2 or crop.shape[1] < 2:
+        return 0.0, 0.0, 0.0
+    mean_rgb = np.mean(crop, axis=(0, 1)).astype(np.float64)
+    total = np.sum(mean_rgb) + 1e-6
+    green_ratio = mean_rgb[1] / total
+    ndvi = (mean_rgb[1] - mean_rgb[0]) / (mean_rgb[1] + mean_rgb[0] + 1e-6)
+    hsv = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)
+    mean_sat = float(np.mean(hsv[:, :, 1]))
+    return float(ndvi), float(green_ratio), mean_sat
+
+
+def _compute_texture_regularity(gray_crop):
+    """Measure how regular/grid-like the texture is (low entropy = regular crops)."""
+    if gray_crop.size == 0 or gray_crop.shape[0] < 3 or gray_crop.shape[1] < 3:
+        return 3.0
+    gx = cv2.Sobel(gray_crop.astype(np.float32), cv2.CV_64F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray_crop.astype(np.float32), cv2.CV_64F, 0, 1, ksize=3)
+    angles = np.arctan2(gy, gx + 1e-8)
+    hist, _ = np.histogram(angles, bins=8, range=(-np.pi, np.pi))
+    hist = hist / (hist.sum() + 1e-8)
+    entropy = -np.sum(hist[hist > 0] * np.log2(hist[hist > 0] + 1e-10))
+    return float(entropy)
+
+
+def classify_vegetation_subtype(before_img, after_img, bbox):
+    """
+    Compare before/after crops to determine vegetation change sub-type.
+    Returns (subtype_name, confidence).
+    """
+    x, y, w, h = bbox
+    pad = 5
+    y1, y2 = max(0, y - pad), min(before_img.shape[0], y + h + pad)
+    x1, x2 = max(0, x - pad), min(before_img.shape[1], x + w + pad)
+
+    before_crop = before_img[y1:y2, x1:x2]
+    after_crop = after_img[y1:y2, x1:x2]
+
+    if before_crop.size == 0 or after_crop.size == 0:
+        return "Vegetation Change", 0.3
+
+    ndvi_b, green_b, sat_b = _compute_region_greenness(before_crop)
+    ndvi_a, green_a, sat_a = _compute_region_greenness(after_crop)
+
+    gray_b = cv2.cvtColor(before_crop, cv2.COLOR_RGB2GRAY)
+    gray_a = cv2.cvtColor(after_crop, cv2.COLOR_RGB2GRAY)
+    tex_entropy_b = _compute_texture_regularity(gray_b)
+    tex_entropy_a = _compute_texture_regularity(gray_a)
+
+    brightness_b = float(np.mean(gray_b))
+    brightness_a = float(np.mean(gray_a))
+
+    ndvi_delta = ndvi_a - ndvi_b
+    green_delta = green_a - green_b
+    sat_delta = sat_a - sat_b
+
+    scores = {
+        "Deforestation/Tree Removal": 0.0,
+        "New Vegetation/Growth": 0.0,
+        "Crop/Agricultural Change": 0.0,
+        "Vegetation Health Decline": 0.0,
+        "Seasonal Variation": 0.0,
+    }
+
+    # --- Deforestation: was green, now not green ---
+    if ndvi_b > 0.08 and ndvi_delta < -0.06:
+        scores["Deforestation/Tree Removal"] += 0.30
+    if green_b > 0.36 and green_delta < -0.03:
+        scores["Deforestation/Tree Removal"] += 0.20
+    if brightness_a > brightness_b + 10:
+        scores["Deforestation/Tree Removal"] += 0.15
+    if sat_delta < -15:
+        scores["Deforestation/Tree Removal"] += 0.15
+    if tex_entropy_a < tex_entropy_b - 0.3:
+        scores["Deforestation/Tree Removal"] += 0.10
+
+    # --- New Vegetation/Growth: was bare, now green ---
+    if ndvi_a > 0.08 and ndvi_delta > 0.06:
+        scores["New Vegetation/Growth"] += 0.30
+    if green_a > 0.36 and green_delta > 0.03:
+        scores["New Vegetation/Growth"] += 0.20
+    if sat_delta > 15:
+        scores["New Vegetation/Growth"] += 0.15
+    if brightness_a < brightness_b - 5:
+        scores["New Vegetation/Growth"] += 0.10
+    if tex_entropy_a > tex_entropy_b + 0.2:
+        scores["New Vegetation/Growth"] += 0.10
+
+    # --- Crop/Agricultural Change: regular texture patterns, moderate color shift ---
+    is_regular = tex_entropy_b < 2.5 or tex_entropy_a < 2.5
+    if is_regular:
+        scores["Crop/Agricultural Change"] += 0.25
+    if 0.03 < abs(ndvi_delta) < 0.12:
+        scores["Crop/Agricultural Change"] += 0.20
+    if sat_b > 35 and sat_a > 35:
+        scores["Crop/Agricultural Change"] += 0.15
+    if abs(green_delta) < 0.04 and abs(ndvi_delta) > 0.02:
+        scores["Crop/Agricultural Change"] += 0.15
+    area = w * h
+    if area > 3000:
+        scores["Crop/Agricultural Change"] += 0.10
+
+    # --- Vegetation Health Decline: still green but browning ---
+    if ndvi_b > 0.05 and ndvi_a > 0.02 and ndvi_delta < -0.03:
+        scores["Vegetation Health Decline"] += 0.25
+    if green_b > 0.34 and green_a > 0.30 and green_delta < -0.02:
+        scores["Vegetation Health Decline"] += 0.20
+    if -20 < sat_delta < -3:
+        scores["Vegetation Health Decline"] += 0.20
+    if abs(brightness_a - brightness_b) < 15:
+        scores["Vegetation Health Decline"] += 0.10
+
+    # --- Seasonal Variation: mild shift in color/texture, both sides green ---
+    if ndvi_b > 0.04 and ndvi_a > 0.04 and abs(ndvi_delta) < 0.05:
+        scores["Seasonal Variation"] += 0.25
+    if abs(green_delta) < 0.03:
+        scores["Seasonal Variation"] += 0.20
+    if abs(sat_delta) < 12:
+        scores["Seasonal Variation"] += 0.15
+    if abs(brightness_a - brightness_b) < 12:
+        scores["Seasonal Variation"] += 0.15
+
+    best = max(scores, key=scores.get)
+    conf = scores[best]
+    if conf < 0.25:
+        return "Vegetation Change", 0.3
+    return best, min(conf, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# 12. Structural change sub-classification
+# ---------------------------------------------------------------------------
+
+_STRUCTURAL_TYPES = {"New Construction/Building", "Demolition/Clearing",
+                     "Road/Pavement Change"}
+
+
+def _region_has_structure(crop):
+    """Heuristic: does this crop contain building-like structure (edges + regularity)?"""
+    if crop.size == 0 or crop.shape[0] < 3 or crop.shape[1] < 3:
+        return False, 0.0, 0.0
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    edge_density = float(np.mean(np.sqrt(gx**2 + gy**2)))
+    angles = np.arctan2(gy, gx + 1e-8)
+    hist, _ = np.histogram(angles, bins=8, range=(-np.pi, np.pi))
+    hist = hist / (hist.sum() + 1e-8)
+    entropy = -np.sum(hist[hist > 0] * np.log2(hist[hist > 0] + 1e-10))
+    has_structure = edge_density > 25 and entropy < 2.8
+    return has_structure, edge_density, entropy
+
+
+def classify_structural_subtype(before_img, after_img, bbox, main_type):
+    """
+    Compare before/after crops to determine structural change sub-type.
+    Returns (subtype_name, confidence).
+    """
+    x, y, w, h = bbox
+    pad = 5
+    y1, y2 = max(0, y - pad), min(before_img.shape[0], y + h + pad)
+    x1, x2 = max(0, x - pad), min(before_img.shape[1], x + w + pad)
+
+    before_crop = before_img[y1:y2, x1:x2]
+    after_crop = after_img[y1:y2, x1:x2]
+
+    if before_crop.size == 0 or after_crop.size == 0:
+        return main_type, 0.3
+
+    struct_b, edge_b, ent_b = _region_has_structure(before_crop)
+    struct_a, edge_a, ent_a = _region_has_structure(after_crop)
+
+    gray_b = cv2.cvtColor(before_crop, cv2.COLOR_RGB2GRAY)
+    gray_a = cv2.cvtColor(after_crop, cv2.COLOR_RGB2GRAY)
+    brightness_b = float(np.mean(gray_b))
+    brightness_a = float(np.mean(gray_a))
+    texture_b = float(np.std(gray_b))
+    texture_a = float(np.std(gray_a))
+
+    hsv_b = cv2.cvtColor(before_crop, cv2.COLOR_RGB2HSV)
+    hsv_a = cv2.cvtColor(after_crop, cv2.COLOR_RGB2HSV)
+    sat_b = float(np.mean(hsv_b[:, :, 1]))
+    sat_a = float(np.mean(hsv_a[:, :, 1]))
+
+    # Check greenness to detect cleared-to-green or green-to-built transitions
+    mean_rgb_b = np.mean(before_crop, axis=(0, 1))
+    mean_rgb_a = np.mean(after_crop, axis=(0, 1))
+    ndvi_b = (mean_rgb_b[1] - mean_rgb_b[0]) / (mean_rgb_b[1] + mean_rgb_b[0] + 1e-6)
+    ndvi_a = (mean_rgb_a[1] - mean_rgb_a[0]) / (mean_rgb_a[1] + mean_rgb_a[0] + 1e-6)
+
+    area = w * h
+
+    if main_type == "Road/Pavement Change":
+        return _classify_road_subtype(
+            struct_b, struct_a, edge_b, edge_a, brightness_b, brightness_a,
+            texture_b, texture_a, area, w, h
+        )
+
+    scores = {
+        "New Building": 0.0,
+        "Building Expansion": 0.0,
+        "Renovation/Modification": 0.0,
+        "Partial Demolition": 0.0,
+        "Full Demolition": 0.0,
+        "Infrastructure Change": 0.0,
+    }
+
+    # --- New Building: before had no structure, after does ---
+    if not struct_b and struct_a:
+        scores["New Building"] += 0.35
+    if edge_a > edge_b + 15:
+        scores["New Building"] += 0.15
+    if ent_a < ent_b - 0.3:
+        scores["New Building"] += 0.10
+    if ndvi_b > 0.05 and ndvi_a < 0.03:
+        scores["New Building"] += 0.10
+    if sat_a < sat_b - 10:
+        scores["New Building"] += 0.10
+
+    # --- Building Expansion: both have structure but after has more ---
+    if struct_b and struct_a:
+        scores["Building Expansion"] += 0.15
+    if struct_b and edge_a > edge_b * 1.2:
+        scores["Building Expansion"] += 0.20
+    if struct_b and texture_a > texture_b + 5:
+        scores["Building Expansion"] += 0.15
+    if abs(ent_a - ent_b) < 0.5 and edge_a > edge_b:
+        scores["Building Expansion"] += 0.15
+
+    # --- Renovation/Modification: both have structure, similar density but different appearance ---
+    if struct_b and struct_a:
+        scores["Renovation/Modification"] += 0.15
+    if abs(edge_a - edge_b) < 12:
+        scores["Renovation/Modification"] += 0.15
+    if abs(brightness_a - brightness_b) > 8:
+        scores["Renovation/Modification"] += 0.20
+    if abs(sat_a - sat_b) > 10:
+        scores["Renovation/Modification"] += 0.15
+    if abs(texture_a - texture_b) < 10:
+        scores["Renovation/Modification"] += 0.10
+
+    # --- Partial Demolition: before had structure, after has less ---
+    if struct_b and edge_a < edge_b * 0.7:
+        scores["Partial Demolition"] += 0.25
+    if struct_b and ent_a > ent_b + 0.3:
+        scores["Partial Demolition"] += 0.15
+    if texture_a > texture_b + 8:
+        scores["Partial Demolition"] += 0.15
+    if brightness_a > brightness_b + 10:
+        scores["Partial Demolition"] += 0.10
+
+    # --- Full Demolition: before had structure, after is bare/empty ---
+    if struct_b and not struct_a:
+        scores["Full Demolition"] += 0.35
+    if edge_b > 30 and edge_a < 20:
+        scores["Full Demolition"] += 0.15
+    if texture_b > 25 and texture_a < 20:
+        scores["Full Demolition"] += 0.15
+    if brightness_a > brightness_b + 15:
+        scores["Full Demolition"] += 0.10
+
+    # --- Infrastructure Change: elongated shape, high edge regularity ---
+    aspect = max(w, h) / max(min(w, h), 1)
+    if aspect > 3.0:
+        scores["Infrastructure Change"] += 0.25
+    if ent_a < 2.0 or ent_b < 2.0:
+        scores["Infrastructure Change"] += 0.15
+    if area > 2000 and aspect > 2.5:
+        scores["Infrastructure Change"] += 0.15
+
+    best = max(scores, key=scores.get)
+    conf = scores[best]
+    if conf < 0.25:
+        return main_type, 0.3
+    return best, min(conf, 1.0)
+
+
+def _classify_road_subtype(struct_b, struct_a, edge_b, edge_a,
+                           brightness_b, brightness_a, texture_b, texture_a,
+                           area, w, h):
+    """Sub-classify road/pavement changes."""
+    scores = {
+        "New Road/Pavement": 0.0,
+        "Road Widening": 0.0,
+        "Road Resurfacing": 0.0,
+        "Road Deterioration": 0.0,
+    }
+
+    if not struct_b and struct_a:
+        scores["New Road/Pavement"] += 0.30
+    if edge_a > edge_b + 10:
+        scores["New Road/Pavement"] += 0.20
+    if brightness_a < brightness_b:
+        scores["New Road/Pavement"] += 0.15
+
+    if struct_b and struct_a and edge_a > edge_b * 1.15:
+        scores["Road Widening"] += 0.30
+    if area > 2000:
+        scores["Road Widening"] += 0.15
+
+    if struct_b and struct_a and abs(edge_a - edge_b) < 10:
+        scores["Road Resurfacing"] += 0.20
+    if abs(brightness_a - brightness_b) > 12:
+        scores["Road Resurfacing"] += 0.25
+    if abs(texture_a - texture_b) < 8:
+        scores["Road Resurfacing"] += 0.15
+
+    if texture_a > texture_b + 10:
+        scores["Road Deterioration"] += 0.25
+    if edge_a < edge_b - 5:
+        scores["Road Deterioration"] += 0.20
+    if brightness_a > brightness_b + 8:
+        scores["Road Deterioration"] += 0.15
+
+    best = max(scores, key=scores.get)
+    conf = scores[best]
+    if conf < 0.25:
+        return "Road/Pavement Change", 0.3
+    return best, min(conf, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# 13. 3D Building Analysis — height estimation + construction stage
 # ---------------------------------------------------------------------------
 
 _BUILDING_TYPES = {"New Construction/Building", "Demolition/Clearing"}
@@ -1005,7 +1337,7 @@ def analyze_building_3d(before_img, after_img, region, features):
 
 
 # ---------------------------------------------------------------------------
-# 12. Region analysis
+# 14. Region analysis
 # ---------------------------------------------------------------------------
 
 def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
@@ -1046,21 +1378,37 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
             "center": (int(cx), int(cy)),
             "object_type": object_type,
             "confidence": confidence,
+            "sub_type": None,
+            "sub_type_confidence": None,
             "estimated_stories": None,
             "estimated_height_m": None,
             "construction_stage": None,
         }
 
-        # 3D analysis for building/construction regions
-        if object_type in _BUILDING_TYPES and before_img is not None:
-            pad = 5
-            ry1 = max(0, y - pad)
-            ry2 = min(image.shape[0], y + h + pad)
-            rx1 = max(0, x - pad)
-            rx2 = min(image.shape[1], x + w + pad)
-            crop = image[ry1:ry2, rx1:rx2]
-            feats = extract_advanced_features(crop) if crop.size > 0 else None
-            analyze_building_3d(before_img, image, region, feats)
+        # Sub-classification and 3D analysis require before image
+        if before_img is not None:
+            if object_type in _VEGETATION_TYPES:
+                sub, sub_conf = classify_vegetation_subtype(
+                    before_img, image, (x, y, w, h))
+                region["sub_type"] = sub
+                region["sub_type_confidence"] = sub_conf
+
+            elif object_type in _STRUCTURAL_TYPES:
+                sub, sub_conf = classify_structural_subtype(
+                    before_img, image, (x, y, w, h), object_type)
+                region["sub_type"] = sub
+                region["sub_type_confidence"] = sub_conf
+
+                # 3D analysis for building/construction regions
+                if object_type in _BUILDING_TYPES:
+                    pad = 5
+                    ry1 = max(0, y - pad)
+                    ry2 = min(image.shape[0], y + h + pad)
+                    rx1 = max(0, x - pad)
+                    rx2 = min(image.shape[1], x + w + pad)
+                    crop = image[ry1:ry2, rx1:rx2]
+                    feats = extract_advanced_features(crop) if crop.size > 0 else None
+                    analyze_building_3d(before_img, image, region, feats)
 
         change_regions.append(region)
 
@@ -1069,7 +1417,7 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
 
 
 # ---------------------------------------------------------------------------
-# 12. Main pipeline
+# 15. Main pipeline
 # ---------------------------------------------------------------------------
 
 def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
