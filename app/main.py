@@ -27,6 +27,7 @@ from .auth import (
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
 from .detection_engine import run_detection
+from .notifier import send_notification
 
 Base.metadata.create_all(bind=engine, checkfirst=True)
 
@@ -175,6 +176,7 @@ async def detect(
     village: str = Form(""),
     enable_registration: bool = Form(True),
     enable_normalization: bool = Form(True),
+    notify_email: Optional[str] = Form(None),
     access_token: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
@@ -252,6 +254,22 @@ async def detect(
     Image.fromarray(result_image).save(buf, format="PNG")
     buf.seek(0)
     overlay_b64 = base64.b64encode(buf.read()).decode("utf-8")
+
+    # Send email notification if requested
+    notification_sent = False
+    if notify_email and notify_email.strip():
+        notification_sent = send_notification(
+            recipient=notify_email.strip(),
+            title=title,
+            method=method,
+            zone=zone,
+            village=village,
+            change_pct=change_pct,
+            changed_px=changed_px,
+            total_px=total_px,
+            regions=regions_serializable,
+        )
+
     return {
         "id": run.id,
         "title": run.title,
@@ -267,6 +285,7 @@ async def detect(
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,
         "overlayUrl": f"/api/overlay/{relative_overlay}",
+        "notificationSent": notification_sent,
         "createdAt": run.created_at.isoformat(),
     }
 

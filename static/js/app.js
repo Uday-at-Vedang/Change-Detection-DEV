@@ -273,6 +273,24 @@ const DELHI_ZONES = {
   });
 })();
 
+// ---- Notify checkbox toggle ----
+(function initNotifyToggle() {
+  const cb = document.getElementById('detect-notify');
+  const group = document.getElementById('notify-email-group');
+  if (!cb || !group) return;
+
+  cb.addEventListener('change', () => {
+    if (cb.checked) {
+      group.classList.remove('hidden');
+      group.classList.add('visible');
+    } else {
+      group.classList.remove('visible');
+      group.classList.add('hidden');
+      document.getElementById('notify-email').value = '';
+    }
+  });
+})();
+
 // ---- Run detection ----
 document.getElementById('form-detect')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -299,6 +317,21 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   form.append('village', document.getElementById('detect-village').value || '');
   form.append('enable_registration', document.getElementById('detect-registration').checked);
   form.append('enable_normalization', document.getElementById('detect-normalization').checked);
+
+  // Notify: validate and attach email if checkbox is checked
+  const notifyCb = document.getElementById('detect-notify');
+  const notifyInput = document.getElementById('notify-email');
+  if (notifyCb?.checked) {
+    const email = (notifyInput?.value || '').trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showError('dashboard-error', 'Please enter a valid email address for notification.');
+      btn.disabled = false;
+      loading.classList.add('hidden');
+      return;
+    }
+    form.append('notify_email', email);
+  }
+
   if (token) form.append('access_token', token);
 
   try {
@@ -310,7 +343,10 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
     }
     const data = await api('POST', '/api/detect', { body: form });
     showResult(data);
-    showSuccess('dashboard-success', 'Detection complete!');
+    const notifyMsg = data.notificationSent
+      ? ' Notification email sent.'
+      : '';
+    showSuccess('dashboard-success', 'Detection complete!' + notifyMsg);
     loadHistory();
   } catch (err) {
     showError('dashboard-error', err.message);
