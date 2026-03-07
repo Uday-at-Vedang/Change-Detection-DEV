@@ -3,6 +3,7 @@ import io
 import json
 import os
 import uuid
+from datetime import timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +30,17 @@ from .notifier import send_notification
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _isoformat_utc(dt):
+    """Return an ISO-8601 string with explicit +00:00 so the browser can
+    convert to local time.  SQLite strips tzinfo on read, so naive datetimes
+    that we know are UTC need the suffix added back."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 # Create tables and run migrations without crashing the app (HF Spaces can restart if startup fails)
 try:
@@ -342,7 +354,7 @@ async def detect(
         "beforeThumbUrl": f"/api/overlay/{relative_before_thumb}",
         "afterThumbUrl": f"/api/overlay/{relative_after_thumb}",
         "notificationSent": notification_sent,
-        "createdAt": run.created_at.isoformat(),
+        "createdAt": _isoformat_utc(run.created_at),
     }
 
 
@@ -383,7 +395,7 @@ def history(
             "overlayUrl": f"/api/overlay/{r.overlay_path}" if r.overlay_path else None,
             "beforeThumbUrl": f"/api/overlay/{r.before_thumb_path}" if (getattr(r, "before_thumb_path", None) or "").strip() else None,
             "afterThumbUrl": f"/api/overlay/{r.after_thumb_path}" if (getattr(r, "after_thumb_path", None) or "").strip() else None,
-            "createdAt": r.created_at.isoformat(),
+            "createdAt": _isoformat_utc(r.created_at),
         }
         for r in runs
     ]
@@ -422,7 +434,7 @@ def get_run(
         "beforeFullUrl": f"/api/overlay/{run.before_full_path}" if (getattr(run, "before_full_path", None) or "").strip() else None,
         "beforeThumbUrl": f"/api/overlay/{run.before_thumb_path}" if (getattr(run, "before_thumb_path", None) or "").strip() else None,
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if (getattr(run, "after_thumb_path", None) or "").strip() else None,
-        "createdAt": run.created_at.isoformat(),
+        "createdAt": _isoformat_utc(run.created_at),
     }
 
 
