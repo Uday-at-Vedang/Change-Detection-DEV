@@ -64,13 +64,14 @@ except Exception as e:
     import logging
     logging.getLogger("uvicorn.error").warning("Startup migration skipped: %s", e)
 
-app = FastAPI(title="AI Change Detection", version="2.0.0")
+app = FastAPI(title="AI Change Detection", version="2.1.0")
 
 
 @app.get("/health")
 def health():
     """Lightweight health check so Hugging Face can mark the Space as running quickly."""
-    return {"status": "ok"}
+    from datetime import datetime
+    return {"status": "ok", "version": "2.1.0", "server_time_ist": _isoformat_ist(datetime.now(timezone.utc))}
 
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
