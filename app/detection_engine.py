@@ -223,9 +223,11 @@ def image_difference_method(img1, img2, threshold=0.25, blur_size=5):
     )
     delta_e = delta_e / delta_e.max() if delta_e.max() > 0 else delta_e
 
-    # Adaptive threshold using Otsu on the change map
     delta_uint8 = (delta_e * 255).astype(np.uint8)
-    _, change_mask = cv2.threshold(delta_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    otsu_val, change_mask = cv2.threshold(delta_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Floor: if Otsu picks a very low threshold the mask is mostly noise
+    if otsu_val < 30:
+        _, change_mask = cv2.threshold(delta_uint8, 30, 255, cv2.THRESH_BINARY)
 
     change_mask = _clean_mask(change_mask)
     return change_mask
@@ -357,13 +359,14 @@ def ai_deep_learning_method(img1, img2):
     fused = fused / (fused.max() + 1e-8)
     fused_uint8 = (fused * 255).astype(np.uint8)
 
-    # Adaptive threshold: Otsu + refinement
-    _, change_mask = cv2.threshold(fused_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Otsu with a minimum floor to reject near-zero thresholds on similar images
+    otsu_val, change_mask = cv2.threshold(fused_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if otsu_val < 25:
+        _, change_mask = cv2.threshold(fused_uint8, 25, 255, cv2.THRESH_BINARY)
 
-    # Post-process
     change_mask = _clean_mask(change_mask)
 
-    # Edge-preserving smoothing on the mask
+    # Bilateral filter preserves sharp change boundaries while smoothing noise
     change_mask = cv2.bilateralFilter(change_mask, 9, 75, 75)
     _, change_mask = cv2.threshold(change_mask, 127, 255, cv2.THRESH_BINARY)
 
@@ -386,7 +389,8 @@ def hybrid_method(img1, img2):
         0.5 * ai_mask.astype(np.float32)
     )
 
-    _, final_mask = cv2.threshold(combined.astype(np.uint8), 127, 255, cv2.THRESH_BINARY)
+    # Use a higher threshold: a pixel must be flagged by multiple methods
+    _, final_mask = cv2.threshold(combined.astype(np.uint8), 140, 255, cv2.THRESH_BINARY)
     final_mask = _clean_mask(final_mask)
     return final_mask
 
@@ -395,24 +399,51 @@ def hybrid_method(img1, img2):
 # 8. Robust post-processing
 # ---------------------------------------------------------------------------
 
-def _clean_mask(mask, sensitivity=0.5):
-    """Adaptive morphological cleaning: close gaps, remove noise, fill holes."""
-    # Close small gaps
+def _clean_mask(mask, sensitivity=0.5, border_margin=12):
+    """
+    Robust morphological cleaning:
+    1. Zero-out border pixels (registration artifacts)
+    2. Median filter to kill salt-and-pepper noise
+    3. Opening to remove small specks
+    4. Closing to bridge tiny gaps
+    5. Fill holes inside regions
+    6. Erode-then-dilate to break thin noise bridges between separate changes
+    """
+    h, w = mask.shape[:2]
+
+    # 1. Remove false positives along image border (common with registration)
+    if border_margin > 0:
+        mask[:border_margin, :] = 0
+        mask[-border_margin:, :] = 0
+        mask[:, :border_margin] = 0
+        mask[:, -border_margin:] = 0
+
+    # 2. Median to remove isolated noise pixels
+    mask = cv2.medianBlur(mask, 5)
+
+    # 3. Opening (erosion then dilation) removes small specks
+    open_size = max(3, int(5 * (1 - sensitivity * 0.5)))
+    if open_size % 2 == 0:
+        open_size += 1
+    k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_size, open_size))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_open)
+
+    # 4. Closing to bridge small internal gaps
     close_size = max(3, int(7 * (1 - sensitivity)))
     if close_size % 2 == 0:
         close_size += 1
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k_close)
 
-    # Remove small noise
-    open_size = 3
-    kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_size, open_size))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
-
-    # Fill small holes inside detected regions
+    # 5. Fill holes inside regions
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     filled = np.zeros_like(mask)
     cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
+
+    # 6. Erode to break thin noise bridges, then dilate back
+    k_break = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    filled = cv2.erode(filled, k_break, iterations=1)
+    filled = cv2.dilate(filled, k_break, iterations=1)
 
     return filled
 
@@ -463,38 +494,51 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
     mask_bool = change_mask > 127
     mask_float = mask_bool.astype(np.float32)
 
-    # Red overlay for all detected change pixels
+    # Lighter red overlay (35% alpha) so the image stays readable
     red_layer = np.zeros_like(img2, dtype=np.float32)
     red_layer[:, :, 0] = 255
-    alpha = 0.50
+    alpha = 0.35
     for c in range(3):
-        overlay[:, :, c] = overlay[:, :, c] * (1 - mask_float * alpha) + red_layer[:, :, c] * mask_float * alpha
+        overlay[:, :, c] = (overlay[:, :, c] * (1 - mask_float * alpha)
+                            + red_layer[:, :, c] * mask_float * alpha)
 
+    overlay_uint8 = np.clip(overlay, 0, 255).astype(np.uint8)
     total_px = total_pixels if total_pixels is not None else (img2.shape[0] * img2.shape[1])
 
     if regions:
-        overlay_uint8 = np.clip(overlay, 0, 255).astype(np.uint8)
+        # Scale line thickness to image size so boxes are visible at any resolution
+        diag = np.sqrt(img2.shape[0]**2 + img2.shape[1]**2)
+        line_thickness = max(2, int(diag / 400))
+
         for r in regions:
             x, y, w, h = r["bbox"]
             severity = r.get("severity") or _severity_from_region(r, total_px)
             color = _SEVERITY_COLORS.get(severity, (255, 255, 255))
 
-            # Color-coded bounding box (thicker for visibility)
-            cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, 2)
+            # Semi-transparent filled rect behind the box for contrast
+            box_overlay = overlay_uint8.copy()
+            cv2.rectangle(box_overlay, (x, y), (x + w, y + h), color, cv2.FILLED)
+            cv2.addWeighted(box_overlay, 0.12, overlay_uint8, 0.88, 0, overlay_uint8)
 
-            # Numbered label matching summary table (region ID)
+            # Color-coded bounding box
+            cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, line_thickness)
+
+            # Numbered label
             rid = r.get("id", 0)
             label = str(rid)
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = max(0.4, min(0.7, w / 150))
-            thickness = 2
+            font_scale = max(0.45, min(0.8, w / 120))
+            thickness = max(1, line_thickness - 1)
             (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
-            lx, ly = x, max(th + 4, y - 4)
-            cv2.rectangle(overlay_uint8, (lx, ly - th - 4), (lx + tw + 8, ly + 2), (0, 0, 0), cv2.FILLED)
-            cv2.putText(overlay_uint8, label, (lx + 4, ly - 2), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
-        return overlay_uint8
+            lx = x
+            ly = max(th + 6, y - 6)
+            cv2.rectangle(overlay_uint8,
+                          (lx, ly - th - 6), (lx + tw + 10, ly + 2),
+                          color, cv2.FILLED)
+            cv2.putText(overlay_uint8, label, (lx + 5, ly - 2),
+                        font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
-    return np.clip(overlay, 0, 255).astype(np.uint8)
+    return overlay_uint8
 
 
 # ---------------------------------------------------------------------------
@@ -1362,29 +1406,101 @@ def analyze_building_3d(before_img, after_img, region, features):
 # 14. Region analysis
 # ---------------------------------------------------------------------------
 
-def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
+def _tight_bbox(labels, label_id, stats_row):
+    """
+    Compute a tighter bounding box using actual changed pixels.
+    Falls back to the connected-component bbox if the mask is dense enough.
+    """
+    x = stats_row[cv2.CC_STAT_LEFT]
+    y = stats_row[cv2.CC_STAT_TOP]
+    w = stats_row[cv2.CC_STAT_WIDTH]
+    h = stats_row[cv2.CC_STAT_HEIGHT]
+    area = stats_row[cv2.CC_STAT_AREA]
+
+    fill_ratio = area / max(w * h, 1)
+
+    # If the component fills less than 20% of its bbox, compute a tighter fit
+    if fill_ratio < 0.20 and area > 100:
+        ys, xs = np.where(labels == label_id)
+        if len(xs) > 0:
+            x = int(np.min(xs))
+            y = int(np.min(ys))
+            w = int(np.max(xs) - x + 1)
+            h = int(np.max(ys) - y + 1)
+            fill_ratio = area / max(w * h, 1)
+
+    return x, y, w, h, fill_ratio
+
+
+def _iou(boxA, boxB):
+    """Intersection-over-union for two (x,y,w,h) boxes."""
+    ax1, ay1, aw, ah = boxA
+    bx1, by1, bw, bh = boxB
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    union = aw * ah + bw * bh - inter
+    return inter / max(union, 1)
+
+
+def _nms_regions(regions, iou_thresh=0.45):
+    """Non-maximum suppression: keep the highest-area box when two overlap."""
+    if len(regions) < 2:
+        return regions
+    keep = []
+    used = set()
+    for i, r in enumerate(regions):
+        if i in used:
+            continue
+        keep.append(r)
+        for j in range(i + 1, len(regions)):
+            if j in used:
+                continue
+            if _iou(r["bbox"], regions[j]["bbox"]) > iou_thresh:
+                used.add(j)
+    return keep
+
+
+def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
                            before_img=None):
     """
-    Find connected change regions, classify as ground-level changes only.
-    Transient objects (people, cars, animals) are filtered out.
-    Building regions get enriched with 3D analysis (stories, height, stage).
+    Find connected change regions with strict quality filters:
+    - Higher min_area (400) to reject noise
+    - Fill-ratio filter: reject boxes that are mostly empty
+    - Tighter bounding boxes computed from actual pixel coordinates
+    - NMS to remove overlapping/duplicate boxes
+    - Max 60 regions cap to avoid flooding the UI
     """
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(change_mask, connectivity=8)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        change_mask, connectivity=8)
     change_regions = []
     region_id = 0
 
+    img_h, img_w = change_mask.shape[:2]
+    img_area = img_h * img_w
+
     for i in range(1, num_labels):
-        area = stats[i, cv2.CC_STAT_AREA]
-        if area < min_area:
+        raw_area = stats[i, cv2.CC_STAT_AREA]
+        if raw_area < min_area:
             continue
 
-        x = stats[i, cv2.CC_STAT_LEFT]
-        y = stats[i, cv2.CC_STAT_TOP]
-        w = stats[i, cv2.CC_STAT_WIDTH]
-        h = stats[i, cv2.CC_STAT_HEIGHT]
+        x, y, w, h, fill_ratio = _tight_bbox(labels, i, stats[i])
+
+        # Reject very sparse regions (bbox is mostly empty)
+        if fill_ratio < 0.10:
+            continue
+
+        # Reject regions that cover more than 40% of the image (likely a global
+        # illumination shift, not a real change)
+        if (w * h) > img_area * 0.40:
+            continue
+
         cx, cy = centroids[i]
 
-        if use_ensemble and area > 500:
+        if use_ensemble and raw_area > 500:
             object_type, confidence = classify_with_ensemble(image, (x, y, w, h))
         else:
             object_type, confidence = classify_object_type(image, (x, y, w, h))
@@ -1395,11 +1511,12 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
         region_id += 1
         region = {
             "id": region_id,
-            "area": area,
+            "area": int(raw_area),
             "bbox": (x, y, w, h),
             "center": (int(cx), int(cy)),
             "object_type": object_type,
             "confidence": confidence,
+            "fill_ratio": round(fill_ratio, 3),
             "sub_type": None,
             "sub_type_confidence": None,
             "estimated_stories": None,
@@ -1407,7 +1524,6 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
             "construction_stage": None,
         }
 
-        # Sub-classification and 3D analysis require before image
         if before_img is not None:
             if object_type in _VEGETATION_TYPES:
                 sub, sub_conf = classify_vegetation_subtype(
@@ -1421,7 +1537,6 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
                 region["sub_type"] = sub
                 region["sub_type_confidence"] = sub_conf
 
-                # 3D analysis for building/construction regions
                 if object_type in _BUILDING_TYPES:
                     pad = 5
                     ry1 = max(0, y - pad)
@@ -1434,10 +1549,16 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
 
         change_regions.append(region)
 
+    # Sort by area descending, apply NMS, cap at 60
     change_regions.sort(key=lambda r: r["area"], reverse=True)
+    change_regions = _nms_regions(change_regions, iou_thresh=0.45)
+    change_regions = change_regions[:60]
 
-    # Assign severity for color-coded display and table summary
-    total_px = change_mask.shape[0] * change_mask.shape[1]
+    # Re-number after filtering
+    for idx, r in enumerate(change_regions, start=1):
+        r["id"] = idx
+
+    total_px = img_area
     for r in change_regions:
         r["severity"] = _severity_from_region(r, total_px)
 
@@ -1469,7 +1590,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask = hybrid_method(before_array, after_array)
 
     change_regions = analyze_change_regions(
-        change_mask, after_array, min_area=200, before_img=before_array
+        change_mask, after_array, min_area=400, before_img=before_array
     )
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
