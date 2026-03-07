@@ -35,6 +35,7 @@ try:
         for col, col_type in [
             ("zone", "VARCHAR(128) DEFAULT ''"),
             ("village", "VARCHAR(128) DEFAULT ''"),
+            ("before_full_path", "VARCHAR(512) DEFAULT ''"),
             ("before_thumb_path", "VARCHAR(512) DEFAULT ''"),
             ("after_thumb_path", "VARCHAR(512) DEFAULT ''"),
         ]:
@@ -236,7 +237,12 @@ async def detect(
     Image.fromarray(result_image).save(overlay_path)
     relative_overlay = f"overlays/{overlay_filename}"
 
-    # Save before/after thumbnails for history table (efficient small images)
+    # Save full-resolution before image (used by the before/after slider from history)
+    before_full_file = OVERLAYS_DIR / f"{base_name}_before.png"
+    before_pil.save(before_full_file)
+    relative_before_full = f"overlays/{base_name}_before.png"
+
+    # Save small thumbnails for the history table rows
     before_thumb_file = OVERLAYS_DIR / f"{base_name}_before_thumb.png"
     after_thumb_file = OVERLAYS_DIR / f"{base_name}_after_thumb.png"
     before_thumb_pil = before_pil.copy()
@@ -280,6 +286,7 @@ async def detect(
         change_percentage=change_pct,
         regions_count=len(change_regions),
         overlay_path=relative_overlay,
+        before_full_path=relative_before_full,
         before_thumb_path=relative_before_thumb,
         after_thumb_path=relative_after_thumb,
         regions_json=json.dumps(regions_serializable),
@@ -323,6 +330,7 @@ async def detect(
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,
         "overlayUrl": f"/api/overlay/{relative_overlay}",
+        "beforeFullUrl": f"/api/overlay/{relative_before_full}",
         "beforeThumbUrl": f"/api/overlay/{relative_before_thumb}",
         "afterThumbUrl": f"/api/overlay/{relative_after_thumb}",
         "notificationSent": notification_sent,
@@ -400,6 +408,7 @@ def get_run(
         },
         "regions": regions,
         "overlayUrl": f"/api/overlay/{run.overlay_path}" if run.overlay_path else None,
+        "beforeFullUrl": f"/api/overlay/{run.before_full_path}" if (getattr(run, "before_full_path", None) or "").strip() else None,
         "beforeThumbUrl": f"/api/overlay/{run.before_thumb_path}" if (getattr(run, "before_thumb_path", None) or "").strip() else None,
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if (getattr(run, "after_thumb_path", None) or "").strip() else None,
         "createdAt": run.created_at.isoformat(),
@@ -419,7 +428,7 @@ def delete_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     # Delete overlay and thumbnail files if they exist
-    for path_attr in ("overlay_path", "before_thumb_path", "after_thumb_path"):
+    for path_attr in ("overlay_path", "before_full_path", "before_thumb_path", "after_thumb_path"):
         path_val = getattr(run, path_attr, None)
         if path_val:
             f = OVERLAYS_DIR.parent / path_val
