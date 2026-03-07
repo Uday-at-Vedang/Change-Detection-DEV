@@ -1,6 +1,6 @@
 """
 Email notification module.
-Sends HTML-formatted detection reports via SMTP SSL.
+Sends HTML-formatted detection reports via SMTP STARTTLS (port 587).
 Credentials are read from environment variables — never hardcoded.
 """
 import logging
@@ -16,8 +16,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
-SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "vedangofficeserver@gmail.com")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "ChangeDetection.html"
@@ -123,11 +123,15 @@ def send_notification(
 
     try:
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, recipient, msg.as_string())
         logger.info("Notification email sent to %s", recipient)
         return True
     except Exception as e:
-        logger.error("Failed to send notification email: %s", e)
+        logger.error("Failed to send notification email to %s: %s: %s",
+                     recipient, type(e).__name__, e)
         return False

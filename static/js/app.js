@@ -343,9 +343,13 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
     }
     const data = await api('POST', '/api/detect', { body: form });
     showResult(data);
-    const notifyMsg = data.notificationSent
-      ? ' Notification email sent.'
-      : '';
+    const notifyCbDone = document.getElementById('detect-notify');
+    let notifyMsg = '';
+    if (notifyCbDone?.checked) {
+      notifyMsg = data.notificationSent
+        ? ' Notification email sent.'
+        : ' ⚠ Email notification failed — check SMTP credentials.';
+    }
     showSuccess('dashboard-success', 'Detection complete!' + notifyMsg);
     loadHistory();
   } catch (err) {
