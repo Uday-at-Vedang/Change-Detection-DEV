@@ -659,8 +659,9 @@ async function openRunFromHistory(runId) {
 
 function formatDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const tz = 'Asia/Kolkata';
+  return d.toLocaleDateString('en-IN', { timeZone: tz, month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-IN', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 // ---- Delete modal ----
