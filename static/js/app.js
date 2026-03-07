@@ -374,6 +374,10 @@ function formatCompact(n) {
 
 // Store current result for zoom and region hover (bbox in % for overlay)
 let currentResultData = null;
+let _regionRows = [];       // all region <tr> elements for pagination
+let _regionList = [];        // matching data objects
+const REGIONS_PER_PAGE = 10;
+let _regionPage = 0;
 
 function showResult(data) {
   const modal = document.getElementById('result-modal');
@@ -428,9 +432,9 @@ function showResult(data) {
   beforeImg.onload = onReady;
   setTimeout(() => { resetCompareSlider(); resetZoom(); }, 500);
 
-  tbody.innerHTML = '';
-  const regions = (data.regions || []).slice(0, 50);
-  regions.forEach((r) => {
+  const regions = (data.regions || []).slice(0, 60);
+  _regionList = regions;
+  _regionRows = regions.map((r) => {
     const tr = document.createElement('tr');
     tr.dataset.regionId = r.id;
     const subType = r.subType || '—';
@@ -451,11 +455,63 @@ function showResult(data) {
       <td>${height}</td>
       <td>${stage}</td>
     `;
-    tbody.appendChild(tr);
+    return tr;
   });
 
-  setupRegionHover(tbody, regions);
+  _regionPage = 0;
+  renderRegionPage();
   openResultModal();
+}
+
+function renderRegionPage() {
+  const tbody = document.getElementById('regions-tbody');
+  const pag = document.getElementById('regions-pagination');
+  if (!tbody) return;
+
+  const totalPages = Math.max(1, Math.ceil(_regionRows.length / REGIONS_PER_PAGE));
+  _regionPage = Math.max(0, Math.min(_regionPage, totalPages - 1));
+  const start = _regionPage * REGIONS_PER_PAGE;
+  const pageRows = _regionRows.slice(start, start + REGIONS_PER_PAGE);
+  const pageData = _regionList.slice(start, start + REGIONS_PER_PAGE);
+
+  tbody.innerHTML = '';
+  pageRows.forEach((tr) => tbody.appendChild(tr));
+  setupRegionHover(tbody, pageData);
+
+  if (pag) {
+    pag.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    const prev = document.createElement('button');
+    prev.textContent = '‹';
+    prev.disabled = _regionPage === 0;
+    prev.addEventListener('click', () => { _regionPage--; renderRegionPage(); });
+    pag.appendChild(prev);
+
+    const maxButtons = 7;
+    let rangeStart = Math.max(0, _regionPage - Math.floor(maxButtons / 2));
+    let rangeEnd = Math.min(totalPages, rangeStart + maxButtons);
+    if (rangeEnd - rangeStart < maxButtons) rangeStart = Math.max(0, rangeEnd - maxButtons);
+
+    for (let i = rangeStart; i < rangeEnd; i++) {
+      const btn = document.createElement('button');
+      btn.textContent = i + 1;
+      if (i === _regionPage) btn.classList.add('active');
+      btn.addEventListener('click', () => { _regionPage = i; renderRegionPage(); });
+      pag.appendChild(btn);
+    }
+
+    const next = document.createElement('button');
+    next.textContent = '›';
+    next.disabled = _regionPage >= totalPages - 1;
+    next.addEventListener('click', () => { _regionPage++; renderRegionPage(); });
+    pag.appendChild(next);
+
+    const info = document.createElement('span');
+    info.className = 'page-info';
+    info.textContent = `${start + 1}–${Math.min(start + REGIONS_PER_PAGE, _regionRows.length)} of ${_regionRows.length}`;
+    pag.appendChild(info);
+  }
 }
 
 function openResultModal() {
