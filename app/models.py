@@ -28,7 +28,9 @@ class DetectionRun(Base):
     changed_pixels = Column(Integer, nullable=False)
     change_percentage = Column(Float, nullable=False)
     regions_count = Column(Integer, default=0)
-    overlay_path = Column(String(512), default="")  # optional: path to saved overlay image
+    overlay_path = Column(String(512), default="")
+    before_thumb_path = Column(String(512), default="")
+    after_thumb_path = Column(String(512), default="")
     zone = Column(String(128), default="")
     village = Column(String(128), default="")
     regions_json = Column(Text, default="[]")  # JSON list of regions

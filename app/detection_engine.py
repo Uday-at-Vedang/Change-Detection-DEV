@@ -418,11 +418,42 @@ def _clean_mask(mask, sensitivity=0.5):
 
 
 # ---------------------------------------------------------------------------
-# 9. Improved visualization
+# 9. Severity classification and improved visualization
 # ---------------------------------------------------------------------------
 
-def visualize_changes(img1, img2, change_mask, regions=None):
-    """Overlay change mask on 'after' image in RED."""
+def _severity_from_region(region, total_pixels):
+    """
+    Classify change severity from area and confidence.
+    Green = minor, Yellow = moderate, Red = major.
+    Used for color-coded bounding boxes and table summary.
+    """
+    area = region.get("area", 0)
+    confidence = region.get("confidence", 0.0)
+    if total_pixels <= 0:
+        return "minor"
+    area_ratio = area / total_pixels
+    # Combined score: larger area and higher confidence -> more severe
+    score = area_ratio * 500 + confidence * 2
+    if score < 0.5:
+        return "minor"
+    if score < 1.2:
+        return "moderate"
+    return "major"
+
+
+# BGR colors for severity (OpenCV uses BGR)
+_SEVERITY_COLORS = {
+    "minor": (0, 200, 0),      # Green
+    "moderate": (0, 255, 255), # Yellow
+    "major": (0, 0, 255),      # Red
+}
+
+
+def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
+    """
+    Overlay change mask on 'after' image; draw color-coded bounding boxes
+    by severity (green=minor, yellow=moderate, red=major) and numbered labels.
+    """
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
     if change_mask.shape[:2] != img2.shape[:2]:
@@ -432,44 +463,35 @@ def visualize_changes(img1, img2, change_mask, regions=None):
     mask_bool = change_mask > 127
     mask_float = mask_bool.astype(np.float32)
 
-    # Red overlay for all detected changes
+    # Red overlay for all detected change pixels
     red_layer = np.zeros_like(img2, dtype=np.float32)
-    red_layer[:, :, 0] = 255  # pure red
+    red_layer[:, :, 0] = 255
     alpha = 0.50
     for c in range(3):
         overlay[:, :, c] = overlay[:, :, c] * (1 - mask_float * alpha) + red_layer[:, :, c] * mask_float * alpha
 
-    # Draw outlines and labels for each region
+    total_px = total_pixels if total_pixels is not None else (img2.shape[0] * img2.shape[1])
+
     if regions:
         overlay_uint8 = np.clip(overlay, 0, 255).astype(np.uint8)
         for r in regions:
             x, y, w, h = r["bbox"]
-            cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), (255, 255, 255), 1)
+            severity = r.get("severity") or _severity_from_region(r, total_px)
+            color = _SEVERITY_COLORS.get(severity, (255, 255, 255))
 
-            # Build annotation label from sub-type and 3D info
-            parts = []
-            sub = r.get("sub_type")
-            if sub:
-                parts.append(sub)
-            stories = r.get("estimated_stories")
-            stage = r.get("construction_stage")
-            if stories is not None:
-                parts.append(f"{stories}F")
-            if stage and stage != "Unknown":
-                parts.append(stage)
+            # Color-coded bounding box (thicker for visibility)
+            cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, 2)
 
-            if parts:
-                label = " | ".join(parts)
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = max(0.30, min(0.50, w / 220))
-                thickness = 1
-                (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
-                lx = x
-                ly = max(th + 4, y - 6)
-                cv2.rectangle(overlay_uint8, (lx, ly - th - 4), (lx + tw + 6, ly + 2),
-                              (0, 0, 0), cv2.FILLED)
-                cv2.putText(overlay_uint8, label, (lx + 3, ly - 2), font,
-                            font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+            # Numbered label matching summary table (region ID)
+            rid = r.get("id", 0)
+            label = str(rid)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = max(0.4, min(0.7, w / 150))
+            thickness = 2
+            (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
+            lx, ly = x, max(th + 4, y - 4)
+            cv2.rectangle(overlay_uint8, (lx, ly - th - 4), (lx + tw + 8, ly + 2), (0, 0, 0), cv2.FILLED)
+            cv2.putText(overlay_uint8, label, (lx + 4, ly - 2), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
         return overlay_uint8
 
     return np.clip(overlay, 0, 255).astype(np.uint8)
@@ -1413,6 +1435,12 @@ def analyze_change_regions(change_mask, image, min_area=200, use_ensemble=True,
         change_regions.append(region)
 
     change_regions.sort(key=lambda r: r["area"], reverse=True)
+
+    # Assign severity for color-coded display and table summary
+    total_px = change_mask.shape[0] * change_mask.shape[1]
+    for r in change_regions:
+        r["severity"] = _severity_from_region(r, total_px)
+
     return change_regions
 
 
@@ -1444,9 +1472,11 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask, after_array, min_area=200, before_img=before_array
     )
 
-    result_image = visualize_changes(before_array, after_array, change_mask, regions=change_regions)
-
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
+    result_image = visualize_changes(
+        before_array, after_array, change_mask,
+        regions=change_regions, total_pixels=total_pixels
+    )
     changed_pixels = int(np.sum(change_mask > 127))
     change_pct = (changed_pixels / total_pixels * 100.0) if total_pixels else 0.0
 

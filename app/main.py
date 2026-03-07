@@ -33,8 +33,12 @@ Base.metadata.create_all(bind=engine, checkfirst=True)
 
 # Lightweight migration: add columns introduced after initial schema
 with engine.connect() as conn:
-    for col, col_type in [("zone", "VARCHAR(128) DEFAULT ''"),
-                          ("village", "VARCHAR(128) DEFAULT ''")]:
+    for col, col_type in [
+        ("zone", "VARCHAR(128) DEFAULT ''"),
+        ("village", "VARCHAR(128) DEFAULT ''"),
+        ("before_thumb_path", "VARCHAR(512) DEFAULT ''"),
+        ("after_thumb_path", "VARCHAR(512) DEFAULT ''"),
+    ]:
         try:
             conn.execute(sa_text(
                 f"ALTER TABLE detection_runs ADD COLUMN {col} {col_type}"))
@@ -49,6 +53,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 OVERLAYS_DIR = DATA_DIR / "overlays"
 OVERLAYS_DIR.mkdir(parents=True, exist_ok=True)
+THUMB_MAX_SIZE = 200  # max width or height for history thumbnails
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -208,11 +213,25 @@ async def detect(
     change_mask, result_image, stats, change_regions = run_detection(
         before_pil, after_pil, method=method, enable_registration=enable_registration, enable_normalization=enable_normalization
     )
-    # Save overlay to disk and store path (optional)
-    overlay_filename = f"{user.id}_{uuid.uuid4().hex}.png"
+    # Save overlay and thumbnails for history table view
+    base_name = f"{user.id}_{uuid.uuid4().hex}"
+    overlay_filename = base_name + ".png"
     overlay_path = OVERLAYS_DIR / overlay_filename
     Image.fromarray(result_image).save(overlay_path)
     relative_overlay = f"overlays/{overlay_filename}"
+
+    # Save before/after thumbnails for history table (efficient small images)
+    before_thumb_file = OVERLAYS_DIR / f"{base_name}_before_thumb.png"
+    after_thumb_file = OVERLAYS_DIR / f"{base_name}_after_thumb.png"
+    before_thumb_pil = before_pil.copy()
+    before_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
+    before_thumb_pil.save(before_thumb_file)
+    after_thumb_pil = after_pil.copy()
+    after_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
+    after_thumb_pil.save(after_thumb_file)
+    relative_before_thumb = f"overlays/{base_name}_before_thumb.png"
+    relative_after_thumb = f"overlays/{base_name}_after_thumb.png"
+
     regions_serializable = [
         {
             "id": int(r["id"]),
@@ -221,6 +240,7 @@ async def detect(
             "bbox": {"x": int(r["bbox"][0]), "y": int(r["bbox"][1]), "w": int(r["bbox"][2]), "h": int(r["bbox"][3])},
             "objectType": str(r["object_type"]),
             "confidence": float(r["confidence"]),
+            "severity": r.get("severity", "minor"),
             "subType": r.get("sub_type"),
             "subTypeConfidence": float(r["sub_type_confidence"]) if r.get("sub_type_confidence") is not None else None,
             "estimatedStories": r.get("estimated_stories"),
@@ -244,6 +264,8 @@ async def detect(
         change_percentage=change_pct,
         regions_count=len(change_regions),
         overlay_path=relative_overlay,
+        before_thumb_path=relative_before_thumb,
+        after_thumb_path=relative_after_thumb,
         regions_json=json.dumps(regions_serializable),
     )
     db.add(run)
@@ -285,6 +307,8 @@ async def detect(
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,
         "overlayUrl": f"/api/overlay/{relative_overlay}",
+        "beforeThumbUrl": f"/api/overlay/{relative_before_thumb}",
+        "afterThumbUrl": f"/api/overlay/{relative_after_thumb}",
         "notificationSent": notification_sent,
         "createdAt": run.created_at.isoformat(),
     }
@@ -322,11 +346,48 @@ def history(
             "village": r.village or "",
             "changePercentage": r.change_percentage,
             "regionsCount": r.regions_count,
+            "totalPixels": r.total_pixels,
+            "changedPixels": r.changed_pixels,
             "overlayUrl": f"/api/overlay/{r.overlay_path}" if r.overlay_path else None,
+            "beforeThumbUrl": f"/api/overlay/{r.before_thumb_path}" if (getattr(r, "before_thumb_path", None) or "").strip() else None,
+            "afterThumbUrl": f"/api/overlay/{r.after_thumb_path}" if (getattr(r, "after_thumb_path", None) or "").strip() else None,
             "createdAt": r.created_at.isoformat(),
         }
         for r in runs
     ]
+
+
+@app.get("/api/history/{run_id}")
+def get_run(
+    run_id: int,
+    user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch a single run by id for opening from history (result view with slider, table, zoom)."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+    run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    regions = json.loads(run.regions_json) if run.regions_json else []
+    return {
+        "id": run.id,
+        "title": run.title,
+        "method": run.method,
+        "zone": run.zone or "",
+        "village": run.village or "",
+        "statistics": {
+            "totalPixels": run.total_pixels,
+            "changedPixels": run.changed_pixels,
+            "unchangedPixels": run.total_pixels - run.changed_pixels,
+            "changePercentage": run.change_percentage,
+        },
+        "regions": regions,
+        "overlayUrl": f"/api/overlay/{run.overlay_path}" if run.overlay_path else None,
+        "beforeThumbUrl": f"/api/overlay/{run.before_thumb_path}" if (getattr(run, "before_thumb_path", None) or "").strip() else None,
+        "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if (getattr(run, "after_thumb_path", None) or "").strip() else None,
+        "createdAt": run.created_at.isoformat(),
+    }
 
 
 # --- Delete history run ---
@@ -341,11 +402,13 @@ def delete_run(
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    # Delete overlay file if it exists
-    if run.overlay_path:
-        overlay_file = OVERLAYS_DIR.parent / run.overlay_path
-        if overlay_file.exists():
-            overlay_file.unlink(missing_ok=True)
+    # Delete overlay and thumbnail files if they exist
+    for path_attr in ("overlay_path", "before_thumb_path", "after_thumb_path"):
+        path_val = getattr(run, path_attr, None)
+        if path_val:
+            f = OVERLAYS_DIR.parent / path_val
+            if f.exists():
+                f.unlink(missing_ok=True)
     db.delete(run)
     db.commit()
     return {"ok": True, "deleted_id": run_id}

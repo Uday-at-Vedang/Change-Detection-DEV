@@ -371,10 +371,15 @@ function formatCompact(n) {
   return n.toLocaleString();
 }
 
+// Store current result for zoom and region hover (bbox in % for overlay)
+let currentResultData = null;
+
 function showResult(data) {
   const card = document.getElementById('result-card');
   const statsEl = document.getElementById('result-stats');
   const tbody = document.getElementById('regions-tbody');
+
+  currentResultData = data;
 
   const locParts = [data.village, data.zone].filter(Boolean);
   const locLabel = locParts.length ? locParts.join(', ') : '—';
@@ -389,38 +394,88 @@ function showResult(data) {
 
   const beforeImg = document.getElementById('compare-before-img');
   const afterImg = document.getElementById('compare-after-img');
-  const beforeFile = document.getElementById('file-before').files?.[0];
-  if (beforeFile) readFileAsDataURL(beforeFile).then((url) => { beforeImg.src = url; });
-
-  afterImg.src = data.overlayBase64Png
-    ? 'data:image/png;base64,' + data.overlayBase64Png
-    : (data.overlayUrl || '');
+  if (data.overlayBase64Png) {
+    afterImg.src = 'data:image/png;base64,' + data.overlayBase64Png;
+    const beforeFile = document.getElementById('file-before').files?.[0];
+    if (beforeFile) readFileAsDataURL(beforeFile).then((url) => { beforeImg.src = url; });
+  } else {
+    afterImg.src = data.overlayUrl || '';
+    beforeImg.src = data.beforeThumbUrl || data.overlayUrl || '';
+  }
 
   resetCompareSlider();
+  resetZoom();
 
   tbody.innerHTML = '';
-  (data.regions || []).slice(0, 50).forEach((r) => {
+  const regions = (data.regions || []).slice(0, 50);
+  regions.forEach((r) => {
     const tr = document.createElement('tr');
+    tr.dataset.regionId = r.id;
     const subType = r.subType || '—';
+    const severity = (r.severity || 'minor').toLowerCase();
     const stories = r.estimatedStories != null ? r.estimatedStories : '—';
     const height = r.estimatedHeightM != null ? r.estimatedHeightM + ' m' : '—';
     const stage = r.constructionStage && r.constructionStage !== 'Unknown' ? r.constructionStage : '—';
+    const coords = `(${r.center.x}, ${r.center.y})`;
     tr.innerHTML = `
       <td>${r.id}</td>
       <td>${r.objectType}</td>
       <td>${subType}</td>
+      <td><span class="severity-badge ${severity}">${severity}</span></td>
       <td>${(r.confidence * 100).toFixed(1)}%</td>
       <td>${r.area.toLocaleString()}</td>
+      <td>${coords}</td>
       <td>${stories}</td>
       <td>${height}</td>
       <td>${stage}</td>
-      <td>(${r.center.x}, ${r.center.y})</td>
     `;
     tbody.appendChild(tr);
   });
 
+  setupRegionHover(tbody, regions);
   card.classList.remove('hidden');
   card.scrollIntoView({ behavior: 'smooth' });
+}
+
+function setupRegionHover(tbody, regions) {
+  const overlay = document.getElementById('region-highlight-overlay');
+  if (!overlay) return;
+  overlay.innerHTML = '';
+  tbody.querySelectorAll('tr[data-region-id]').forEach((tr) => {
+    tr.addEventListener('mouseenter', () => {
+      const id = parseInt(tr.dataset.regionId, 10);
+      const r = regions.find((x) => x.id === id);
+      if (!r || !r.bbox) return;
+      tbody.querySelectorAll('tr').forEach((row) => row.classList.remove('region-hover'));
+      tr.classList.add('region-hover');
+      const box = document.createElement('div');
+      box.className = 'highlight-box';
+      const imgEl = document.getElementById('compare-after-img');
+      if (!imgEl || !imgEl.offsetWidth) return;
+      const slider = document.getElementById('compare-slider');
+      if (!slider) return;
+      const rw = slider.offsetWidth;
+      const rh = slider.offsetHeight;
+      const imgW = imgEl.naturalWidth || 1;
+      const imgH = imgEl.naturalHeight || 1;
+      const scaleX = rw / imgW;
+      const scaleY = rh / imgH;
+      const scale = Math.min(scaleX, scaleY);
+      const drawW = imgW * scale;
+      const drawH = imgH * scale;
+      const offsetX = (rw - drawW) / 2;
+      const offsetY = (rh - drawH) / 2;
+      box.style.left = (offsetX + r.bbox.x * scale) + 'px';
+      box.style.top = (offsetY + r.bbox.y * scale) + 'px';
+      box.style.width = (r.bbox.w * scale) + 'px';
+      box.style.height = (r.bbox.h * scale) + 'px';
+      overlay.appendChild(box);
+    });
+    tr.addEventListener('mouseleave', () => {
+      tr.classList.remove('region-hover');
+      overlay.innerHTML = '';
+    });
+  });
 }
 
 // ---- Compare slider ----
@@ -452,40 +507,107 @@ function resetCompareSlider() {
   if (h) h.style.left = '50%';
 }
 
+// ---- Zoom (result and history view) ----
+let currentZoom = 1;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.25;
+
+function applyZoom() {
+  const slider = document.getElementById('compare-slider');
+  const levelEl = document.getElementById('zoom-level');
+  if (!slider) return;
+  slider.style.transform = `scale(${currentZoom})`;
+  slider.style.transformOrigin = 'center top';
+  if (levelEl) levelEl.textContent = Math.round(currentZoom * 100) + '%';
+}
+
+function resetZoom() {
+  currentZoom = 1;
+  applyZoom();
+}
+
+function initZoom() {
+  const zoomIn = document.getElementById('zoom-in');
+  const zoomOut = document.getElementById('zoom-out');
+  const wrapper = document.getElementById('zoom-wrapper');
+  if (zoomIn) zoomIn.addEventListener('click', () => {
+    currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP);
+    applyZoom();
+  });
+  if (zoomOut) zoomOut.addEventListener('click', () => {
+    currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP);
+    applyZoom();
+  });
+  if (wrapper) {
+    wrapper.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      if (e.deltaY < 0) currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP);
+      else currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP);
+      applyZoom();
+    }, { passive: false });
+  }
+}
+initZoom();
+
 initCompareSlider();
 
-// ---- History with delete ----
+// ---- History table: load and row click to open result ----
 async function loadHistory() {
-  const list = document.getElementById('history-list');
-  if (!list) return;
+  const tbody = document.getElementById('history-tbody');
+  const emptyEl = document.getElementById('history-empty');
+  const tableWrap = document.querySelector('.history-table-wrap');
+  if (!tbody) return;
   try {
     const items = await api('GET', '/api/history');
     if (!items || items.length === 0) {
-      list.innerHTML = '<div class="history-empty">No detection runs yet. Upload images above to get started.</div>';
+      if (tableWrap) tableWrap.classList.add('hidden');
+      if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'No detection runs yet. Upload images above to get started.'; }
       return;
     }
-    list.innerHTML = items.map((r) => {
-      const loc = [r.village, r.zone].filter(Boolean).join(', ');
+    if (tableWrap) tableWrap.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    tbody.innerHTML = items.map((r) => {
+      const beforeThumb = r.beforeThumbUrl ? `<img src="${r.beforeThumbUrl}" alt="Before" loading="lazy" />` : '<span class="dim">—</span>';
+      const afterThumb = r.afterThumbUrl ? `<img src="${r.afterThumbUrl}" alt="After" loading="lazy" />` : '<span class="dim">—</span>';
+      const resultThumb = r.overlayUrl ? `<img src="${r.overlayUrl}" alt="Result" loading="lazy" />` : '<span class="dim">—</span>';
       return `
-      <div class="history-item" data-id="${r.id}">
-        <div class="history-info">
-          <div class="history-title">${escapeHtml(r.title)}</div>
-          <div class="history-meta">
-            <span class="tag">${r.method}</span>
-            ${loc ? `<span class="tag tag-loc">${escapeHtml(loc)}</span>` : ''}
-            ${r.changePercentage.toFixed(2)}% changed &middot; ${r.regionsCount} regions &middot; ${formatDate(r.createdAt)}
-          </div>
-        </div>
-        <div class="history-actions">
-          ${r.overlayUrl ? `<a href="${r.overlayUrl}" target="_blank" class="btn btn-secondary btn-sm">View</a>` : ''}
-          <button class="btn-icon" title="Delete this run" onclick="confirmDelete(${r.id})">
+      <tr data-run-id="${r.id}">
+        <td class="timestamp-cell">${formatDate(r.createdAt)}</td>
+        <td class="thumb-cell">${beforeThumb}</td>
+        <td class="thumb-cell">${afterThumb}</td>
+        <td class="thumb-cell">${resultThumb}</td>
+        <td class="stats-cell">${r.regionsCount} regions</td>
+        <td class="stats-cell">${r.changePercentage.toFixed(2)}%</td>
+        <td class="actions-cell">
+          ${r.overlayUrl ? `<a href="${r.overlayUrl}" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()">View</a>` : ''}
+          <button type="button" class="btn-icon" title="Delete" onclick="event.stopPropagation(); confirmDelete(${r.id})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           </button>
-        </div>
-      </div>`;
+        </td>
+      </tr>`;
     }).join('');
+
+    tbody.querySelectorAll('tr[data-run-id]').forEach((tr) => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('.actions-cell')) return;
+        const id = parseInt(tr.dataset.runId, 10);
+        openRunFromHistory(id);
+      });
+    });
   } catch (_) {
-    list.innerHTML = '<div class="history-empty">Could not load history.</div>';
+    if (tableWrap) tableWrap.classList.add('hidden');
+    if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.textContent = 'Could not load history.'; }
+  }
+}
+
+async function openRunFromHistory(runId) {
+  try {
+    const data = await api('GET', '/api/history/' + runId);
+    showResult(data);
+  } catch (err) {
+    showError('dashboard-error', err.message || 'Failed to load run.');
   }
 }
 
@@ -515,13 +637,11 @@ document.getElementById('modal-confirm')?.addEventListener('click', async () => 
   pendingDeleteId = null;
   try {
     await api('DELETE', `/api/history/${id}`);
-    // Animate removal
-    const item = document.querySelector(`.history-item[data-id="${id}"]`);
-    if (item) {
-      item.style.transition = 'all 0.3s ease';
-      item.style.opacity = '0';
-      item.style.transform = 'translateX(20px)';
-      setTimeout(() => { item.remove(); loadHistory(); }, 300);
+    const row = document.querySelector(`tr[data-run-id="${id}"]`);
+    if (row) {
+      row.style.transition = 'all 0.3s ease';
+      row.style.opacity = '0';
+      setTimeout(() => loadHistory(), 300);
     } else {
       loadHistory();
     }
