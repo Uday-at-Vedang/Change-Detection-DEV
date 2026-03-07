@@ -14,7 +14,13 @@ from .models import User
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-fallback-key-change-in-production")
+_FALLBACK_KEY = "dev-fallback-key-change-in-production"
+SECRET_KEY = os.environ.get("SECRET_KEY", _FALLBACK_KEY)
+if SECRET_KEY == _FALLBACK_KEY:
+    logger.warning(
+        "SECRET_KEY env var not set — using insecure fallback. "
+        "Set SECRET_KEY to a random string in production!"
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 COOKIE_NAME = "satellite_token"

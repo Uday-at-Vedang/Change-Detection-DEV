@@ -358,9 +358,10 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
 
 // ---- Show result ----
 function readFileAsDataURL(file) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
 }
@@ -386,11 +387,15 @@ function showResult(data) {
 
   const locParts = [data.village, data.zone].filter(Boolean);
   const locLabel = locParts.length ? locParts.join(', ') : '—';
+  const stats = data.statistics || {};
+  const pct = (stats.changePercentage ?? 0).toFixed(2);
+  const chPx = stats.changedPixels ?? 0;
+  const totPx = stats.totalPixels ?? 0;
 
   statsEl.innerHTML = `
-    <div class="stat-box"><div class="value">${data.statistics.changePercentage.toFixed(2)}%</div><div class="label">Changed</div></div>
-    <div class="stat-box"><div class="value" title="${data.statistics.changedPixels.toLocaleString()}">${formatCompact(data.statistics.changedPixels)}</div><div class="label">Changed px</div></div>
-    <div class="stat-box"><div class="value" title="${data.statistics.totalPixels.toLocaleString()}">${formatCompact(data.statistics.totalPixels)}</div><div class="label">Total px</div></div>
+    <div class="stat-box"><div class="value">${pct}%</div><div class="label">Changed</div></div>
+    <div class="stat-box"><div class="value" title="${chPx.toLocaleString()}">${formatCompact(chPx)}</div><div class="label">Changed px</div></div>
+    <div class="stat-box"><div class="value" title="${totPx.toLocaleString()}">${formatCompact(totPx)}</div><div class="label">Total px</div></div>
     <div class="stat-box"><div class="value">${(data.regions || []).length}</div><div class="label">Regions</div></div>
     <div class="stat-box stat-box-wide"><div class="value value-sm" title="${locLabel}">${locLabel}</div><div class="label">Location</div></div>
   `;
@@ -620,7 +625,7 @@ async function loadHistory() {
         <td class="thumb-cell">${afterThumb}</td>
         <td class="thumb-cell">${resultThumb}</td>
         <td class="stats-cell">${r.regionsCount} regions</td>
-        <td class="stats-cell">${r.changePercentage.toFixed(2)}%</td>
+        <td class="stats-cell">${(r.changePercentage ?? 0).toFixed(2)}%</td>
         <td class="actions-cell">
           <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openRunFromHistory(${r.id})">View</button>
           <button type="button" class="btn-icon" title="Delete" onclick="event.stopPropagation(); confirmDelete(${r.id})">

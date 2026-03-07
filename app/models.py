@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Float
 from sqlalchemy.orm import relationship
 
 from .database import Base
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -12,7 +16,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     detections = relationship("DetectionRun", back_populates="user", order_by="desc(DetectionRun.created_at)")
 
@@ -34,7 +38,7 @@ class DetectionRun(Base):
     after_thumb_path = Column(String(512), default="")
     zone = Column(String(128), default="")
     village = Column(String(128), default="")
-    regions_json = Column(Text, default="[]")  # JSON list of regions
-    created_at = Column(DateTime, default=datetime.utcnow)
+    regions_json = Column(Text, default="[]")
+    created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="detections")

@@ -25,8 +25,10 @@ from .auth import (
 )
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
-# detection_engine (cv2, sklearn) imported lazily in /api/detect to speed up startup on HF Spaces
 from .notifier import send_notification
+
+import logging
+logger = logging.getLogger(__name__)
 
 # Create tables and run migrations without crashing the app (HF Spaces can restart if startup fails)
 try:
@@ -124,8 +126,8 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[REGISTER] Error: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Registration failed: {type(e).__name__}: {e}")
+        logger.exception("Registration failed")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {type(e).__name__}")
 
 
 @app.post("/api/auth/login")
@@ -139,8 +141,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[LOGIN] Error: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Login failed: {type(e).__name__}: {e}")
+        logger.exception("Login failed")
+        raise HTTPException(status_code=500, detail=f"Login failed: {type(e).__name__}")
 
 
 @app.post("/api/auth/logout")
@@ -234,25 +236,34 @@ async def detect(
         overlay_path.parent.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
-    Image.fromarray(result_image).save(overlay_path)
+    try:
+        Image.fromarray(result_image).save(overlay_path)
+    except Exception as exc:
+        logger.error("Failed to save overlay: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save result image")
     relative_overlay = f"overlays/{overlay_filename}"
 
     # Save full-resolution before image (used by the before/after slider from history)
-    before_full_file = OVERLAYS_DIR / f"{base_name}_before.png"
-    before_pil.save(before_full_file)
-    relative_before_full = f"overlays/{base_name}_before.png"
+    relative_before_full = ""
+    relative_before_thumb = ""
+    relative_after_thumb = ""
+    try:
+        before_full_file = OVERLAYS_DIR / f"{base_name}_before.png"
+        before_pil.save(before_full_file)
+        relative_before_full = f"overlays/{base_name}_before.png"
 
-    # Save small thumbnails for the history table rows
-    before_thumb_file = OVERLAYS_DIR / f"{base_name}_before_thumb.png"
-    after_thumb_file = OVERLAYS_DIR / f"{base_name}_after_thumb.png"
-    before_thumb_pil = before_pil.copy()
-    before_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
-    before_thumb_pil.save(before_thumb_file)
-    after_thumb_pil = after_pil.copy()
-    after_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
-    after_thumb_pil.save(after_thumb_file)
-    relative_before_thumb = f"overlays/{base_name}_before_thumb.png"
-    relative_after_thumb = f"overlays/{base_name}_after_thumb.png"
+        before_thumb_file = OVERLAYS_DIR / f"{base_name}_before_thumb.png"
+        after_thumb_file = OVERLAYS_DIR / f"{base_name}_after_thumb.png"
+        before_thumb_pil = before_pil.copy()
+        before_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
+        before_thumb_pil.save(before_thumb_file)
+        after_thumb_pil = after_pil.copy()
+        after_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
+        after_thumb_pil.save(after_thumb_file)
+        relative_before_thumb = f"overlays/{base_name}_before_thumb.png"
+        relative_after_thumb = f"overlays/{base_name}_after_thumb.png"
+    except Exception as exc:
+        logger.warning("Failed to save thumbnails: %s", exc)
 
     regions_serializable = [
         {
@@ -294,11 +305,8 @@ async def detect(
     db.add(run)
     db.commit()
     db.refresh(run)
-    # Base64 overlay for immediate display
-    buf = io.BytesIO()
-    Image.fromarray(result_image).save(buf, format="PNG")
-    buf.seek(0)
-    overlay_b64 = base64.b64encode(buf.read()).decode("utf-8")
+    # Read already-saved overlay for base64 (avoids re-encoding the numpy array)
+    overlay_b64 = base64.b64encode(overlay_path.read_bytes()).decode("utf-8")
 
     # Send email notification if requested
     notification_sent = False
@@ -393,7 +401,10 @@ def get_run(
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    regions = json.loads(run.regions_json) if run.regions_json else []
+    try:
+        regions = json.loads(run.regions_json) if run.regions_json else []
+    except (json.JSONDecodeError, TypeError):
+        regions = []
     return {
         "id": run.id,
         "title": run.title,

@@ -5,6 +5,7 @@ Credentials are read from environment variables — never hardcoded.
 """
 import logging
 import os
+import re
 import smtplib
 import ssl
 from datetime import datetime, timezone
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
-SMTP_USER = os.environ.get("SMTP_USER", "vedangofficeserver@gmail.com")
+SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "ChangeDetection.html"
@@ -86,7 +87,6 @@ def build_email_body(
     if regions:
         html = html.replace("{{#regions}}", "").replace("{{/regions}}", "")
     else:
-        import re
         html = re.sub(r"\{\{#regions\}\}.*?\{\{/regions\}\}", "", html, flags=re.DOTALL)
 
     return html
@@ -107,8 +107,8 @@ def send_notification(
     Send detection report email to the recipient.
     Returns True on success, False on failure (never raises).
     """
-    if not SMTP_PASS:
-        logger.warning("SMTP_PASS not set — skipping email notification")
+    if not SMTP_PASS or not SMTP_USER:
+        logger.warning("SMTP_USER or SMTP_PASS not set — skipping email notification")
         return False
 
     html_body = build_email_body(

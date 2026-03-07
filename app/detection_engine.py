@@ -3,7 +3,6 @@ Satellite Change Detection Engine v2
 High-accuracy detection with multi-channel analysis, SSIM, texture features,
 adaptive thresholding, and improved object classification.
 """
-import io
 import numpy as np
 import cv2
 from PIL import Image
@@ -409,9 +408,9 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     5. Fill holes inside regions
     6. Erode-then-dilate to break thin noise bridges between separate changes
     """
+    mask = mask.copy()
     h, w = mask.shape[:2]
 
-    # 1. Remove false positives along image border (common with registration)
     if border_margin > 0:
         mask[:border_margin, :] = 0
         mask[-border_margin:, :] = 0
@@ -456,18 +455,18 @@ def _severity_from_region(region, total_pixels):
     """
     Classify change severity from area and confidence.
     Green = minor, Yellow = moderate, Red = major.
-    Used for color-coded bounding boxes and table summary.
+    Area is the primary signal; confidence acts as a small bonus.
     """
     area = region.get("area", 0)
     confidence = region.get("confidence", 0.0)
     if total_pixels <= 0:
         return "minor"
     area_ratio = area / total_pixels
-    # Combined score: larger area and higher confidence -> more severe
-    score = area_ratio * 500 + confidence * 2
-    if score < 0.5:
+    # Area-dominant score: area ratio (0-1) mapped to 0-10, confidence adds 0-0.3
+    score = area_ratio * 1000 + confidence * 0.3
+    if score < 1.0:
         return "minor"
-    if score < 1.2:
+    if score < 4.0:
         return "moderate"
     return "major"
 
@@ -506,7 +505,6 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
     total_px = total_pixels if total_pixels is not None else (img2.shape[0] * img2.shape[1])
 
     if regions:
-        # Scale line thickness to image size so boxes are visible at any resolution
         diag = np.sqrt(img2.shape[0]**2 + img2.shape[1]**2)
         line_thickness = max(2, int(diag / 400))
 
@@ -515,15 +513,17 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
             severity = r.get("severity") or _severity_from_region(r, total_px)
             color = _SEVERITY_COLORS.get(severity, (255, 255, 255))
 
-            # Semi-transparent filled rect behind the box for contrast
-            box_overlay = overlay_uint8.copy()
-            cv2.rectangle(box_overlay, (x, y), (x + w, y + h), color, cv2.FILLED)
-            cv2.addWeighted(box_overlay, 0.12, overlay_uint8, 0.88, 0, overlay_uint8)
+            # Semi-transparent fill using only the ROI (avoids full-image copy)
+            x1c = max(0, x)
+            y1c = max(0, y)
+            x2c = min(overlay_uint8.shape[1], x + w)
+            y2c = min(overlay_uint8.shape[0], y + h)
+            roi = overlay_uint8[y1c:y2c, x1c:x2c]
+            fill = np.full_like(roi, color, dtype=np.uint8)
+            cv2.addWeighted(fill, 0.12, roi, 0.88, 0, roi)
 
-            # Color-coded bounding box
             cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, line_thickness)
 
-            # Numbered label
             rid = r.get("id", 0)
             label = str(rid)
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -627,17 +627,6 @@ def _is_transient_object(area, w, h, features):
         return True
 
     return False
-
-
-# Ground-level change categories only
-GROUND_CHANGE_TYPES = [
-    "New Construction/Building",
-    "Demolition/Clearing",
-    "Vegetation Change",
-    "Water Body Change",
-    "Road/Pavement Change",
-    "Bare Land/Soil Change",
-]
 
 
 def classify_object_type(image_region, bbox):
@@ -800,7 +789,7 @@ def classify_object_type(image_region, bbox):
     return best, min(conf, 1.0)
 
 
-def classify_with_ensemble(image_region, bbox, num_sub=4):
+def classify_with_ensemble(image_region, bbox):
     """Ensemble: classify full region + sub-regions, vote with confidence weighting."""
     x, y, w, h = bbox
     sub_boxes = [(x, y, w, h)]  # full region
