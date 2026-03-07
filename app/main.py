@@ -26,27 +26,36 @@ from .auth import (
 )
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
-from .detection_engine import run_detection
+# detection_engine (cv2, sklearn) imported lazily in /api/detect to speed up startup on HF Spaces
 from .notifier import send_notification
 
-Base.metadata.create_all(bind=engine, checkfirst=True)
-
-# Lightweight migration: add columns introduced after initial schema
-with engine.connect() as conn:
-    for col, col_type in [
-        ("zone", "VARCHAR(128) DEFAULT ''"),
-        ("village", "VARCHAR(128) DEFAULT ''"),
-        ("before_thumb_path", "VARCHAR(512) DEFAULT ''"),
-        ("after_thumb_path", "VARCHAR(512) DEFAULT ''"),
-    ]:
-        try:
-            conn.execute(sa_text(
-                f"ALTER TABLE detection_runs ADD COLUMN {col} {col_type}"))
-            conn.commit()
-        except Exception:
-            conn.rollback()
+# Create tables and run migrations without crashing the app (HF Spaces can restart if startup fails)
+try:
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    with engine.connect() as conn:
+        for col, col_type in [
+            ("zone", "VARCHAR(128) DEFAULT ''"),
+            ("village", "VARCHAR(128) DEFAULT ''"),
+            ("before_thumb_path", "VARCHAR(512) DEFAULT ''"),
+            ("after_thumb_path", "VARCHAR(512) DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(sa_text(
+                    f"ALTER TABLE detection_runs ADD COLUMN {col} {col_type}"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+except Exception as e:
+    import logging
+    logging.getLogger("uvicorn.error").warning("Startup migration skipped: %s", e)
 
 app = FastAPI(title="AI Change Detection", version="2.0.0")
+
+
+@app.get("/health")
+def health():
+    """Lightweight health check so Hugging Face can mark the Space as running quickly."""
+    return {"status": "ok"}
 
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -210,6 +219,7 @@ async def detect(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    from .detection_engine import run_detection
     change_mask, result_image, stats, change_regions = run_detection(
         before_pil, after_pil, method=method, enable_registration=enable_registration, enable_normalization=enable_normalization
     )
