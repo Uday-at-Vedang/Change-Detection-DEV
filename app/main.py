@@ -6,7 +6,6 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -61,7 +60,10 @@ def health():
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 OVERLAYS_DIR = DATA_DIR / "overlays"
-OVERLAYS_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    OVERLAYS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 THUMB_MAX_SIZE = 200  # max width or height for history thumbnails
 
 if STATIC_DIR.exists():
@@ -227,6 +229,10 @@ async def detect(
     base_name = f"{user.id}_{uuid.uuid4().hex}"
     overlay_filename = base_name + ".png"
     overlay_path = OVERLAYS_DIR / overlay_filename
+    try:
+        overlay_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     Image.fromarray(result_image).save(overlay_path)
     relative_overlay = f"overlays/{overlay_filename}"
 

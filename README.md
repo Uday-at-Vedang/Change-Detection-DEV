@@ -84,3 +84,10 @@ change_detection_webapp/
 - `POST /api/detect` — form: `before`, `after` (files), `method`, `title`, etc. → returns stats, regions, overlay base64
 - `GET /api/history` — list of current user’s runs
 - `GET /api/overlay/<path>` — serve saved overlay image
+- `GET /health` — lightweight health check (no DB)
+
+## Hugging Face: Space stuck on “Restarting”
+
+1. Open your Space → **Settings** → under **Build**, click **Clear build cache** → Save. Then trigger a rebuild (push a commit or click **Restart**).
+2. Check **Logs** (Build logs + App logs) for Python errors or “Killed” (out of memory).
+3. In **Settings** → **Hardware**, try a slightly larger CPU/memory if available.

@@ -10,7 +10,10 @@ BASE_DIR = Path(__file__).resolve().parent
 _home_data = Path.home() / "data"
 _local_data = BASE_DIR.parent / "data"
 DATA_DIR = _home_data if os.environ.get("SPACE_ID") else _local_data
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass  # avoid crashing if read-only or permission issue (e.g. some HF environments)
 
 DB_PATH = DATA_DIR / "satellite_app.db"
 
