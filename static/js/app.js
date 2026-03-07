@@ -397,17 +397,49 @@ function showResult(data) {
 
   const beforeImg = document.getElementById('compare-before-img');
   const afterImg = document.getElementById('compare-after-img');
+
+  // "Before" side = original before image, "After" side = result overlay
+  const sliderSection = document.querySelector('.zoom-slider-section');
+  let hasBefore = false;
+
   if (data.overlayBase64Png) {
+    // Fresh detection: result image is base64, before image from file picker
     afterImg.src = 'data:image/png;base64,' + data.overlayBase64Png;
     const beforeFile = document.getElementById('file-before').files?.[0];
-    if (beforeFile) readFileAsDataURL(beforeFile).then((url) => { beforeImg.src = url; });
+    if (beforeFile) {
+      hasBefore = true;
+      readFileAsDataURL(beforeFile).then((url) => { beforeImg.src = url; });
+    } else if (data.beforeThumbUrl) {
+      hasBefore = true;
+      beforeImg.src = data.beforeThumbUrl;
+    }
   } else {
+    // Loading from history: use stored URLs
     afterImg.src = data.overlayUrl || '';
-    beforeImg.src = data.beforeThumbUrl || data.overlayUrl || '';
+    if (data.beforeThumbUrl) {
+      hasBefore = true;
+      beforeImg.src = data.beforeThumbUrl;
+    }
   }
 
-  resetCompareSlider();
-  resetZoom();
+  // If no before image available, still show the overlay but hide the slider handle
+  if (!hasBefore) {
+    beforeImg.src = afterImg.src;
+  }
+
+  // Wait for images to load before positioning the slider, then reset
+  let loaded = 0;
+  const onReady = () => {
+    loaded++;
+    if (loaded >= 2) {
+      resetCompareSlider();
+      resetZoom();
+    }
+  };
+  afterImg.onload = onReady;
+  beforeImg.onload = onReady;
+  // Fallback for cached images (onload won't fire if already loaded)
+  setTimeout(() => { resetCompareSlider(); resetZoom(); }, 400);
 
   tbody.innerHTML = '';
   const regions = (data.regions || []).slice(0, 50);
