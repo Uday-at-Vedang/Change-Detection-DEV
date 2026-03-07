@@ -375,11 +375,14 @@ function formatCompact(n) {
 let currentResultData = null;
 
 function showResult(data) {
-  const card = document.getElementById('result-card');
+  const modal = document.getElementById('result-modal');
   const statsEl = document.getElementById('result-stats');
   const tbody = document.getElementById('regions-tbody');
+  const titleEl = document.getElementById('result-modal-title');
 
   currentResultData = data;
+
+  if (titleEl) titleEl.textContent = data.title || 'Result View';
 
   const locParts = [data.village, data.zone].filter(Boolean);
   const locLabel = locParts.length ? locParts.join(', ') : '—';
@@ -433,9 +436,33 @@ function showResult(data) {
   });
 
   setupRegionHover(tbody, regions);
-  card.classList.remove('hidden');
-  card.scrollIntoView({ behavior: 'smooth' });
+  openResultModal();
 }
+
+function openResultModal() {
+  const modal = document.getElementById('result-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeResultModal() {
+  const modal = document.getElementById('result-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('result-modal-close')?.addEventListener('click', closeResultModal);
+document.getElementById('result-modal')?.addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeResultModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('result-modal');
+    if (modal && !modal.classList.contains('hidden')) closeResultModal();
+  }
+});
 
 function setupRegionHover(tbody, regions) {
   const overlay = document.getElementById('region-highlight-overlay');
@@ -581,7 +608,7 @@ async function loadHistory() {
         <td class="stats-cell">${r.regionsCount} regions</td>
         <td class="stats-cell">${r.changePercentage.toFixed(2)}%</td>
         <td class="actions-cell">
-          ${r.overlayUrl ? `<a href="${r.overlayUrl}" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()">View</a>` : ''}
+          <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openRunFromHistory(${r.id})">View</button>
           <button type="button" class="btn-icon" title="Delete" onclick="event.stopPropagation(); confirmDelete(${r.id})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           </button>

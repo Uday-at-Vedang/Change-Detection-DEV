@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Change Detection</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=17" />
 </head>
 <body>
   <div class="app">
@@ -241,65 +241,7 @@
         </form>
       </div>
 
-      <!-- Section 2: Result View -->
-      <div class="card hidden" id="result-card">
-        <div class="card-header">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--grad-start)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <h3>Result View</h3>
-        </div>
-        <div class="result-stats" id="result-stats"></div>
-
-        <!-- Zoom controls + Before/After slider -->
-        <div class="zoom-slider-section">
-          <div class="zoom-controls">
-            <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-            <span class="zoom-level" id="zoom-level">100%</span>
-            <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-          </div>
-          <div class="zoom-wrapper" id="zoom-wrapper">
-            <div class="compare-slider compare-slider-zoomed" id="compare-slider">
-              <div class="compare-before">
-                <img id="compare-before-img" alt="Before" draggable="false" />
-                <span class="compare-label compare-label-left">Before</span>
-              </div>
-              <div class="compare-after" id="compare-after-clip">
-                <img id="compare-after-img" alt="Changes detected" draggable="false" />
-                <span class="compare-label compare-label-right">Changes</span>
-              </div>
-              <div class="compare-handle" id="compare-handle">
-                <div class="compare-handle-line"></div>
-                <div class="compare-handle-knob">
-                  <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 10l4-5v10z" fill="currentColor"/><path d="M14 10l-4-5v10z" fill="currentColor"/></svg>
-                </div>
-                <div class="compare-handle-line"></div>
-              </div>
-              <!-- Overlay for highlighting region on table row hover -->
-              <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tabular change summary: hover row highlights box on image -->
-        <div class="regions-table-wrap">
-          <table class="regions-table" id="regions-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Change Type</th>
-                <th>Sub-Type</th>
-                <th>Severity</th>
-                <th>Confidence</th>
-                <th>Area (px)</th>
-                <th>Coordinates</th>
-                <th>Stories</th>
-                <th>Height</th>
-                <th>Stage</th>
-              </tr>
-            </thead>
-            <tbody id="regions-tbody"></tbody>
-          </table>
-        </div>
-      </div>
+      <!-- Result View lives in a modal (opened from detection or history "View") -->
 
       <!-- Section 3: History View (tabular, click row to open result) -->
       <div class="card mt-2 section-history">
@@ -329,6 +271,68 @@
     </section>
   </div>
 
+  <!-- Result modal (full-screen overlay opened from detection or history) -->
+  <div class="result-modal-backdrop hidden" id="result-modal">
+    <div class="result-modal">
+      <div class="result-modal-header">
+        <h3 id="result-modal-title">Result View</h3>
+        <button type="button" class="btn-close-modal" id="result-modal-close" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="result-stats" id="result-stats"></div>
+
+      <div class="zoom-slider-section">
+        <div class="zoom-controls">
+          <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+          <span class="zoom-level" id="zoom-level">100%</span>
+          <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
+        <div class="zoom-wrapper" id="zoom-wrapper">
+          <div class="compare-slider compare-slider-zoomed" id="compare-slider">
+            <div class="compare-before">
+              <img id="compare-before-img" alt="Before" draggable="false" />
+              <span class="compare-label compare-label-left">Before</span>
+            </div>
+            <div class="compare-after" id="compare-after-clip">
+              <img id="compare-after-img" alt="Changes detected" draggable="false" />
+              <span class="compare-label compare-label-right">Changes</span>
+            </div>
+            <div class="compare-handle" id="compare-handle">
+              <div class="compare-handle-line"></div>
+              <div class="compare-handle-knob">
+                <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 10l4-5v10z" fill="currentColor"/><path d="M14 10l-4-5v10z" fill="currentColor"/></svg>
+              </div>
+              <div class="compare-handle-line"></div>
+            </div>
+            <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="regions-table-wrap">
+        <table class="regions-table" id="regions-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Change Type</th>
+              <th>Sub-Type</th>
+              <th>Severity</th>
+              <th>Confidence</th>
+              <th>Area (px)</th>
+              <th>Coordinates</th>
+              <th>Stories</th>
+              <th>Height</th>
+              <th>Stage</th>
+            </tr>
+          </thead>
+          <tbody id="regions-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- Delete confirm modal -->
   <div class="modal-backdrop hidden" id="modal-delete">
     <div class="modal">
@@ -341,6 +345,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=16"></script>
+  <script src="/static/js/app.js?v=17"></script>
 </body>
 </html>
