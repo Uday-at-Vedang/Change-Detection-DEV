@@ -29,8 +29,11 @@ from .models import User, DetectionRun
 from .notifier import send_notification, send_test_email
 
 import logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+logger.info("Importing AI Change Detection app module")
 
 _IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -45,6 +48,7 @@ def _isoformat_ist(dt):
 
 # Create tables and run migrations without crashing the app (HF Spaces can restart if startup fails)
 try:
+    logger.info("Running database initialization")
     Base.metadata.create_all(bind=engine, checkfirst=True)
     with engine.connect() as conn:
         for col, col_type in [
@@ -60,6 +64,7 @@ try:
                 conn.commit()
             except Exception:
                 conn.rollback()
+    logger.info("Database initialization complete")
 except Exception as e:
     import logging
     logging.getLogger("uvicorn.error").warning("Startup migration skipped: %s", e)
@@ -72,6 +77,11 @@ def health():
     """Lightweight health check so Hugging Face can mark the Space as running quickly."""
     from datetime import datetime
     return {"status": "ok", "version": "2.1.0", "server_time_ist": _isoformat_ist(datetime.now(timezone.utc))}
+
+
+@app.on_event("startup")
+def log_startup():
+    logger.info("FastAPI startup event completed")
 
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"

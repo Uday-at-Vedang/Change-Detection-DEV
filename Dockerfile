@@ -19,7 +19,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Cache-bust: increment to force a fresh COPY on HF Spaces
-ENV APP_BUILD=2
+ENV APP_BUILD=3
 
 # Copy application code
 COPY . .
@@ -29,10 +29,10 @@ RUN mkdir -p data/overlays && chown -R appuser:appuser /app
 
 USER appuser
 
-# HF Spaces expects port 7860; Render expects 10000
-# Use PORT env var with 7860 as default (works for both)
+# HF Spaces expects port 7860.
 ENV PORT=7860
+ENV PYTHONUNBUFFERED=1
 EXPOSE 7860
 
-# Single process: uvicorn only (simpler for HF Spaces; avoid gunicorn restart issues)
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# Use direct exec form so container startup is simpler and logs flush reliably.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--log-level", "info"]
