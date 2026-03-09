@@ -26,7 +26,7 @@ from .auth import (
 )
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
-from .notifier import send_notification
+from .notifier import send_notification, send_test_email
 
 import logging
 logger = logging.getLogger(__name__)
@@ -103,6 +103,17 @@ class UserResponse(BaseModel):
     id: int
     email: str
     full_name: str
+
+
+class EmailRequest(BaseModel):
+    email: str
+
+
+def _load_regions_json(raw_regions: Optional[str]):
+    try:
+        return json.loads(raw_regions) if raw_regions else []
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 # --- Auth routes ---
@@ -324,8 +335,9 @@ async def detect(
 
     # Send email notification if requested
     notification_sent = False
+    notification_error = None
     if notify_email and notify_email.strip():
-        notification_sent = send_notification(
+        notification_sent, notification_error = send_notification(
             recipient=notify_email.strip(),
             title=title,
             method=method,
@@ -356,8 +368,22 @@ async def detect(
         "beforeThumbUrl": f"/api/overlay/{relative_before_thumb}",
         "afterThumbUrl": f"/api/overlay/{relative_after_thumb}",
         "notificationSent": notification_sent,
+        "notificationError": notification_error,
         "createdAt": _isoformat_ist(run.created_at),
     }
+
+
+@app.post("/api/notify/test")
+def notify_test(
+    data: EmailRequest,
+    user: Optional[User] = Depends(get_current_user),
+):
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+    sent, error = send_test_email(data.email.strip())
+    if not sent:
+        raise HTTPException(status_code=400, detail=error or "Failed to send test email")
+    return {"ok": True, "message": f"Test email sent to {data.email.strip()}."}
 
 
 @app.get("/api/overlay/{path:path}")
@@ -415,10 +441,7 @@ def get_run(
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    try:
-        regions = json.loads(run.regions_json) if run.regions_json else []
-    except (json.JSONDecodeError, TypeError):
-        regions = []
+    regions = _load_regions_json(run.regions_json)
     return {
         "id": run.id,
         "title": run.title,
@@ -438,6 +461,36 @@ def get_run(
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if (getattr(run, "after_thumb_path", None) or "").strip() else None,
         "createdAt": _isoformat_ist(run.created_at),
     }
+
+
+@app.post("/api/history/{run_id}/notify")
+def notify_run(
+    run_id: int,
+    data: EmailRequest,
+    user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+    run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    regions = _load_regions_json(run.regions_json)
+    sent, error = send_notification(
+        recipient=data.email.strip(),
+        title=run.title,
+        method=run.method,
+        zone=run.zone or "",
+        village=run.village or "",
+        change_pct=float(run.change_percentage),
+        changed_px=int(run.changed_pixels),
+        total_px=int(run.total_pixels),
+        regions=regions,
+    )
+    if not sent:
+        raise HTTPException(status_code=400, detail=error or "Failed to send report email")
+    return {"ok": True, "message": f"Report email sent to {data.email.strip()}."}
 
 
 # --- Delete history run ---

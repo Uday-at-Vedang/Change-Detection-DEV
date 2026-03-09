@@ -465,9 +465,23 @@ input:focus, select:focus, textarea:focus {
 .notify-email-group input {
   width: 100%;
 }
+.notify-email-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+.notify-email-actions .btn {
+  flex-shrink: 0;
+}
+.notify-help {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
 @media (max-width: 640px) {
   .notify-row { flex-direction: column; align-items: stretch; }
   .notify-email-group { min-width: 100%; }
+  .notify-email-actions { flex-direction: column; }
 }
 
 /* ---- Upload zones ---- */

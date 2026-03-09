@@ -30,6 +30,10 @@ function showSuccess(id, msg) {
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || '').trim());
+}
+
 async function api(method, path, options = {}) {
   const headers = { ...options.headers };
   const token = getToken();
@@ -288,8 +292,58 @@ const DELHI_ZONES = {
       group.classList.add('hidden');
       document.getElementById('notify-email').value = '';
     }
+    updateNotifyActionState();
   });
 })();
+
+function updateNotifyActionState() {
+  const cb = document.getElementById('detect-notify');
+  const btn = document.getElementById('notify-send-btn');
+  const help = document.getElementById('notify-help');
+  if (!btn || !cb) return;
+  btn.disabled = !cb.checked;
+  if (currentResultData?.id) {
+    btn.textContent = 'Send Report';
+    if (help) help.textContent = 'Send the currently open result report to this email address, or run a new detection to auto-send.';
+  } else {
+    btn.textContent = 'Send Test';
+    if (help) help.textContent = 'Use Send Test to verify email delivery, or run detection to send the report automatically.';
+  }
+}
+
+document.getElementById('notify-send-btn')?.addEventListener('click', async () => {
+  hideError('dashboard-error');
+  const cb = document.getElementById('detect-notify');
+  const input = document.getElementById('notify-email');
+  const btn = document.getElementById('notify-send-btn');
+  const email = (input?.value || '').trim();
+
+  if (!cb?.checked) {
+    showError('dashboard-error', 'Enable "Notify via Email" first.');
+    return;
+  }
+  if (!isValidEmail(email)) {
+    showError('dashboard-error', 'Please enter a valid email address.');
+    return;
+  }
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  try {
+    const path = currentResultData?.id
+      ? `/api/history/${currentResultData.id}/notify`
+      : '/api/notify/test';
+    const data = await api('POST', path, { body: JSON.stringify({ email }) });
+    showSuccess('dashboard-success', data?.message || 'Email sent successfully.');
+  } catch (err) {
+    showError('dashboard-error', err.message || 'Failed to send email.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+    updateNotifyActionState();
+  }
+});
 
 // ---- Run detection ----
 document.getElementById('form-detect')?.addEventListener('submit', async (e) => {
@@ -323,7 +377,7 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   const notifyInput = document.getElementById('notify-email');
   if (notifyCb?.checked) {
     const email = (notifyInput?.value || '').trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!isValidEmail(email)) {
       showError('dashboard-error', 'Please enter a valid email address for notification.');
       btn.disabled = false;
       loading.classList.add('hidden');
@@ -348,7 +402,7 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
     if (notifyCbDone?.checked) {
       notifyMsg = data.notificationSent
         ? ' Notification email sent.'
-        : ' ⚠ Email notification failed — check SMTP credentials.';
+        : ` Email notification failed${data.notificationError ? `: ${data.notificationError}` : '.'}`;
     }
     showSuccess('dashboard-success', 'Detection complete!' + notifyMsg);
     loadHistory();
@@ -382,6 +436,8 @@ let _regionRows = [];       // all region <tr> elements for pagination
 let _regionList = [];        // matching data objects
 const REGIONS_PER_PAGE = 10;
 let _regionPage = 0;
+
+updateNotifyActionState();
 
 function showResult(data) {
   const modal = document.getElementById('result-modal');
@@ -464,6 +520,7 @@ function showResult(data) {
 
   _regionPage = 0;
   renderRegionPage();
+  updateNotifyActionState();
   openResultModal();
 }
 

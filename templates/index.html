@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Change Detection</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=17" />
+  <link rel="stylesheet" href="/static/css/style.css?v=18" />
 </head>
 <body>
   <div class="app">
@@ -228,7 +228,11 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                 Recipient Email
               </label>
-              <input type="email" id="notify-email" placeholder="recipient@example.com" />
+              <div class="notify-email-actions">
+                <input type="email" id="notify-email" placeholder="recipient@example.com" />
+                <button type="button" class="btn btn-secondary" id="notify-send-btn">Send Test</button>
+              </div>
+              <div class="notify-help" id="notify-help">Use Send Test to verify email delivery, or run detection to send the report automatically.</div>
             </div>
           </div>
           <div class="run-btn-wrap">
@@ -346,6 +350,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=23"></script>
+  <script src="/static/js/app.js?v=24"></script>
 </body>
 </html>
