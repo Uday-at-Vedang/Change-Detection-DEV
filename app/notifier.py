@@ -115,13 +115,13 @@ def _send_via_api(recipient: str, subject: str, html_body: str):
     url = EMAIL_API_URL.strip()
     try:
         import requests
-        # API expects multipart/form-data: ToEmail, Subject, Body, FileName, AttachmentBase64
+        # API requires all fields; use placeholders when no attachment (empty base64 = "")
         files = {
             "ToEmail": (None, recipient),
             "Subject": (None, subject),
             "Body": (None, html_body),
-            "FileName": (None, ""),
-            "AttachmentBase64": (None, ""),
+            "FileName": (None, "report.html"),
+            "AttachmentBase64": (None, "IA=="),  # base64 of single space when no attachment
         }
         resp = requests.post(
             url,
