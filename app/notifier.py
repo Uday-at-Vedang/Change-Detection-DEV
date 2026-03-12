@@ -1,8 +1,8 @@
 """
 Email notification module.
-Sends HTML-formatted emails via Resend HTTPS API (works on HF Spaces)
-or fallback to SMTP for local development.
-Credentials from environment variables only.
+Sends HTML-formatted detection reports via SMTP (e.g. Gmail).
+A custom email API (from your manager) can be integrated later via env/config.
+Credentials are read from environment variables.
 """
 import logging
 import os
@@ -19,15 +19,6 @@ logger = logging.getLogger(__name__)
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "ChangeDetection.html"
-
-# Resend: preferred on HF Spaces (HTTPS, no outbound SMTP)
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-RESEND_FROM = os.environ.get("RESEND_FROM", "AI Change Detection <onboarding@resend.dev>")
-
-if RESEND_API_KEY:
-    logger.info("Email: using Resend HTTPS API (RESEND_API_KEY set)")
-else:
-    logger.info("Email: using SMTP fallback (set RESEND_API_KEY for Hugging Face Spaces)")
 
 
 def _smtp_settings():
@@ -111,32 +102,11 @@ def build_email_body(
     return html
 
 
-def _send_via_resend(recipient: str, subject: str, html_body: str):
-    """Send email using Resend HTTPS API. Works on HF Spaces."""
-    if not RESEND_API_KEY:
-        return False, "RESEND_API_KEY is not set."
-    try:
-        import resend
-        resend.api_key = RESEND_API_KEY
-        r = resend.Emails.send({
-            "from": RESEND_FROM,
-            "to": [recipient],
-            "subject": subject,
-            "html": html_body,
-        })
-        # SDK may return object with .id or dict with "id"
-        ok = (getattr(r, "id", None) or (isinstance(r, dict) and r.get("id")) or r is not None)
-        if ok:
-            logger.info("Resend email sent to %s", recipient)
-            return True, None
-        return False, "Resend API returned no id."
-    except Exception as exc:
-        logger.exception("Resend send failed: %s", exc)
-        return False, f"{type(exc).__name__}: {exc}"
+def _send_html_email(recipient: str, subject: str, html_body: str):
+    """Send email via SMTP. Set SMTP_USER and SMTP_PASS (e.g. Gmail app password)."""
+    if not _valid_email(recipient):
+        return False, "Enter a valid recipient email address."
 
-
-def _send_via_smtp(recipient: str, subject: str, html_body: str):
-    """Send email via SMTP (for local dev; often blocked on HF)."""
     settings = _smtp_settings()
     smtp_user = settings["user"]
     smtp_pass = settings["password"]
@@ -144,7 +114,8 @@ def _send_via_smtp(recipient: str, subject: str, html_body: str):
     smtp_port = settings["port"]
 
     if not smtp_user or not smtp_pass:
-        return False, "SMTP credentials are not configured."
+        logger.warning("SMTP_USER or SMTP_PASS not set — skipping email notification")
+        return False, "SMTP credentials are not configured on the server."
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -160,25 +131,19 @@ def _send_via_smtp(recipient: str, subject: str, html_body: str):
             server.ehlo()
             server.login(smtp_user, smtp_pass)
             server.sendmail(smtp_user, recipient, msg.as_string())
-        logger.info("SMTP email sent to %s", recipient)
+        logger.info("Notification email sent to %s", recipient)
         return True, None
     except smtplib.SMTPAuthenticationError:
         logger.exception("SMTP authentication failed")
         return False, "SMTP authentication failed. Check the Gmail app password."
     except Exception as exc:
-        logger.error("SMTP failed to %s: %s: %s", recipient, type(exc).__name__, exc)
+        logger.error(
+            "Failed to send notification email to %s: %s: %s",
+            recipient,
+            type(exc).__name__,
+            exc,
+        )
         return False, f"{type(exc).__name__}: {exc}"
-
-
-def _send_html_email(recipient: str, subject: str, html_body: str):
-    """Send email: use Resend if API key set, else SMTP."""
-    if not _valid_email(recipient):
-        return False, "Enter a valid recipient email address."
-
-    if RESEND_API_KEY:
-        return _send_via_resend(recipient, subject, html_body)
-    # Fallback to SMTP (e.g. local dev)
-    return _send_via_smtp(recipient, subject, html_body)
 
 
 def send_notification(
@@ -201,14 +166,14 @@ def send_notification(
 
 
 def send_test_email(recipient: str):
-    """Send a small test email to verify delivery."""
+    """Send a small test email so SMTP configuration can be verified quickly."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     html_body = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #222;">
         <h2>AI Change Detection Email Test</h2>
         <p>This is a test email from the AI Change Detection application.</p>
-        <p>If you received this, the email configuration is working.</p>
+        <p>If you received this, the SMTP configuration is working.</p>
         <p><strong>Timestamp:</strong> {now}</p>
       </body>
     </html>
