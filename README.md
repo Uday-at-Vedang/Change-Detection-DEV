@@ -55,6 +55,12 @@ Standalone web application for satellite image change detection with **user acco
 
 - **Database**: set `DATABASE_URL` (e.g. `postgresql://user:pass@host/db`) to use another DB; otherwise SQLite under `data/satellite_app.db` is used.
 - **JWT**: set `SECRET_KEY` in `app/auth.py` (or via env) in production.
+- **Email (Hugging Face Spaces)**: Outbound SMTP is blocked on Spaces. Use [Resend](https://resend.com) (HTTPS API):
+  1. Sign up at [resend.com](https://resend.com), create an API key.
+  2. In your Space → **Settings** → **Repository secrets**, add:
+     - `RESEND_API_KEY` = your Resend API key (e.g. `re_...`).
+     - (Optional) `RESEND_FROM` = sender string, e.g. `AI Change Detection <onboarding@resend.dev>` or your verified domain.
+  3. Emails will be sent via Resend; no SMTP or Gmail app password needed on the server.
 
 ## Project layout
 
