@@ -1,8 +1,8 @@
 """
 Email notification module.
-Sends HTML-formatted detection reports via SMTP (e.g. Gmail).
-A custom email API (from your manager) can be integrated later via env/config.
-Credentials are read from environment variables.
+Sends HTML-formatted detection reports via the manager's email API (HTTPS)
+or SMTP (e.g. Gmail) when API URL is not set.
+Credentials and API URL from environment variables.
 """
 import logging
 import os
@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "ChangeDetection.html"
+
+# Manager's email API (multipart/form-data). When set, used instead of SMTP.
+EMAIL_API_URL = os.environ.get(
+    "EMAIL_API_URL",
+    "https://emailservice.managemybusinessess.com/api/email/send",
+)
 
 
 def _smtp_settings():
@@ -102,11 +108,46 @@ def build_email_body(
     return html
 
 
-def _send_html_email(recipient: str, subject: str, html_body: str):
-    """Send email via SMTP. Set SMTP_USER and SMTP_PASS (e.g. Gmail app password)."""
-    if not _valid_email(recipient):
-        return False, "Enter a valid recipient email address."
+def _send_via_api(recipient: str, subject: str, html_body: str):
+    """Send email via manager's API (POST multipart/form-data)."""
+    if not EMAIL_API_URL or not EMAIL_API_URL.strip():
+        return False, "EMAIL_API_URL is not set."
+    url = EMAIL_API_URL.strip()
+    try:
+        import requests
+        # API expects multipart/form-data: ToEmail, Subject, Body, FileName, AttachmentBase64
+        files = {
+            "ToEmail": (None, recipient),
+            "Subject": (None, subject),
+            "Body": (None, html_body),
+            "FileName": (None, ""),
+            "AttachmentBase64": (None, ""),
+        }
+        resp = requests.post(
+            url,
+            files=files,
+            timeout=30,
+            headers={"Accept": "*/*"},
+        )
+        if resp.status_code >= 200 and resp.status_code < 300:
+            logger.info("Email API: sent to %s", recipient)
+            return True, None
+        msg = f"API returned {resp.status_code}"
+        try:
+            body = resp.text or resp.reason
+            if body:
+                msg = f"{msg}: {body[:200]}"
+        except Exception:
+            pass
+        logger.warning("Email API failed: %s", msg)
+        return False, msg
+    except Exception as exc:
+        logger.exception("Email API request failed: %s", exc)
+        return False, f"{type(exc).__name__}: {exc}"
 
+
+def _send_via_smtp(recipient: str, subject: str, html_body: str):
+    """Send email via SMTP (e.g. Gmail)."""
     settings = _smtp_settings()
     smtp_user = settings["user"]
     smtp_pass = settings["password"]
@@ -114,7 +155,6 @@ def _send_html_email(recipient: str, subject: str, html_body: str):
     smtp_port = settings["port"]
 
     if not smtp_user or not smtp_pass:
-        logger.warning("SMTP_USER or SMTP_PASS not set — skipping email notification")
         return False, "SMTP credentials are not configured on the server."
 
     msg = MIMEMultipart("alternative")
@@ -131,7 +171,7 @@ def _send_html_email(recipient: str, subject: str, html_body: str):
             server.ehlo()
             server.login(smtp_user, smtp_pass)
             server.sendmail(smtp_user, recipient, msg.as_string())
-        logger.info("Notification email sent to %s", recipient)
+        logger.info("SMTP email sent to %s", recipient)
         return True, None
     except smtplib.SMTPAuthenticationError:
         logger.exception("SMTP authentication failed")
@@ -144,6 +184,16 @@ def _send_html_email(recipient: str, subject: str, html_body: str):
             exc,
         )
         return False, f"{type(exc).__name__}: {exc}"
+
+
+def _send_html_email(recipient: str, subject: str, html_body: str):
+    """Send email: use manager's API if EMAIL_API_URL is set, else SMTP."""
+    if not _valid_email(recipient):
+        return False, "Enter a valid recipient email address."
+
+    if EMAIL_API_URL and EMAIL_API_URL.strip():
+        return _send_via_api(recipient, subject, html_body)
+    return _send_via_smtp(recipient, subject, html_body)
 
 
 def send_notification(
@@ -166,14 +216,14 @@ def send_notification(
 
 
 def send_test_email(recipient: str):
-    """Send a small test email so SMTP configuration can be verified quickly."""
+    """Send a small test email to verify delivery."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     html_body = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #222;">
         <h2>AI Change Detection Email Test</h2>
         <p>This is a test email from the AI Change Detection application.</p>
-        <p>If you received this, the SMTP configuration is working.</p>
+        <p>If you received this, the email configuration is working.</p>
         <p><strong>Timestamp:</strong> {now}</p>
       </body>
     </html>

@@ -55,7 +55,7 @@ Standalone web application for satellite image change detection with **user acco
 
 - **Database**: set `DATABASE_URL` (e.g. `postgresql://user:pass@host/db`) to use another DB; otherwise SQLite under `data/satellite_app.db` is used.
 - **JWT**: set `SECRET_KEY` in `app/auth.py` (or via env) in production.
-- **Email**: Notifications use SMTP (e.g. Gmail). Set `SMTP_USER` and `SMTP_PASS` (Gmail app password) in the environment. On Hugging Face Spaces, outbound SMTP is often blocked; a custom email API will be integrated when available.
+- **Email**: By default, notifications are sent via the manager's email API (`https://emailservice.managemybusinessess.com/api/email/send`). Override with `EMAIL_API_URL` if needed. To use SMTP (e.g. Gmail) instead, set `EMAIL_API_URL` to empty and set `SMTP_USER` and `SMTP_PASS`.
 
 ## Project layout
 
