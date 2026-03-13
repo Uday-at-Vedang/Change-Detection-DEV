@@ -346,6 +346,50 @@ document.getElementById('notify-send-btn')?.addEventListener('click', async () =
 });
 
 // ---- Run detection ----
+let _detectProgressTimer = null;
+let _detectProgressValue = 0;
+
+function startDetectionProgress() {
+  const loading = document.getElementById('run-loading');
+  if (!loading) return;
+  _detectProgressValue = 0;
+  loading.querySelector('.spinner')?.classList.remove('hidden');
+  function updateLabel() {
+    const pct = Math.min(99, Math.max(1, Math.round(_detectProgressValue)));
+    loading.childNodes.forEach((n) => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        n.textContent = ` Analyzing images... ${pct}%`;
+      }
+    });
+  }
+  updateLabel();
+  if (_detectProgressTimer) clearInterval(_detectProgressTimer);
+  _detectProgressTimer = setInterval(() => {
+    // Ease out: slow down as it approaches 95%
+    if (_detectProgressValue < 95) {
+      _detectProgressValue += Math.max(0.5, (100 - _detectProgressValue) * 0.03);
+      updateLabel();
+    }
+  }, 400);
+}
+
+function stopDetectionProgress(success) {
+  const loading = document.getElementById('run-loading');
+  if (_detectProgressTimer) {
+    clearInterval(_detectProgressTimer);
+    _detectProgressTimer = null;
+  }
+  if (!loading) return;
+  if (success) {
+    _detectProgressValue = 100;
+    loading.childNodes.forEach((n) => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        n.textContent = ' Analyzing images... 100%';
+      }
+    });
+  }
+}
+
 document.getElementById('form-detect')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideError('dashboard-error');
@@ -360,6 +404,7 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   const loading = document.getElementById('run-loading');
   btn.disabled = true;
   loading.classList.remove('hidden');
+   startDetectionProgress();
 
   const token = getToken();
   const form = new FormData();
@@ -411,6 +456,7 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   } finally {
     btn.disabled = false;
     loading.classList.add('hidden');
+    stopDetectionProgress(true);
   }
 });
 
