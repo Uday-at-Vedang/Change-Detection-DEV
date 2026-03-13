@@ -4,6 +4,7 @@ Sends HTML-formatted detection reports via the manager's email API (HTTPS)
 or SMTP (e.g. Gmail) when API URL is not set.
 Credentials and API URL from environment variables.
 """
+import base64
 import logging
 import os
 import re
@@ -115,13 +116,14 @@ def _send_via_api(recipient: str, subject: str, html_body: str):
     url = EMAIL_API_URL.strip()
     try:
         import requests
-        # API requires all fields; use placeholders when no attachment (empty base64 = "")
+        # Attach the same HTML report as a file so the API can deliver it.
+        attachment_b64 = base64.b64encode(html_body.encode("utf-8")).decode("ascii")
         files = {
             "ToEmail": (None, recipient),
             "Subject": (None, subject),
             "Body": (None, html_body),
-            "FileName": (None, "report.html"),
-            "AttachmentBase64": (None, "IA=="),  # base64 of single space when no attachment
+            "FileName": (None, "ChangeDetection.html"),
+            "AttachmentBase64": (None, attachment_b64),
         }
         resp = requests.post(
             url,
