@@ -1677,6 +1677,32 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             before_array, after_array, sensitivity=detection_sensitivity
         )
 
+    # --- Adaptive fallback for empty/sparse masks ---
+    # In some scenes, ORB/ECC registration + fused thresholding can produce an overly
+    # sparse binary mask (leading to 0 detected regions). If that happens, fall back
+    # to the more stable Image Difference mask.
+    total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
+    changed_pixels_ratio = float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
+
+    used_fallback = False
+    if method in ("AI-Based Deep Learning", "Hybrid Approach") and changed_pixels_ratio < 0.0025:
+        diff_mask, diff_debug = image_difference_method(
+            before_array, after_array, sensitivity=detection_sensitivity
+        )
+        diff_ratio = float(np.sum(diff_mask > 127)) / float(total_pixels) if total_pixels else 0.0
+        # Only switch if the diff mask clearly contains more signal.
+        if diff_ratio > max(0.005, changed_pixels_ratio * 3.0):
+            change_mask = diff_mask
+            used_fallback = True
+            threshold_debug = {
+                "method": f"{method} (fallback->Image Difference)",
+                "fallback_used": True,
+                "ai_hybrid_changed_ratio": changed_pixels_ratio,
+                "diff_changed_ratio": diff_ratio,
+                "diff_debug": diff_debug,
+                "sensitivity": float(detection_sensitivity),
+            }
+
     change_regions = analyze_change_regions(
         change_mask,
         after_array,
