@@ -348,15 +348,8 @@ def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
     return change_mask
 
 
-def ai_deep_learning_method(img1, img2, sensitivity=0.5):
-    """
-    Advanced multi-signal fusion:
-    - Multi-scale color difference (LAB)
-    - Structural dissimilarity (SSIM)
-    - Texture change (LBP)
-    - Edge change (Canny)
-    All fused with learned weights and adaptive thresholding.
-    """
+def _ai_fusion_core(img1, img2, sensitivity=0.5):
+    """One-direction AI fusion core. Returns (mask, debug)."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
@@ -445,7 +438,7 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     _, change_mask = cv2.threshold(change_mask, 127, 255, cv2.THRESH_BINARY)
 
     debug = {
-        "method": "AI-Based Deep Learning",
+        "method": "AI-Core",
         "threshold_used": int(thr_score * 255),
         "threshold_percentile_q": q,
         "threshold_score": thr_score,
@@ -455,6 +448,30 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5):
         "sensitivity": float(sensitivity),
     }
     return change_mask, debug
+
+
+def ai_deep_learning_method(img1, img2, sensitivity=0.5):
+    """
+    Bidirectional AI fusion for robustness:
+    - run core on (before, after) and (after, before)
+    - combine with OR then clean
+    This improves stability for asymmetric scenes / normalization drift.
+    """
+    fwd_mask, fwd_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
+    rev_mask, rev_debug = _ai_fusion_core(img2, img1, sensitivity=sensitivity)
+
+    combined = cv2.bitwise_or(fwd_mask, rev_mask)
+    combined = _clean_mask(combined, sensitivity=sensitivity)
+
+    debug = {
+        "method": "AI-Based Deep Learning",
+        "threshold_used": fwd_debug.get("threshold_used"),
+        "bidirectional": True,
+        "forward": fwd_debug,
+        "reverse": rev_debug,
+        "sensitivity": float(sensitivity),
+    }
+    return combined, debug
 
 
 def hybrid_method(img1, img2, sensitivity=0.5):
@@ -477,11 +494,10 @@ def hybrid_method(img1, img2, sensitivity=0.5):
     # - diff only: 0.2*255 ≈ 51
     # - feature only: 0.3*255 ≈ 76
     # - ai only: 0.5*255 ≈ 127
-    # Original threshold (140) effectively removed "ai-only" pixels.
-    # Lower the threshold so AI (one of the key signals) can contribute.
-    base_thr = 105
+    # Keep threshold low enough that ai-only regions can pass.
+    base_thr = 98
     sens = float(np.clip(sensitivity, 0.0, 1.0))
-    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 30), 70, 160))
+    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 36), 60, 150))
     _, final_mask = cv2.threshold(combined.astype(np.uint8), hybrid_thr, 255, cv2.THRESH_BINARY)
     final_mask = _clean_mask(final_mask)
     debug = {
@@ -1603,7 +1619,13 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
             object_type, confidence = classify_object_type(image, (x, y, w, h))
 
         if object_type is None:
-            continue
+            # Do not silently drop large coherent regions; keep them as generic
+            # ground-change candidates so key changes are still surfaced.
+            if raw_area >= max(min_area * 2, 800) and fill_ratio >= 0.18:
+                object_type = "Unclassified Ground Change"
+                confidence = max(0.2, min(0.5, fill_ratio))
+            else:
+                continue
 
         region_id += 1
         region = {
