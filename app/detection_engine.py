@@ -201,7 +201,27 @@ def compute_edge_change(img1, img2):
 # 7. Improved detection methods
 # ---------------------------------------------------------------------------
 
-def image_difference_method(img1, img2, threshold=0.25, blur_size=5):
+def _adaptive_binary_threshold(score_uint8, min_floor=25, sensitivity=0.5):
+    """
+    Robust thresholding for noisy scenes.
+    Uses max(Otsu, noise-floor, fixed floor) where noise-floor is median + 3*MAD.
+    """
+    otsu_val, _ = cv2.threshold(
+        score_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+    median = float(np.median(score_uint8))
+    mad = float(np.median(np.abs(score_uint8.astype(np.float32) - median)))
+    noise_floor = median + 3.0 * mad
+    # Higher sensitivity => lower threshold (detect more), lower sensitivity => stricter
+    sens = float(np.clip(sensitivity, 0.0, 1.0))
+    sens_shift = int((0.5 - sens) * 24)  # approx -12..+12 around baseline
+    thr = int(max(min_floor, otsu_val, noise_floor) + sens_shift)
+    thr = max(0, min(255, thr))
+    _, mask = cv2.threshold(score_uint8, thr, 255, cv2.THRESH_BINARY)
+    return mask, thr, float(otsu_val), float(noise_floor)
+
+
+def image_difference_method(img1, img2, threshold=0.25, blur_size=5, sensitivity=0.5):
     """Improved image difference with multi-channel analysis and adaptive threshold."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
@@ -223,13 +243,19 @@ def image_difference_method(img1, img2, threshold=0.25, blur_size=5):
     delta_e = delta_e / delta_e.max() if delta_e.max() > 0 else delta_e
 
     delta_uint8 = (delta_e * 255).astype(np.uint8)
-    otsu_val, change_mask = cv2.threshold(delta_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    # Floor: if Otsu picks a very low threshold the mask is mostly noise
-    if otsu_val < 30:
-        _, change_mask = cv2.threshold(delta_uint8, 30, 255, cv2.THRESH_BINARY)
+    change_mask, used_thr, otsu_val, noise_floor = _adaptive_binary_threshold(
+        delta_uint8, min_floor=30, sensitivity=sensitivity
+    )
 
     change_mask = _clean_mask(change_mask)
-    return change_mask
+    debug = {
+        "method": "Image Difference",
+        "threshold_used": int(used_thr),
+        "otsu": float(otsu_val),
+        "noise_floor": float(noise_floor),
+        "sensitivity": float(sensitivity),
+    }
+    return change_mask, debug
 
 
 def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
@@ -288,7 +314,7 @@ def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
     return change_mask
 
 
-def ai_deep_learning_method(img1, img2):
+def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     """
     Advanced multi-signal fusion:
     - Multi-scale color difference (LAB)
@@ -358,10 +384,10 @@ def ai_deep_learning_method(img1, img2):
     fused = fused / (fused.max() + 1e-8)
     fused_uint8 = (fused * 255).astype(np.uint8)
 
-    # Otsu with a minimum floor to reject near-zero thresholds on similar images
-    otsu_val, change_mask = cv2.threshold(fused_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    if otsu_val < 25:
-        _, change_mask = cv2.threshold(fused_uint8, 25, 255, cv2.THRESH_BINARY)
+    # Robust thresholding: handles low-contrast and noisy scenes better than Otsu-only.
+    change_mask, used_thr, otsu_val, noise_floor = _adaptive_binary_threshold(
+        fused_uint8, min_floor=25, sensitivity=sensitivity
+    )
 
     change_mask = _clean_mask(change_mask)
 
@@ -369,17 +395,24 @@ def ai_deep_learning_method(img1, img2):
     change_mask = cv2.bilateralFilter(change_mask, 9, 75, 75)
     _, change_mask = cv2.threshold(change_mask, 127, 255, cv2.THRESH_BINARY)
 
-    return change_mask
+    debug = {
+        "method": "AI-Based Deep Learning",
+        "threshold_used": int(used_thr),
+        "otsu": float(otsu_val),
+        "noise_floor": float(noise_floor),
+        "sensitivity": float(sensitivity),
+    }
+    return change_mask, debug
 
 
-def hybrid_method(img1, img2):
+def hybrid_method(img1, img2, sensitivity=0.5):
     """Hybrid: weighted fusion of all methods with confidence-based merging."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    diff_mask = image_difference_method(img1, img2)
+    diff_mask, diff_debug = image_difference_method(img1, img2, sensitivity=sensitivity)
     feature_mask = feature_based_method(img1, img2)
-    ai_mask = ai_deep_learning_method(img1, img2)
+    ai_mask, ai_debug = ai_deep_learning_method(img1, img2, sensitivity=sensitivity)
 
     # Weighted combination: AI method gets most weight
     combined = (
@@ -389,9 +422,21 @@ def hybrid_method(img1, img2):
     )
 
     # Use a higher threshold: a pixel must be flagged by multiple methods
-    _, final_mask = cv2.threshold(combined.astype(np.uint8), 140, 255, cv2.THRESH_BINARY)
+    base_thr = 140
+    sens = float(np.clip(sensitivity, 0.0, 1.0))
+    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 24), 90, 180))
+    _, final_mask = cv2.threshold(combined.astype(np.uint8), hybrid_thr, 255, cv2.THRESH_BINARY)
     final_mask = _clean_mask(final_mask)
-    return final_mask
+    debug = {
+        "method": "Hybrid Approach",
+        "threshold_used": int(hybrid_thr),
+        "sensitivity": float(sensitivity),
+        "sub_methods": {
+            "image_difference": diff_debug,
+            "ai_deep_learning": ai_debug,
+        },
+    }
+    return final_mask, debug
 
 
 # ---------------------------------------------------------------------------
@@ -1470,6 +1515,11 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 
     img_h, img_w = change_mask.shape[:2]
     img_area = img_h * img_w
+    # Adaptive minimum region size:
+    # - keeps sensitivity on smaller images
+    # - suppresses speckle noise on larger images
+    if min_area is None:
+        min_area = int(max(250, min(1200, img_area * 0.00008)))
 
     for i in range(1, num_labels):
         raw_area = stats[i, cv2.CC_STAT_AREA]
@@ -1559,7 +1609,8 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 # ---------------------------------------------------------------------------
 
 def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
-                  enable_registration=True, enable_normalization=True):
+                  enable_registration=True, enable_normalization=True,
+                  detection_sensitivity=0.5, min_region_area=None):
     """Run full detection pipeline; returns change_mask, result_image, stats, regions."""
     before_array = preprocess_image(before_pil)
     after_array = preprocess_image(after_pil)
@@ -1570,16 +1621,28 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         before_array, after_array = normalize_radiometry(before_array, after_array)
 
     if method == "AI-Based Deep Learning":
-        change_mask = ai_deep_learning_method(before_array, after_array)
+        change_mask, threshold_debug = ai_deep_learning_method(
+            before_array, after_array, sensitivity=detection_sensitivity
+        )
     elif method == "Image Difference":
-        change_mask = image_difference_method(before_array, after_array)
+        change_mask, threshold_debug = image_difference_method(
+            before_array, after_array, sensitivity=detection_sensitivity
+        )
     elif method == "Feature-Based":
         change_mask = feature_based_method(before_array, after_array)
+        threshold_debug = {
+            "method": "Feature-Based",
+            "threshold_used": None,
+            "note": "KMeans clustering path does not use binary threshold.",
+            "sensitivity": float(detection_sensitivity),
+        }
     else:
-        change_mask = hybrid_method(before_array, after_array)
+        change_mask, threshold_debug = hybrid_method(
+            before_array, after_array, sensitivity=detection_sensitivity
+        )
 
     change_regions = analyze_change_regions(
-        change_mask, after_array, min_area=400, before_img=before_array
+        change_mask, after_array, min_area=min_region_area, before_img=before_array
     )
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
@@ -1597,6 +1660,13 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         "change_percentage": change_pct,
         "image_width": change_mask.shape[1],
         "image_height": change_mask.shape[0],
+        "threshold_debug": threshold_debug,
+        "params": {
+            "detection_sensitivity": float(detection_sensitivity),
+            "min_region_area": min_region_area,
+            "enable_registration": bool(enable_registration),
+            "enable_normalization": bool(enable_normalization),
+        },
     }
 
     return change_mask, result_image, stats, change_regions

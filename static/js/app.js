@@ -416,6 +416,29 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   form.append('village', document.getElementById('detect-village').value || '');
   form.append('enable_registration', document.getElementById('detect-registration').checked);
   form.append('enable_normalization', document.getElementById('detect-normalization').checked);
+  const sensitivityInput = document.getElementById('detect-sensitivity');
+  const minAreaInput = document.getElementById('detect-min-area');
+  const sensitivity = Number(sensitivityInput?.value ?? 0.5);
+  if (Number.isNaN(sensitivity) || sensitivity < 0 || sensitivity > 1) {
+    showError('dashboard-error', 'Detection sensitivity must be between 0 and 1.');
+    btn.disabled = false;
+    loading.classList.add('hidden');
+    stopDetectionProgress(false);
+    return;
+  }
+  form.append('detection_sensitivity', String(sensitivity));
+  const minAreaRaw = (minAreaInput?.value || '').trim();
+  if (minAreaRaw) {
+    const minArea = Number(minAreaRaw);
+    if (Number.isNaN(minArea) || minArea < 50) {
+      showError('dashboard-error', 'Min region area must be at least 50.');
+      btn.disabled = false;
+      loading.classList.add('hidden');
+      stopDetectionProgress(false);
+      return;
+    }
+    form.append('min_region_area', String(Math.round(minArea)));
+  }
 
   // Notify: validate and attach email if checkbox is checked
   const notifyCb = document.getElementById('detect-notify');
@@ -449,7 +472,9 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
         ? ' Notification email sent.'
         : ` Email notification failed${data.notificationError ? `: ${data.notificationError}` : '.'}`;
     }
-    showSuccess('dashboard-success', 'Detection complete!' + notifyMsg);
+    const thrInfo = data?.statistics?.thresholdDebug?.threshold_used;
+    const thrMsg = typeof thrInfo === 'number' ? ` Threshold: ${thrInfo}.` : '';
+    showSuccess('dashboard-success', 'Detection complete!' + thrMsg + notifyMsg);
     loadHistory();
   } catch (err) {
     showError('dashboard-error', err.message);

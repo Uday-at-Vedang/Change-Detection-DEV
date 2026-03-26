@@ -230,6 +230,8 @@ async def detect(
     village: str = Form(""),
     enable_registration: bool = Form(True),
     enable_normalization: bool = Form(True),
+    detection_sensitivity: float = Form(0.5),
+    min_region_area: Optional[int] = Form(None),
     notify_email: Optional[str] = Form(None),
     access_token: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -259,9 +261,19 @@ async def detect(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
+    if min_region_area is not None:
+        min_region_area = int(max(50, min(10000, min_region_area)))
+
     from .detection_engine import run_detection
     change_mask, result_image, stats, change_regions = run_detection(
-        before_pil, after_pil, method=method, enable_registration=enable_registration, enable_normalization=enable_normalization
+        before_pil,
+        after_pil,
+        method=method,
+        enable_registration=enable_registration,
+        enable_normalization=enable_normalization,
+        detection_sensitivity=detection_sensitivity,
+        min_region_area=min_region_area,
     )
     # Save overlay and thumbnails for history table view
     base_name = f"{user.id}_{uuid.uuid4().hex}"
@@ -370,6 +382,8 @@ async def detect(
             "changedPixels": changed_px,
             "unchangedPixels": unchanged_px,
             "changePercentage": change_pct,
+            "thresholdDebug": stats.get("threshold_debug", {}),
+            "params": stats.get("params", {}),
         },
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,
