@@ -415,25 +415,43 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     for ch, w in zip(channels, weights):
         fused += w * ch.astype(np.float64)
 
-    fused = fused / (fused.max() + 1e-8)
-    fused_uint8 = (fused * 255).astype(np.uint8)
+    # Percentile normalization: max-normalization can make the distribution too peaky,
+    # causing an overly strict threshold on some scenes.
+    p995 = float(np.quantile(fused, 0.995))
+    if p995 <= 1e-8:
+        p995 = float(fused.max() + 1e-8)
+    fused_norm = np.clip(fused / (p995 + 1e-8), 0.0, 1.0)
 
-    # Robust thresholding: handles low-contrast and noisy scenes better than Otsu-only.
-    change_mask, used_thr, otsu_val, noise_floor = _adaptive_binary_threshold(
-        fused_uint8, min_floor=25, sensitivity=sensitivity
-    )
+    # Gamma < 1 boosts mid-range responses (useful for subtle changes).
+    gamma = 0.85
+    fused_norm = np.power(fused_norm, gamma)
 
-    change_mask = _clean_mask(change_mask)
+    # Smooth before thresholding so genuine change forms connected regions
+    # (prevents _clean_mask from deleting thin speckle artifacts).
+    fused_smooth = cv2.GaussianBlur(fused_norm.astype(np.float32), (7, 7), 0)
 
-    # Bilateral filter preserves sharp change boundaries while smoothing noise
+    # Sensitivity -> lower percentile => more detections.
+    sens = float(np.clip(sensitivity, 0.0, 1.0))
+    q = 0.958 - (sens - 0.5) * 0.04
+    q = float(np.clip(q, 0.90, 0.98))
+
+    thr_score = float(np.quantile(fused_smooth, q))
+    change_mask = (fused_smooth >= thr_score).astype(np.uint8) * 255
+
+    change_mask = _clean_mask(change_mask, sensitivity=sens)
+
+    # Bilateral filter preserves sharp boundaries while smoothing noise
     change_mask = cv2.bilateralFilter(change_mask, 9, 75, 75)
     _, change_mask = cv2.threshold(change_mask, 127, 255, cv2.THRESH_BINARY)
 
     debug = {
         "method": "AI-Based Deep Learning",
-        "threshold_used": int(used_thr),
-        "otsu": float(otsu_val),
-        "noise_floor": float(noise_floor),
+        "threshold_used": int(thr_score * 255),
+        "threshold_percentile_q": q,
+        "threshold_score": thr_score,
+        "fused_p95": float(np.quantile(fused_smooth, 0.95)),
+        "fused_p99": float(np.quantile(fused_smooth, 0.99)),
+        "fused_mean": float(np.mean(fused_smooth)),
         "sensitivity": float(sensitivity),
     }
     return change_mask, debug
@@ -455,10 +473,15 @@ def hybrid_method(img1, img2, sensitivity=0.5):
         0.5 * ai_mask.astype(np.float32)
     )
 
-    # Use a higher threshold: a pixel must be flagged by multiple methods
-    base_thr = 140
+    # Combined mask values:
+    # - diff only: 0.2*255 ≈ 51
+    # - feature only: 0.3*255 ≈ 76
+    # - ai only: 0.5*255 ≈ 127
+    # Original threshold (140) effectively removed "ai-only" pixels.
+    # Lower the threshold so AI (one of the key signals) can contribute.
+    base_thr = 105
     sens = float(np.clip(sensitivity, 0.0, 1.0))
-    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 24), 90, 180))
+    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 30), 70, 160))
     _, final_mask = cv2.threshold(combined.astype(np.uint8), hybrid_thr, 255, cv2.THRESH_BINARY)
     final_mask = _clean_mask(final_mask)
     debug = {
