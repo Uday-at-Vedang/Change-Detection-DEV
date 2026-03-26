@@ -47,7 +47,7 @@ def register_images(img1, img2, max_features=2000):
     kp2, des2 = orb.detectAndCompute(gray2, None)
 
     if des1 is None or des2 is None or len(des1) < 10 or len(des2) < 10:
-        return img1, img2, False
+        return _register_images_ecc_fallback(img1, img2)
 
     # Use kNN matching with Lowe's ratio test for better matches
     bf = cv2.BFMatcher(cv2.NORM_HAMMING)
@@ -61,27 +61,61 @@ def register_images(img1, img2, max_features=2000):
                 good_matches.append(m)
 
     if len(good_matches) < 10:
-        return img1, img2, False
+        return _register_images_ecc_fallback(img1, img2)
 
     src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
     homography, mask = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, 3.0)
     if homography is None:
-        return img1, img2, False
+        return _register_images_ecc_fallback(img1, img2)
 
     inlier_ratio = np.sum(mask) / len(mask) if mask is not None else 0
     if inlier_ratio < 0.3:
-        return img1, img2, False
+        return _register_images_ecc_fallback(img1, img2)
 
     # Reject degenerate homographies (near-singular or extreme distortion)
     det = np.linalg.det(homography)
     if abs(det) < 0.1 or abs(det) > 10.0:
-        return img1, img2, False
+        return _register_images_ecc_fallback(img1, img2)
 
     h, w = img1.shape[:2]
     img2_aligned = cv2.warpPerspective(img2, homography, (w, h), borderMode=cv2.BORDER_REFLECT)
     return img1, img2_aligned, True
+
+
+def _register_images_ecc_fallback(img1, img2):
+    """
+    Fallback alignment with ECC affine registration.
+    More stable than ORB on low-texture agricultural areas.
+    """
+    try:
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+        gray1_f = gray1.astype(np.float32) / 255.0
+        gray2_f = gray2.astype(np.float32) / 255.0
+
+        warp = np.eye(2, 3, dtype=np.float32)
+        criteria = (
+            cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+            200,
+            1e-6,
+        )
+        cc, warp = cv2.findTransformECC(
+            gray1_f, gray2_f, warp, cv2.MOTION_AFFINE, criteria
+        )
+        h, w = img1.shape[:2]
+        aligned = cv2.warpAffine(
+            img2,
+            warp,
+            (w, h),
+            flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+            borderMode=cv2.BORDER_REFLECT,
+        )
+        # Treat as successful only if ECC correlation is reasonable.
+        return img1, aligned, bool(cc >= 0.45)
+    except Exception:
+        return img1, img2, False
 
 
 # ---------------------------------------------------------------------------
@@ -1499,7 +1533,7 @@ def _nms_regions(regions, iou_thresh=0.45):
 
 
 def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
-                           before_img=None):
+                           before_img=None, registration_ok=True):
     """
     Find connected change regions with strict quality filters:
     - Higher min_area (400) to reject noise
@@ -1532,9 +1566,10 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
         if fill_ratio < 0.10:
             continue
 
-        # Reject regions that cover more than 40% of the image (likely a global
-        # illumination shift, not a real change)
-        if (w * h) > img_area * 0.40:
+        # Keep large real changes; only suppress near-full-frame artifacts.
+        # When registration failed, allow larger regions to avoid missing true changes.
+        max_region_cover = 0.92 if not registration_ok else 0.75
+        if (w * h) > img_area * max_region_cover and fill_ratio < 0.35:
             continue
 
         cx, cy = centroids[i]
@@ -1615,8 +1650,9 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     before_array = preprocess_image(before_pil)
     after_array = preprocess_image(after_pil)
 
+    registration_ok = False
     if enable_registration:
-        before_array, after_array, _ = register_images(before_array, after_array)
+        before_array, after_array, registration_ok = register_images(before_array, after_array)
     if enable_normalization:
         before_array, after_array = normalize_radiometry(before_array, after_array)
 
@@ -1642,7 +1678,11 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         )
 
     change_regions = analyze_change_regions(
-        change_mask, after_array, min_area=min_region_area, before_img=before_array
+        change_mask,
+        after_array,
+        min_area=min_region_area,
+        before_img=before_array,
+        registration_ok=registration_ok,
     )
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
@@ -1666,6 +1706,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             "min_region_area": min_region_area,
             "enable_registration": bool(enable_registration),
             "enable_normalization": bool(enable_normalization),
+            "registration_ok": bool(registration_ok),
         },
     }
 
