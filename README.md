@@ -16,6 +16,7 @@ Standalone web application for satellite image change detection with **user acco
 - **Login / Register** — JWT-based auth, passwords hashed with bcrypt
 - **Database** — SQLite (or set `DATABASE_URL` for PostgreSQL); stores users and detection runs
 - **Change detection** — Same model as the original app: AI-based, image difference, feature-based, hybrid
+- **Detection menu** — Choose between General Change Detection and Landslide Detection (Uttarakhand starter)
 - **Object classification** — Changed regions labeled as Water, Vegetation/Tree, Building, Road, Bare Ground/Soil
 - **History** — List of past runs with overlay images and stats
 - **UI** — Single-page app with a dark, “control room” style and teal accents
@@ -56,6 +57,12 @@ Standalone web application for satellite image change detection with **user acco
 - **Database**: set `DATABASE_URL` (e.g. `postgresql://user:pass@host/db`) to use another DB; otherwise SQLite under `data/satellite_app.db` is used.
 - **JWT**: set `SECRET_KEY` in `app/auth.py` (or via env) in production.
 - **Email**: By default, notifications are sent via the manager's email API (`https://emailservice.managemybusinessess.com/api/email/send`). Override with `EMAIL_API_URL` if needed. To use SMTP (e.g. Gmail) instead, set `EMAIL_API_URL` to empty and set `SMTP_USER` and `SMTP_PASS`.
+
+- **Landslide module**:
+  - Integrated at runtime through the same `/api/detect` endpoint using `detection_type=landslide_detection`.
+  - Engine code: `app/landslide_engine.py`
+  - Dataset preprocessing starter: `app/landslide_preprocessing.py`
+  - Planning/research brief: `Landslide_Detection_Uttarakhand_Integration_Plan.md`
 
 ## Project layout
 

@@ -225,6 +225,8 @@ async def detect(
     before: UploadFile = File(...),
     after: UploadFile = File(...),
     method: str = Form("AI-Based Deep Learning"),
+    detection_type: str = Form("change_detection"),
+    landslide_model: str = Form("Rule-Based v1"),
     title: str = Form("Untitled run"),
     zone: str = Form(""),
     village: str = Form(""),
@@ -265,16 +267,29 @@ async def detect(
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))
 
-    from .detection_engine import run_detection
-    change_mask, result_image, stats, change_regions = run_detection(
-        before_pil,
-        after_pil,
-        method=method,
-        enable_registration=enable_registration,
-        enable_normalization=enable_normalization,
-        detection_sensitivity=detection_sensitivity,
-        min_region_area=min_region_area,
-    )
+    detection_type = (detection_type or "change_detection").strip().lower()
+    if detection_type == "landslide_detection":
+        from .landslide_engine import run_landslide_detection
+        method = f"Landslide - {landslide_model}"
+        change_mask, result_image, stats, change_regions = run_landslide_detection(
+            before_pil,
+            after_pil,
+            model_name=landslide_model,
+            detection_sensitivity=detection_sensitivity,
+            min_region_area=min_region_area,
+        )
+    else:
+        detection_type = "change_detection"
+        from .detection_engine import run_detection
+        change_mask, result_image, stats, change_regions = run_detection(
+            before_pil,
+            after_pil,
+            method=method,
+            enable_registration=enable_registration,
+            enable_normalization=enable_normalization,
+            detection_sensitivity=detection_sensitivity,
+            min_region_area=min_region_area,
+        )
     # Save overlay and thumbnails for history table view
     base_name = f"{user.id}_{uuid.uuid4().hex}"
     overlay_filename = base_name + ".png"
@@ -375,6 +390,7 @@ async def detect(
         "id": run.id,
         "title": run.title,
         "method": run.method,
+        "detectionType": detection_type,
         "zone": run.zone or "",
         "village": run.village or "",
         "statistics": {

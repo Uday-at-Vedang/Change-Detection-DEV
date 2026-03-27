@@ -158,6 +158,21 @@
           <h3>Upload / Detection</h3>
         </div>
         <form id="form-detect">
+          <div class="options-row">
+            <div class="form-group">
+              <label for="detect-type">Detection Menu</label>
+              <select id="detect-type">
+                <option value="change_detection" selected>General Change Detection</option>
+                <option value="landslide_detection">Landslide Detection (Uttarakhand)</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="landslide-model-group">
+              <label for="landslide-model">Landslide Model</label>
+              <select id="landslide-model">
+                <option value="Rule-Based v1" selected>Rule-Based v1 (Vegetation Loss + Soil Gain)</option>
+              </select>
+            </div>
+          </div>
           <div class="location-row">
             <div class="form-group">
               <label for="detect-zone">
@@ -360,6 +375,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=25"></script>
+  <script src="/static/js/app.js?v=26"></script>
 </body>
 </html>

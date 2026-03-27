@@ -186,6 +186,27 @@ function setupUploadZone(inputId, nameId, zoneId, previewId) {
 setupUploadZone('file-before', 'name-before', 'zone-before', 'preview-before');
 setupUploadZone('file-after', 'name-after', 'zone-after', 'preview-after');
 
+// ---- Detection menu (General vs Landslide) ----
+(function initDetectionMenu() {
+  const typeSel = document.getElementById('detect-type');
+  const landslideGroup = document.getElementById('landslide-model-group');
+  const methodGroup = document.getElementById('detect-method')?.closest('.form-group');
+  const regGroup = document.getElementById('detect-registration')?.closest('.form-group');
+  const normGroup = document.getElementById('detect-normalization')?.closest('.form-group');
+  if (!typeSel) return;
+
+  function refresh() {
+    const isLandslide = typeSel.value === 'landslide_detection';
+    if (landslideGroup) landslideGroup.classList.toggle('hidden', !isLandslide);
+    if (methodGroup) methodGroup.classList.toggle('hidden', isLandslide);
+    if (regGroup) regGroup.classList.toggle('hidden', isLandslide);
+    if (normGroup) normGroup.classList.toggle('hidden', isLandslide);
+  }
+
+  typeSel.addEventListener('change', refresh);
+  refresh();
+})();
+
 // ---- Delhi Zone → Village cascading dropdowns ----
 const DELHI_ZONES = {
   "Central Delhi": [
@@ -410,7 +431,12 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   const form = new FormData();
   form.append('before', before);
   form.append('after', after);
+  const detectionType = document.getElementById('detect-type')?.value || 'change_detection';
+  form.append('detection_type', detectionType);
   form.append('method', document.getElementById('detect-method').value);
+  if (detectionType === 'landslide_detection') {
+    form.append('landslide_model', document.getElementById('landslide-model')?.value || 'Rule-Based v1');
+  }
   form.append('title', document.getElementById('detect-title').value || 'Untitled run');
   form.append('zone', document.getElementById('detect-zone').value || '');
   form.append('village', document.getElementById('detect-village').value || '');
