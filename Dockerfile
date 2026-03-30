@@ -26,7 +26,7 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=10
+ARG APP_BUILD=11
 ENV APP_BUILD=${APP_BUILD}
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
 
@@ -43,10 +43,9 @@ RUN mkdir -p data/overlays && chown -R appuser:appuser /app
 
 USER appuser
 
-# HF Spaces expects port 7860.
+# HF Spaces generally uses 7860, but binding to $PORT is safer.
 ENV PORT=7860
-ENV PYTHONUNBUFFERED=1
 EXPOSE 7860
 
-# Use direct exec form so container startup is simpler and logs flush reliably.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--log-level", "info"]
+# Bind to runtime PORT so health checks always reach the server.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --log-level info"]
