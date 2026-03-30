@@ -3,6 +3,13 @@ FROM python:3.11-slim
 # Ensure build logs flush immediately (helps when HF shows “BUILDING” with no output)
 ENV PYTHONUNBUFFERED=1
 
+# Hugging Face Hub cache:
+# Some Spaces build steps scan/download using the local Hugging Face cache.
+# In containers this cache can be missing/unwritable unless we force it.
+ENV HF_HOME=/tmp/hf
+ENV HF_HUB_CACHE=/tmp/hf/hub
+ENV TRANSFORMERS_CACHE=/tmp/hf/transformers
+
 # System dependencies for OpenCV and image processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -19,7 +26,7 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=9
+ARG APP_BUILD=10
 ENV APP_BUILD=${APP_BUILD}
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
 
