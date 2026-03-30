@@ -81,8 +81,7 @@ document.getElementById('form-login')?.addEventListener('submit', async (e) => {
     const data = await api('POST', '/api/auth/login', { body: JSON.stringify({ email, password }) });
     setToken(data.access_token);
     document.getElementById('user-email').textContent = data.user.email;
-    showView('dashboard');
-    loadHistory();
+    handlePostAuthNavigation();
   } catch (err) { showError('login-error', err.message); }
 });
 
@@ -96,10 +95,24 @@ document.getElementById('form-register')?.addEventListener('submit', async (e) =
     const data = await api('POST', '/api/auth/register', { body: JSON.stringify({ email, password, full_name }) });
     setToken(data.access_token);
     document.getElementById('user-email').textContent = data.user.email;
-    showView('dashboard');
-    loadHistory();
+    handlePostAuthNavigation();
   } catch (err) { showError('register-error', err.message); }
 });
+
+function handlePostAuthNavigation() {
+  const preferred = getDetectionTypeFromPath();
+  if (preferred) applyDetectionTypeToUI(preferred);
+  showView('detection-type');
+
+  // If user already chose a URL (/detect/change or /detect/landslide),
+  // then auto-redirect after the menu is shown.
+  if (preferred) {
+    setTimeout(() => {
+      showView('dashboard');
+      loadHistory();
+    }, 150);
+  }
+}
 
 // ---- Forgot password ----
 document.getElementById('form-forgot')?.addEventListener('submit', async (e) => {
