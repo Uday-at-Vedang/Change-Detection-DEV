@@ -26,12 +26,27 @@ function applyDetectionTypeToUI(type) {
   typeSel.dispatchEvent(new Event('change'));
 }
 
+function pathForDetectionType(type) {
+  return type === 'landslide_detection' ? '/detect/landslide' : '/detect/change';
+}
+
+function navigateToDetectionType(type, replace = false) {
+  applyDetectionTypeToUI(type);
+  const targetPath = pathForDetectionType(type);
+  if ((window.location.pathname || '') !== targetPath) {
+    const fn = replace ? 'replaceState' : 'pushState';
+    window.history[fn]({}, '', targetPath);
+  }
+  showView('dashboard');
+  loadHistory();
+}
+
 // ---- Detection type selection buttons ----
 document.getElementById('btn-type-change')?.addEventListener('click', () => {
-  window.location.href = '/detect/change';
+  navigateToDetectionType('change_detection');
 });
 document.getElementById('btn-type-landslide')?.addEventListener('click', () => {
-  window.location.href = '/detect/landslide';
+  navigateToDetectionType('landslide_detection');
 });
 
 function showError(id, msg) {
@@ -108,8 +123,7 @@ function handlePostAuthNavigation() {
   // then auto-redirect after the menu is shown.
   if (preferred) {
     setTimeout(() => {
-      showView('dashboard');
-      loadHistory();
+      navigateToDetectionType(preferred, true);
     }, 150);
   }
 }
