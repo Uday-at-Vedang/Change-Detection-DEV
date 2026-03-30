@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Ensure build logs flush immediately (helps when HF shows “BUILDING” with no output)
+ENV PYTHONUNBUFFERED=1
+
 # System dependencies for OpenCV and image processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -16,13 +19,13 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=7
+ARG APP_BUILD=8
 ENV APP_BUILD=${APP_BUILD}
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 -r requirements.txt -v
+RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --prefer-binary --only-binary=:all: -r requirements.txt -v
 
 # Copy application code
 COPY . .
