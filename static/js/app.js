@@ -162,15 +162,13 @@ async function init() {
   try {
     const user = await api('GET', '/api/me');
     document.getElementById('user-email').textContent = user.email;
+    // Always show the selection menu first.
+    // If the user already landed on /detect/change or /detect/landslide, we
+    // pre-select the corresponding detection type in the dropdown for convenience,
+    // but we still show the menu page before redirecting.
     const preferred = getDetectionTypeFromPath();
-    if (preferred) {
-      applyDetectionTypeToUI(preferred);
-      showView('dashboard');
-      loadHistory();
-    } else {
-      // After login, landing on "/" shows a selection screen.
-      showView('detection-type');
-    }
+    if (preferred) applyDetectionTypeToUI(preferred);
+    showView('detection-type');
   } catch (_) { setToken(null); showView('login'); }
 }
 
