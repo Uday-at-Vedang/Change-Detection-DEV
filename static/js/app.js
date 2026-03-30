@@ -12,6 +12,28 @@ function showView(id) {
   if (el) el.classList.add('active');
 }
 
+function getDetectionTypeFromPath() {
+  const p = (window.location.pathname || '').toLowerCase();
+  if (p.includes('/detect/landslide')) return 'landslide_detection';
+  if (p.includes('/detect/change')) return 'change_detection';
+  return null;
+}
+
+function applyDetectionTypeToUI(type) {
+  const typeSel = document.getElementById('detect-type');
+  if (!typeSel || !type) return;
+  typeSel.value = type;
+  typeSel.dispatchEvent(new Event('change'));
+}
+
+// ---- Detection type selection buttons ----
+document.getElementById('btn-type-change')?.addEventListener('click', () => {
+  window.location.href = '/detect/change';
+});
+document.getElementById('btn-type-landslide')?.addEventListener('click', () => {
+  window.location.href = '/detect/landslide';
+});
+
 function showError(id, msg) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -140,8 +162,15 @@ async function init() {
   try {
     const user = await api('GET', '/api/me');
     document.getElementById('user-email').textContent = user.email;
-    showView('dashboard');
-    loadHistory();
+    const preferred = getDetectionTypeFromPath();
+    if (preferred) {
+      applyDetectionTypeToUI(preferred);
+      showView('dashboard');
+      loadHistory();
+    } else {
+      // After login, landing on "/" shows a selection screen.
+      showView('detection-type');
+    }
   } catch (_) { setToken(null); showView('login'); }
 }
 

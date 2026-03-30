@@ -564,3 +564,15 @@ def index():
     if not index_file.exists():
         return HTMLResponse("<h1>Satellite Change Detection</h1><p>Create <code>templates/index.html</code> and <code>static/</code>.</p>")
     return FileResponse(index_file)
+
+
+# --- Detection type landing pages ---
+# These serve the same SPA, but the frontend selects the correct mode based on URL.
+@app.get("/detect/change", response_class=HTMLResponse)
+def detect_change_page():
+    return index()
+
+
+@app.get("/detect/landslide", response_class=HTMLResponse)
+def detect_landslide_page():
+    return index()
