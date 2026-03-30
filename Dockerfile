@@ -14,12 +14,15 @@ RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
 
+# Build-time info + cache-bust:
+# Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
+ARG APP_BUILD=7
+ENV APP_BUILD=${APP_BUILD}
+RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
+
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Cache-bust: increment to force a fresh COPY on HF Spaces
-ENV APP_BUILD=6
+RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 -r requirements.txt -v
 
 # Copy application code
 COPY . .
