@@ -118,14 +118,6 @@ function handlePostAuthNavigation() {
   const preferred = getDetectionTypeFromPath();
   if (preferred) applyDetectionTypeToUI(preferred);
   showView('detection-type');
-
-  // If user already chose a URL (/detect/change or /detect/landslide),
-  // then auto-redirect after the menu is shown.
-  if (preferred) {
-    setTimeout(() => {
-      navigateToDetectionType(preferred, true);
-    }, 150);
-  }
 }
 
 // ---- Forgot password ----
