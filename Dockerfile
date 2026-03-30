@@ -19,7 +19,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Cache-bust: increment to force a fresh COPY on HF Spaces
-ENV APP_BUILD=5
+ENV APP_BUILD=6
 
 # Copy application code
 COPY . .
