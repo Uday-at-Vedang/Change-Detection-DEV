@@ -222,8 +222,8 @@ def me(user: Optional[User] = Depends(get_current_user)):
 @app.post("/api/detect")
 async def detect(
     request: Request,
-    before: UploadFile = File(...),
-    after: UploadFile = File(...),
+    before: Optional[UploadFile] = File(None),
+    after: Optional[UploadFile] = File(None),
     method: str = Form("AI-Based Deep Learning"),
     detection_type: str = Form("change_detection"),
     landslide_model: str = Form("Rule-Based v1"),
@@ -252,23 +252,42 @@ async def detect(
     if not user:
         raise HTTPException(status_code=401, detail="Login required")
     MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
-    try:
-        before_bytes = await before.read()
-        after_bytes = await after.read()
-        if len(before_bytes) > MAX_UPLOAD_BYTES or len(after_bytes) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
-        before_pil = Image.open(io.BytesIO(before_bytes)).convert("RGB")
-        after_pil = Image.open(io.BytesIO(after_bytes)).convert("RGB")
-        del before_bytes, after_bytes
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    detection_type = (detection_type or "change_detection").strip().lower()
+
+    def _read_upload(upload: Optional[UploadFile], field_name: str):
+        if upload is None:
+            raise HTTPException(status_code=400, detail=f"{field_name} image is required")
+        raw = None
+        try:
+            raw = upload.file.read()
+            if raw is None or len(raw) == 0:
+                raise HTTPException(status_code=400, detail=f"{field_name} image is empty")
+            if len(raw) > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
+            return Image.open(io.BytesIO(raw)).convert("RGB")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid {field_name} image: {e}")
+        finally:
+            try:
+                if raw is not None:
+                    del raw
+            except Exception:
+                pass
+
+    if detection_type == "pothole_detection":
+        # Single-image mode: use after if present, else before.
+        primary = after if after is not None else before
+        after_pil = _read_upload(primary, "road")
+        before_pil = after_pil
+    else:
+        before_pil = _read_upload(before, "before")
+        after_pil = _read_upload(after, "after")
     detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))
 
-    detection_type = (detection_type or "change_detection").strip().lower()
     if detection_type == "landslide_detection":
         from .landslide_engine import run_landslide_detection
         method = f"Landslide - {landslide_model}"

@@ -251,12 +251,23 @@ setupUploadZone('file-after', 'name-after', 'zone-after', 'preview-after');
   function refresh() {
     const isLandslide = typeSel.value === 'landslide_detection';
     const isPothole = typeSel.value === 'pothole_detection';
+    const beforeZone = document.getElementById('zone-before');
+    const beforeInput = document.getElementById('file-before');
+    const beforeName = document.getElementById('name-before');
     if (landslideGroup) landslideGroup.classList.toggle('hidden', !isLandslide);
     if (potholeGroup) potholeGroup.classList.toggle('hidden', !isPothole);
     const hideCore = isLandslide || isPothole;
     if (methodGroup) methodGroup.classList.toggle('hidden', hideCore);
     if (regGroup) regGroup.classList.toggle('hidden', hideCore);
     if (normGroup) normGroup.classList.toggle('hidden', hideCore);
+    // Pothole mode uses a single image upload (after image).
+    if (beforeZone) beforeZone.classList.toggle('hidden', isPothole);
+    if (isPothole && beforeInput) {
+      beforeInput.value = '';
+      if (beforeName) beforeName.textContent = 'No file chosen';
+      const prev = document.getElementById('preview-before');
+      if (prev) prev.classList.add('hidden');
+    }
   }
 
   typeSel.addEventListener('change', refresh);
@@ -470,9 +481,15 @@ function stopDetectionProgress(success) {
 document.getElementById('form-detect')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideError('dashboard-error');
+  const detectionType = document.getElementById('detect-type')?.value || 'change_detection';
   const before = document.getElementById('file-before').files?.[0];
   const after = document.getElementById('file-after').files?.[0];
-  if (!before || !after) {
+  if (detectionType === 'pothole_detection') {
+    if (!after && !before) {
+      showError('dashboard-error', 'Please upload one road image for pothole detection.');
+      return;
+    }
+  } else if (!before || !after) {
     showError('dashboard-error', 'Please select both before and after images.');
     return;
   }
@@ -485,9 +502,8 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
 
   const token = getToken();
   const form = new FormData();
-  form.append('before', before);
-  form.append('after', after);
-  const detectionType = document.getElementById('detect-type')?.value || 'change_detection';
+  if (before) form.append('before', before);
+  if (after) form.append('after', after);
   form.append('detection_type', detectionType);
   form.append('method', document.getElementById('detect-method').value);
   if (detectionType === 'landslide_detection') {
