@@ -17,6 +17,7 @@ Standalone web application for satellite image change detection with **user acco
 - **Database** — SQLite (or set `DATABASE_URL` for PostgreSQL); stores users and detection runs
 - **Change detection** — Same model as the original app: AI-based, image difference, feature-based, hybrid
 - **Detection menu** — Choose between General Change Detection and Landslide Detection (Uttarakhand starter)
+- **Pothole detection** — Separate detection type for road damage (starter pipeline + future model hook)
 - **Object classification** — Changed regions labeled as Water, Vegetation/Tree, Building, Road, Bare Ground/Soil
 - **History** — List of past runs with overlay images and stats
 - **UI** — Single-page app with a dark, “control room” style and teal accents
@@ -63,6 +64,11 @@ Standalone web application for satellite image change detection with **user acco
   - Engine code: `app/landslide_engine.py`
   - Dataset preprocessing starter: `app/landslide_preprocessing.py`
   - Planning/research brief: `Landslide_Detection_Uttarakhand_Integration_Plan.md`
+
+- **Pothole module**:
+  - Integrated at runtime through the same `/api/detect` endpoint using `detection_type=pothole_detection`.
+  - Engine code: `app/pothole_engine.py`
+  - Planning/research brief: `Pothole_Detection_Integration_Plan.md`
 
 ## Project layout
 

@@ -144,6 +144,8 @@
           <button type="button" class="btn btn-primary btn-block" id="btn-type-change">General Change Detection</button>
           <div style="height:0.75rem;"></div>
           <button type="button" class="btn btn-secondary btn-block" id="btn-type-landslide">Landslide Detection (Uttarakhand)</button>
+          <div style="height:0.75rem;"></div>
+          <button type="button" class="btn btn-secondary btn-block" id="btn-type-pothole">Pothole Detection</button>
         </div>
       </div>
     </section>
@@ -181,12 +183,19 @@
               <select id="detect-type">
                 <option value="change_detection" selected>General Change Detection</option>
                 <option value="landslide_detection">Landslide Detection (Uttarakhand)</option>
+                <option value="pothole_detection">Pothole Detection</option>
               </select>
             </div>
             <div class="form-group hidden" id="landslide-model-group">
               <label for="landslide-model">Landslide Model</label>
               <select id="landslide-model">
                 <option value="Rule-Based v1" selected>Rule-Based v1 (Vegetation Loss + Soil Gain)</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="pothole-model-group">
+              <label for="pothole-model">Pothole Model</label>
+              <select id="pothole-model">
+                <option value="Rule-Based v1" selected>Rule-Based v1 (Edges + Shadows + Texture)</option>
               </select>
             </div>
           </div>
@@ -392,6 +401,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=30"></script>
+  <script src="/static/js/app.js?v=31"></script>
 </body>
 </html>

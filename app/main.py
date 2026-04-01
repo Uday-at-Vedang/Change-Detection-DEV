@@ -227,6 +227,7 @@ async def detect(
     method: str = Form("AI-Based Deep Learning"),
     detection_type: str = Form("change_detection"),
     landslide_model: str = Form("Rule-Based v1"),
+    pothole_model: str = Form("Rule-Based v1"),
     title: str = Form("Untitled run"),
     zone: str = Form(""),
     village: str = Form(""),
@@ -275,6 +276,16 @@ async def detect(
             before_pil,
             after_pil,
             model_name=landslide_model,
+            detection_sensitivity=detection_sensitivity,
+            min_region_area=min_region_area,
+        )
+    elif detection_type == "pothole_detection":
+        from .pothole_engine import run_pothole_detection
+        method = f"Pothole - {pothole_model}"
+        change_mask, result_image, stats, change_regions = run_pothole_detection(
+            before_pil,
+            after_pil,
+            model_name=pothole_model,
             detection_sensitivity=detection_sensitivity,
             min_region_area=min_region_area,
         )
@@ -575,4 +586,9 @@ def detect_change_page():
 
 @app.get("/detect/landslide", response_class=HTMLResponse)
 def detect_landslide_page():
+    return index()
+
+
+@app.get("/detect/pothole", response_class=HTMLResponse)
+def detect_pothole_page():
     return index()

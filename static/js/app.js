@@ -15,6 +15,7 @@ function showView(id) {
 function getDetectionTypeFromPath() {
   const p = (window.location.pathname || '').toLowerCase();
   if (p.includes('/detect/landslide')) return 'landslide_detection';
+  if (p.includes('/detect/pothole')) return 'pothole_detection';
   if (p.includes('/detect/change')) return 'change_detection';
   return null;
 }
@@ -27,7 +28,9 @@ function applyDetectionTypeToUI(type) {
 }
 
 function pathForDetectionType(type) {
-  return type === 'landslide_detection' ? '/detect/landslide' : '/detect/change';
+  if (type === 'landslide_detection') return '/detect/landslide';
+  if (type === 'pothole_detection') return '/detect/pothole';
+  return '/detect/change';
 }
 
 function navigateToDetectionType(type, replace = false) {
@@ -47,6 +50,9 @@ document.getElementById('btn-type-change')?.addEventListener('click', () => {
 });
 document.getElementById('btn-type-landslide')?.addEventListener('click', () => {
   navigateToDetectionType('landslide_detection');
+});
+document.getElementById('btn-type-pothole')?.addEventListener('click', () => {
+  navigateToDetectionType('pothole_detection');
 });
 
 function showError(id, msg) {
@@ -232,10 +238,11 @@ function setupUploadZone(inputId, nameId, zoneId, previewId) {
 setupUploadZone('file-before', 'name-before', 'zone-before', 'preview-before');
 setupUploadZone('file-after', 'name-after', 'zone-after', 'preview-after');
 
-// ---- Detection menu (General vs Landslide) ----
+// ---- Detection menu (General vs Landslide vs Pothole) ----
 (function initDetectionMenu() {
   const typeSel = document.getElementById('detect-type');
   const landslideGroup = document.getElementById('landslide-model-group');
+  const potholeGroup = document.getElementById('pothole-model-group');
   const methodGroup = document.getElementById('detect-method')?.closest('.form-group');
   const regGroup = document.getElementById('detect-registration')?.closest('.form-group');
   const normGroup = document.getElementById('detect-normalization')?.closest('.form-group');
@@ -243,10 +250,13 @@ setupUploadZone('file-after', 'name-after', 'zone-after', 'preview-after');
 
   function refresh() {
     const isLandslide = typeSel.value === 'landslide_detection';
+    const isPothole = typeSel.value === 'pothole_detection';
     if (landslideGroup) landslideGroup.classList.toggle('hidden', !isLandslide);
-    if (methodGroup) methodGroup.classList.toggle('hidden', isLandslide);
-    if (regGroup) regGroup.classList.toggle('hidden', isLandslide);
-    if (normGroup) normGroup.classList.toggle('hidden', isLandslide);
+    if (potholeGroup) potholeGroup.classList.toggle('hidden', !isPothole);
+    const hideCore = isLandslide || isPothole;
+    if (methodGroup) methodGroup.classList.toggle('hidden', hideCore);
+    if (regGroup) regGroup.classList.toggle('hidden', hideCore);
+    if (normGroup) normGroup.classList.toggle('hidden', hideCore);
   }
 
   typeSel.addEventListener('change', refresh);
@@ -482,6 +492,9 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   form.append('method', document.getElementById('detect-method').value);
   if (detectionType === 'landslide_detection') {
     form.append('landslide_model', document.getElementById('landslide-model')?.value || 'Rule-Based v1');
+  }
+  if (detectionType === 'pothole_detection') {
+    form.append('pothole_model', document.getElementById('pothole-model')?.value || 'Rule-Based v1');
   }
   form.append('title', document.getElementById('detect-title').value || 'Untitled run');
   form.append('zone', document.getElementById('detect-zone').value || '');
