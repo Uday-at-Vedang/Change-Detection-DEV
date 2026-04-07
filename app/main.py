@@ -222,12 +222,9 @@ def me(user: Optional[User] = Depends(get_current_user)):
 @app.post("/api/detect")
 async def detect(
     request: Request,
-    before: Optional[UploadFile] = File(None),
-    after: Optional[UploadFile] = File(None),
+    before: UploadFile = File(...),
+    after: UploadFile = File(...),
     method: str = Form("AI-Based Deep Learning"),
-    detection_type: str = Form("change_detection"),
-    landslide_model: str = Form("Rule-Based v1"),
-    pothole_model: str = Form("Rule-Based v1"),
     title: str = Form("Untitled run"),
     zone: str = Form(""),
     village: str = Form(""),
@@ -252,11 +249,8 @@ async def detect(
     if not user:
         raise HTTPException(status_code=401, detail="Login required")
     MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
-    detection_type = (detection_type or "change_detection").strip().lower()
 
-    def _read_upload(upload: Optional[UploadFile], field_name: str):
-        if upload is None:
-            raise HTTPException(status_code=400, detail=f"{field_name} image is required")
+    def _read_upload(upload: UploadFile, field_name: str):
         raw = None
         try:
             raw = upload.file.read()
@@ -276,50 +270,22 @@ async def detect(
             except Exception:
                 pass
 
-    if detection_type == "pothole_detection":
-        # Single-image mode: use after if present, else before.
-        primary = after if after is not None else before
-        after_pil = _read_upload(primary, "road")
-        before_pil = after_pil
-    else:
-        before_pil = _read_upload(before, "before")
-        after_pil = _read_upload(after, "after")
+    before_pil = _read_upload(before, "before")
+    after_pil = _read_upload(after, "after")
     detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))
 
-    if detection_type == "landslide_detection":
-        from .landslide_engine import run_landslide_detection
-        method = f"Landslide - {landslide_model}"
-        change_mask, result_image, stats, change_regions = run_landslide_detection(
-            before_pil,
-            after_pil,
-            model_name=landslide_model,
-            detection_sensitivity=detection_sensitivity,
-            min_region_area=min_region_area,
-        )
-    elif detection_type == "pothole_detection":
-        from .pothole_engine import run_pothole_detection
-        method = f"Pothole - {pothole_model}"
-        change_mask, result_image, stats, change_regions = run_pothole_detection(
-            before_pil,
-            after_pil,
-            model_name=pothole_model,
-            detection_sensitivity=detection_sensitivity,
-            min_region_area=min_region_area,
-        )
-    else:
-        detection_type = "change_detection"
-        from .detection_engine import run_detection
-        change_mask, result_image, stats, change_regions = run_detection(
-            before_pil,
-            after_pil,
-            method=method,
-            enable_registration=enable_registration,
-            enable_normalization=enable_normalization,
-            detection_sensitivity=detection_sensitivity,
-            min_region_area=min_region_area,
-        )
+    from .detection_engine import run_detection
+    change_mask, result_image, stats, change_regions = run_detection(
+        before_pil,
+        after_pil,
+        method=method,
+        enable_registration=enable_registration,
+        enable_normalization=enable_normalization,
+        detection_sensitivity=detection_sensitivity,
+        min_region_area=min_region_area,
+    )
     # Save overlay and thumbnails for history table view
     base_name = f"{user.id}_{uuid.uuid4().hex}"
     overlay_filename = base_name + ".png"
@@ -420,7 +386,6 @@ async def detect(
         "id": run.id,
         "title": run.title,
         "method": run.method,
-        "detectionType": detection_type,
         "zone": run.zone or "",
         "village": run.village or "",
         "statistics": {
@@ -594,20 +559,3 @@ def index():
     if not index_file.exists():
         return HTMLResponse("<h1>Satellite Change Detection</h1><p>Create <code>templates/index.html</code> and <code>static/</code>.</p>")
     return FileResponse(index_file)
-
-
-# --- Detection type landing pages ---
-# These serve the same SPA, but the frontend selects the correct mode based on URL.
-@app.get("/detect/change", response_class=HTMLResponse)
-def detect_change_page():
-    return index()
-
-
-@app.get("/detect/landslide", response_class=HTMLResponse)
-def detect_landslide_page():
-    return index()
-
-
-@app.get("/detect/pothole", response_class=HTMLResponse)
-def detect_pothole_page():
-    return index()

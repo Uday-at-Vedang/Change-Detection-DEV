@@ -131,25 +131,6 @@
     </section>
 
     <!-- Dashboard view -->
-    <section id="view-detection-type" class="view">
-      <div class="auth-container">
-        <div class="auth-logo">
-          <div class="auth-logo-icon">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.5-9 4.5-9-4.5L12 2z"/><path d="M3 6.5V17.5L12 22l9-4.5V6.5"/><path d="M12 11v11"/></svg>
-          </div>
-          <span>Choose Detection Type</span>
-        </div>
-        <div class="card">
-          <h2 style="margin-bottom:0.75rem;">Select what you want to detect</h2>
-          <button type="button" class="btn btn-primary btn-block" id="btn-type-change">General Change Detection</button>
-          <div style="height:0.75rem;"></div>
-          <button type="button" class="btn btn-secondary btn-block" id="btn-type-landslide">Landslide Detection (Uttarakhand)</button>
-          <div style="height:0.75rem;"></div>
-          <button type="button" class="btn btn-secondary btn-block" id="btn-type-pothole">Pothole Detection</button>
-        </div>
-      </div>
-    </section>
-
     <section id="view-dashboard" class="view">
       <div class="topbar">
         <div class="nav-user">
@@ -177,28 +158,6 @@
           <h3>Upload / Detection</h3>
         </div>
         <form id="form-detect">
-          <div class="options-row">
-            <div class="form-group">
-              <label for="detect-type">Detection Menu</label>
-              <select id="detect-type">
-                <option value="change_detection" selected>General Change Detection</option>
-                <option value="landslide_detection">Landslide Detection (Uttarakhand)</option>
-                <option value="pothole_detection">Pothole Detection</option>
-              </select>
-            </div>
-            <div class="form-group hidden" id="landslide-model-group">
-              <label for="landslide-model">Landslide Model</label>
-              <select id="landslide-model">
-                <option value="Rule-Based v1" selected>Rule-Based v1 (Vegetation Loss + Soil Gain)</option>
-              </select>
-            </div>
-            <div class="form-group hidden" id="pothole-model-group">
-              <label for="pothole-model">Pothole Model</label>
-              <select id="pothole-model">
-                <option value="Rule-Based v1" selected>Rule-Based v1 (Edges + Shadows + Texture)</option>
-              </select>
-            </div>
-          </div>
           <div class="location-row">
             <div class="form-group">
               <label for="detect-zone">
@@ -401,6 +360,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=32"></script>
+  <script src="/static/js/app.js?v=33"></script>
 </body>
 </html>

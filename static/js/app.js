@@ -12,49 +12,6 @@ function showView(id) {
   if (el) el.classList.add('active');
 }
 
-function getDetectionTypeFromPath() {
-  const p = (window.location.pathname || '').toLowerCase();
-  if (p.includes('/detect/landslide')) return 'landslide_detection';
-  if (p.includes('/detect/pothole')) return 'pothole_detection';
-  if (p.includes('/detect/change')) return 'change_detection';
-  return null;
-}
-
-function applyDetectionTypeToUI(type) {
-  const typeSel = document.getElementById('detect-type');
-  if (!typeSel || !type) return;
-  typeSel.value = type;
-  typeSel.dispatchEvent(new Event('change'));
-}
-
-function pathForDetectionType(type) {
-  if (type === 'landslide_detection') return '/detect/landslide';
-  if (type === 'pothole_detection') return '/detect/pothole';
-  return '/detect/change';
-}
-
-function navigateToDetectionType(type, replace = false) {
-  applyDetectionTypeToUI(type);
-  const targetPath = pathForDetectionType(type);
-  if ((window.location.pathname || '') !== targetPath) {
-    const fn = replace ? 'replaceState' : 'pushState';
-    window.history[fn]({}, '', targetPath);
-  }
-  showView('dashboard');
-  loadHistory();
-}
-
-// ---- Detection type selection buttons ----
-document.getElementById('btn-type-change')?.addEventListener('click', () => {
-  navigateToDetectionType('change_detection');
-});
-document.getElementById('btn-type-landslide')?.addEventListener('click', () => {
-  navigateToDetectionType('landslide_detection');
-});
-document.getElementById('btn-type-pothole')?.addEventListener('click', () => {
-  navigateToDetectionType('pothole_detection');
-});
-
 function showError(id, msg) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -121,9 +78,8 @@ document.getElementById('form-register')?.addEventListener('submit', async (e) =
 });
 
 function handlePostAuthNavigation() {
-  const preferred = getDetectionTypeFromPath();
-  if (preferred) applyDetectionTypeToUI(preferred);
-  showView('detection-type');
+  showView('dashboard');
+  loadHistory();
 }
 
 // ---- Forgot password ----
@@ -187,13 +143,8 @@ async function init() {
   try {
     const user = await api('GET', '/api/me');
     document.getElementById('user-email').textContent = user.email;
-    // Always show the selection menu first.
-    // If the user already landed on /detect/change or /detect/landslide, we
-    // pre-select the corresponding detection type in the dropdown for convenience,
-    // but we still show the menu page before redirecting.
-    const preferred = getDetectionTypeFromPath();
-    if (preferred) applyDetectionTypeToUI(preferred);
-    showView('detection-type');
+    showView('dashboard');
+    loadHistory();
   } catch (_) { setToken(null); showView('login'); }
 }
 
@@ -237,42 +188,6 @@ function setupUploadZone(inputId, nameId, zoneId, previewId) {
 
 setupUploadZone('file-before', 'name-before', 'zone-before', 'preview-before');
 setupUploadZone('file-after', 'name-after', 'zone-after', 'preview-after');
-
-// ---- Detection menu (General vs Landslide vs Pothole) ----
-(function initDetectionMenu() {
-  const typeSel = document.getElementById('detect-type');
-  const landslideGroup = document.getElementById('landslide-model-group');
-  const potholeGroup = document.getElementById('pothole-model-group');
-  const methodGroup = document.getElementById('detect-method')?.closest('.form-group');
-  const regGroup = document.getElementById('detect-registration')?.closest('.form-group');
-  const normGroup = document.getElementById('detect-normalization')?.closest('.form-group');
-  if (!typeSel) return;
-
-  function refresh() {
-    const isLandslide = typeSel.value === 'landslide_detection';
-    const isPothole = typeSel.value === 'pothole_detection';
-    const beforeZone = document.getElementById('zone-before');
-    const beforeInput = document.getElementById('file-before');
-    const beforeName = document.getElementById('name-before');
-    if (landslideGroup) landslideGroup.classList.toggle('hidden', !isLandslide);
-    if (potholeGroup) potholeGroup.classList.toggle('hidden', !isPothole);
-    const hideCore = isLandslide || isPothole;
-    if (methodGroup) methodGroup.classList.toggle('hidden', hideCore);
-    if (regGroup) regGroup.classList.toggle('hidden', hideCore);
-    if (normGroup) normGroup.classList.toggle('hidden', hideCore);
-    // Pothole mode uses a single image upload (after image).
-    if (beforeZone) beforeZone.classList.toggle('hidden', isPothole);
-    if (isPothole && beforeInput) {
-      beforeInput.value = '';
-      if (beforeName) beforeName.textContent = 'No file chosen';
-      const prev = document.getElementById('preview-before');
-      if (prev) prev.classList.add('hidden');
-    }
-  }
-
-  typeSel.addEventListener('change', refresh);
-  refresh();
-})();
 
 // ---- Delhi Zone → Village cascading dropdowns ----
 const DELHI_ZONES = {
@@ -481,15 +396,9 @@ function stopDetectionProgress(success) {
 document.getElementById('form-detect')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideError('dashboard-error');
-  const detectionType = document.getElementById('detect-type')?.value || 'change_detection';
   const before = document.getElementById('file-before').files?.[0];
   const after = document.getElementById('file-after').files?.[0];
-  if (detectionType === 'pothole_detection') {
-    if (!after && !before) {
-      showError('dashboard-error', 'Please upload one road image for pothole detection.');
-      return;
-    }
-  } else if (!before || !after) {
+  if (!before || !after) {
     showError('dashboard-error', 'Please select both before and after images.');
     return;
   }
@@ -498,20 +407,13 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   const loading = document.getElementById('run-loading');
   btn.disabled = true;
   loading.classList.remove('hidden');
-   startDetectionProgress();
+  startDetectionProgress();
 
   const token = getToken();
   const form = new FormData();
-  if (before) form.append('before', before);
-  if (after) form.append('after', after);
-  form.append('detection_type', detectionType);
+  form.append('before', before);
+  form.append('after', after);
   form.append('method', document.getElementById('detect-method').value);
-  if (detectionType === 'landslide_detection') {
-    form.append('landslide_model', document.getElementById('landslide-model')?.value || 'Rule-Based v1');
-  }
-  if (detectionType === 'pothole_detection') {
-    form.append('pothole_model', document.getElementById('pothole-model')?.value || 'Rule-Based v1');
-  }
   form.append('title', document.getElementById('detect-title').value || 'Untitled run');
   form.append('zone', document.getElementById('detect-zone').value || '');
   form.append('village', document.getElementById('detect-village').value || '');
