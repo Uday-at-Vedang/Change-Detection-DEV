@@ -1,7 +1,8 @@
 """
-Satellite Change Detection Engine v2
-High-accuracy detection with multi-channel analysis, SSIM, texture features,
-adaptive thresholding, and improved object classification.
+Satellite Change Detection Engine v3
+High-accuracy detection with multi-channel analysis, SSIM, CVA, texture features,
+adaptive thresholding, vegetation/shadow suppression, SNR-weighted fusion,
+and improved object classification.
 """
 import numpy as np
 import cv2
@@ -16,7 +17,7 @@ from collections import Counter
 # ---------------------------------------------------------------------------
 
 def preprocess_image(image):
-    """Preprocess image: convert to RGB, limit size."""
+    """Preprocess image: convert to RGB, limit size, bilateral denoise."""
     img_array = np.array(image)
     if img_array.ndim == 2:
         img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
@@ -30,6 +31,8 @@ def preprocess_image(image):
         scale = max_size / max(height, width)
         new_w, new_h = max(1, int(width * scale)), max(1, int(height * scale))
         img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # Bilateral filter: reduces sensor noise while preserving edges
+    img_array = cv2.bilateralFilter(img_array, 9, 75, 75)
     return img_array
 
 
@@ -148,39 +151,153 @@ def normalize_radiometry(img1, img2):
 
 
 # ---------------------------------------------------------------------------
-# 4. SSIM-based structural change map
+# 4. Vegetation suppression
 # ---------------------------------------------------------------------------
 
-def compute_ssim_change_map(img1, img2, win_size=7):
-    """Compute per-pixel structural dissimilarity (1 - SSIM)."""
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY).astype(np.float64)
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY).astype(np.float64)
+def compute_vegetation_mask(img):
+    """
+    Identify vegetation pixels using pseudo-NDVI and HSV hue/saturation.
+    Returns a float map in [0, 1] where 1.0 = vegetation, 0.0 = non-vegetation.
+    """
+    r = img[:, :, 0].astype(np.float32)
+    g = img[:, :, 1].astype(np.float32)
+    ndvi = (g - r) / (g + r + 1e-6)
 
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    hue = hsv[:, :, 0].astype(np.float32)
+    sat = hsv[:, :, 1].astype(np.float32)
+
+    ndvi_veg = (ndvi > 0.08).astype(np.float32)
+    hsv_veg = ((hue >= 35) & (hue <= 85) & (sat > 30)).astype(np.float32)
+
+    veg = np.clip(ndvi_veg * 0.6 + hsv_veg * 0.4, 0, 1)
+    veg = cv2.GaussianBlur(veg, (11, 11), 0)
+    return veg
+
+
+def compute_combined_vegetation_suppression(img1, img2):
+    """
+    Build a suppression map from both images: if EITHER image shows vegetation
+    in a region, dampen it. Returns a float map in [0, 1] where
+    1.0 = no suppression, ~0.3 = heavy suppression (vegetation area).
+    """
+    veg1 = compute_vegetation_mask(img1)
+    veg2 = compute_vegetation_mask(img2)
+    combined_veg = np.maximum(veg1, veg2)
+    suppression = 1.0 - combined_veg * 0.7
+    return suppression.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# 5. Shadow / illumination-only change suppression
+# ---------------------------------------------------------------------------
+
+def compute_shadow_suppression(img1, img2):
+    """
+    Detect pixels where only brightness (L) changed but chrominance (A, B)
+    stayed similar. These are shadow/illumination shifts, not real changes.
+    Returns a float map in [0, 1]: 1.0 = real change, ~0.2 = illumination-only.
+    """
+    lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
+
+    delta_l = np.abs(lab1[:, :, 0] - lab2[:, :, 0])
+    delta_a = np.abs(lab1[:, :, 1] - lab2[:, :, 1])
+    delta_b = np.abs(lab1[:, :, 2] - lab2[:, :, 2])
+
+    chroma_change = delta_a + delta_b
+    brightness_only = (delta_l > 18) & (chroma_change < 12)
+    shadow_map = brightness_only.astype(np.float32)
+    shadow_map = cv2.GaussianBlur(shadow_map, (9, 9), 0)
+
+    suppression = 1.0 - shadow_map * 0.8
+    return suppression.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# 6. Change Vector Analysis (CVA)
+# ---------------------------------------------------------------------------
+
+def compute_cva(img1, img2):
+    """
+    Change Vector Analysis in LAB space.
+    Returns a normalized change magnitude map with illumination-only
+    changes suppressed via direction filtering.
+    """
+    lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
+
+    dl = (lab2[:, :, 0] - lab1[:, :, 0]) / 100.0
+    da = (lab2[:, :, 1] - lab1[:, :, 1]) / 128.0
+    db = (lab2[:, :, 2] - lab1[:, :, 2]) / 128.0
+
+    magnitude = np.sqrt(dl ** 2 + da ** 2 + db ** 2)
+
+    chroma_mag = np.sqrt(da ** 2 + db ** 2)
+    total_mag = magnitude + 1e-8
+    chroma_ratio = chroma_mag / total_mag
+
+    # Suppress illumination-only changes (low chroma ratio)
+    suppression = np.clip(chroma_ratio * 2.5, 0.15, 1.0)
+    magnitude = magnitude * suppression
+
+    p995 = float(np.quantile(magnitude, 0.995))
+    if p995 > 1e-8:
+        magnitude = np.clip(magnitude / p995, 0, 1)
+
+    return magnitude.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# 7. SSIM-based structural change map
+# ---------------------------------------------------------------------------
+
+def _ssim_at_scale(gray1, gray2, win_size=11):
+    """Compute SSIM dissimilarity at a single scale."""
+    sigma = win_size / 6.0
     C1 = (0.01 * 255) ** 2
     C2 = (0.03 * 255) ** 2
 
-    mu1 = cv2.GaussianBlur(gray1, (win_size, win_size), 1.5)
-    mu2 = cv2.GaussianBlur(gray2, (win_size, win_size), 1.5)
+    mu1 = cv2.GaussianBlur(gray1, (win_size, win_size), sigma)
+    mu2 = cv2.GaussianBlur(gray2, (win_size, win_size), sigma)
 
     mu1_sq = mu1 * mu1
     mu2_sq = mu2 * mu2
     mu1_mu2 = mu1 * mu2
 
-    # Clamp to zero: E[X²]-E[X]² can go slightly negative from float rounding
-    sigma1_sq = np.maximum(cv2.GaussianBlur(gray1 * gray1, (win_size, win_size), 1.5) - mu1_sq, 0)
-    sigma2_sq = np.maximum(cv2.GaussianBlur(gray2 * gray2, (win_size, win_size), 1.5) - mu2_sq, 0)
-    sigma12 = cv2.GaussianBlur(gray1 * gray2, (win_size, win_size), 1.5) - mu1_mu2
+    sigma1_sq = np.maximum(cv2.GaussianBlur(gray1 * gray1, (win_size, win_size), sigma) - mu1_sq, 0)
+    sigma2_sq = np.maximum(cv2.GaussianBlur(gray2 * gray2, (win_size, win_size), sigma) - mu2_sq, 0)
+    sigma12 = cv2.GaussianBlur(gray1 * gray2, (win_size, win_size), sigma) - mu1_mu2
 
     denom = (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2)
     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / (denom + 1e-12)
-
-    # Structural dissimilarity: 0 = identical, 1 = completely different
     dssim = np.clip((1.0 - ssim_map) / 2.0, 0, 1)
     return dssim
 
 
+def compute_ssim_change_map(img1, img2, win_size=11):
+    """
+    Multi-scale SSIM dissimilarity: averages full-res and half-res scales
+    to capture both fine and coarse structural changes.
+    """
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY).astype(np.float64)
+
+    dssim_full = _ssim_at_scale(gray1, gray2, win_size)
+
+    h, w = gray1.shape
+    g1_half = cv2.resize(gray1, (max(1, w // 2), max(1, h // 2)))
+    g2_half = cv2.resize(gray2, (max(1, w // 2), max(1, h // 2)))
+    half_win = max(3, win_size // 2) | 1
+    dssim_half = _ssim_at_scale(g1_half, g2_half, half_win)
+    dssim_half_up = cv2.resize(dssim_half, (w, h))
+
+    dssim = 0.6 * dssim_full + 0.4 * dssim_half_up
+    return dssim
+
+
 # ---------------------------------------------------------------------------
-# 5. Texture feature extraction (LBP)
+# 8. Texture feature extraction (LBP)
 # ---------------------------------------------------------------------------
 
 def compute_lbp(gray, radius=1, n_points=8):
@@ -207,7 +324,7 @@ def compute_texture_change(img1, img2):
 
 
 # ---------------------------------------------------------------------------
-# 6. Edge-aware change detection
+# 9. Edge-aware change detection
 # ---------------------------------------------------------------------------
 
 def compute_edge_change(img1, img2):
@@ -232,7 +349,7 @@ def compute_edge_change(img1, img2):
 
 
 # ---------------------------------------------------------------------------
-# 7. Improved detection methods
+# 10. Improved detection methods
 # ---------------------------------------------------------------------------
 
 def _adaptive_binary_threshold(score_uint8, min_floor=25, sensitivity=0.5):
@@ -348,8 +465,25 @@ def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
     return change_mask
 
 
+def _snr_weight(channel):
+    """
+    Signal-to-noise ratio weight: signal = mean of top 5% values,
+    noise = std of bottom 50%. Channels with concentrated high responses
+    score higher than uniformly noisy ones.
+    """
+    flat = channel.ravel()
+    p95 = float(np.quantile(flat, 0.95))
+    signal = float(np.mean(flat[flat >= p95])) if p95 > 1e-8 else 0.0
+    p50 = float(np.quantile(flat, 0.50))
+    noise = float(np.std(flat[flat <= p50])) + 1e-8
+    return signal / noise
+
+
 def _ai_fusion_core(img1, img2, sensitivity=0.5):
-    """One-direction AI fusion core. Returns (mask, debug)."""
+    """
+    Single-pass AI fusion with 5 channels, SNR weighting, and
+    vegetation + shadow suppression. Returns (mask, debug).
+    """
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
@@ -366,7 +500,6 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
         else:
             s1, s2 = lab1, lab2
         diff = s1 - s2
-        # Delta-E (CIE76) normalized
         delta_e = np.sqrt((diff[:, :, 0] / 100.0) ** 2 +
                           (diff[:, :, 1] / 128.0) ** 2 +
                           (diff[:, :, 2] / 128.0) ** 2)
@@ -388,52 +521,44 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
     # ---- Channel 4: Edge change ----
     edge_change = compute_edge_change(img1, img2)
 
-    # ---- Adaptive fusion ----
-    # Weight channels by their discriminative power (entropy-based)
-    channels = [color_change, ssim_change, texture_change, edge_change]
-    weights = []
-    for ch in channels:
-        ch_uint8 = (ch * 255).astype(np.uint8)
-        hist = cv2.calcHist([ch_uint8], [0], None, [256], [0, 256]).flatten()
-        hist = hist / (hist.sum() + 1e-8)
-        entropy = -np.sum(hist[hist > 0] * np.log2(hist[hist > 0] + 1e-10))
-        weights.append(entropy)
+    # ---- Channel 5: Change Vector Analysis ----
+    cva_change = compute_cva(img1, img2)
 
-    # Normalize weights
+    # ---- SNR-weighted fusion ----
+    channels = [color_change, ssim_change, texture_change, edge_change, cva_change]
+    weights = [_snr_weight(ch) for ch in channels]
     total_w = sum(weights) + 1e-8
     weights = [w / total_w for w in weights]
 
-    # Fuse
     fused = np.zeros_like(color_change, dtype=np.float64)
     for ch, w in zip(channels, weights):
         fused += w * ch.astype(np.float64)
 
-    # Percentile normalization: max-normalization can make the distribution too peaky,
-    # causing an overly strict threshold on some scenes.
+    # ---- Apply vegetation + shadow suppression before thresholding ----
+    veg_suppression = compute_combined_vegetation_suppression(img1, img2)
+    shadow_suppression = compute_shadow_suppression(img1, img2)
+    fused = fused * veg_suppression.astype(np.float64) * shadow_suppression.astype(np.float64)
+
+    # Percentile normalization
     p995 = float(np.quantile(fused, 0.995))
     if p995 <= 1e-8:
         p995 = float(fused.max() + 1e-8)
     fused_norm = np.clip(fused / (p995 + 1e-8), 0.0, 1.0)
 
-    # Gamma < 1 boosts mid-range responses (useful for subtle changes).
     gamma = 0.85
     fused_norm = np.power(fused_norm, gamma)
 
-    # Smooth before thresholding so genuine change forms connected regions
-    # (prevents _clean_mask from deleting thin speckle artifacts).
     fused_smooth = cv2.GaussianBlur(fused_norm.astype(np.float32), (7, 7), 0)
 
-    # Sensitivity -> lower percentile => more detections.
     sens = float(np.clip(sensitivity, 0.0, 1.0))
-    q = 0.958 - (sens - 0.5) * 0.04
-    q = float(np.clip(q, 0.90, 0.98))
+    q = 0.945 - (sens - 0.5) * 0.04
+    q = float(np.clip(q, 0.88, 0.97))
 
     thr_score = float(np.quantile(fused_smooth, q))
     change_mask = (fused_smooth >= thr_score).astype(np.uint8) * 255
 
     change_mask = _clean_mask(change_mask, sensitivity=sens)
 
-    # Bilateral filter preserves sharp boundaries while smoothing noise
     change_mask = cv2.bilateralFilter(change_mask, 9, 75, 75)
     _, change_mask = cv2.threshold(change_mask, 127, 255, cv2.THRESH_BINARY)
 
@@ -446,32 +571,32 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
         "fused_p99": float(np.quantile(fused_smooth, 0.99)),
         "fused_mean": float(np.mean(fused_smooth)),
         "sensitivity": float(sensitivity),
+        "channel_weights": {
+            "color": round(weights[0], 4),
+            "ssim": round(weights[1], 4),
+            "texture": round(weights[2], 4),
+            "edge": round(weights[3], 4),
+            "cva": round(weights[4], 4),
+        },
     }
     return change_mask, debug
 
 
 def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     """
-    Bidirectional AI fusion for robustness:
-    - run core on (before, after) and (after, before)
-    - combine with OR then clean
-    This improves stability for asymmetric scenes / normalization drift.
+    Single-pass AI fusion with CVA, SNR weighting, and vegetation/shadow
+    suppression. The suppression maps make the reverse pass unnecessary,
+    halving computation and eliminating OR-induced false positives.
     """
-    fwd_mask, fwd_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
-    rev_mask, rev_debug = _ai_fusion_core(img2, img1, sensitivity=sensitivity)
-
-    combined = cv2.bitwise_or(fwd_mask, rev_mask)
-    combined = _clean_mask(combined, sensitivity=sensitivity)
+    change_mask, core_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
 
     debug = {
         "method": "AI-Based Deep Learning",
-        "threshold_used": fwd_debug.get("threshold_used"),
-        "bidirectional": True,
-        "forward": fwd_debug,
-        "reverse": rev_debug,
+        "threshold_used": core_debug.get("threshold_used"),
         "sensitivity": float(sensitivity),
+        "core": core_debug,
     }
-    return combined, debug
+    return change_mask, debug
 
 
 def hybrid_method(img1, img2, sensitivity=0.5):
@@ -513,7 +638,7 @@ def hybrid_method(img1, img2, sensitivity=0.5):
 
 
 # ---------------------------------------------------------------------------
-# 8. Robust post-processing
+# 11. Robust post-processing
 # ---------------------------------------------------------------------------
 
 def _clean_mask(mask, sensitivity=0.5, border_margin=12):
@@ -524,7 +649,8 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     3. Opening to remove small specks
     4. Closing to bridge tiny gaps
     5. Fill holes inside regions
-    6. Erode-then-dilate to break thin noise bridges between separate changes
+    6. Erode-then-dilate to break thin noise bridges
+    7. Connected-component area + circularity filtering
     """
     mask = mask.copy()
     h, w = mask.shape[:2]
@@ -535,38 +661,51 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
         mask[:, :border_margin] = 0
         mask[:, -border_margin:] = 0
 
-    # 2. Median to remove isolated noise pixels
     mask = cv2.medianBlur(mask, 5)
 
-    # 3. Opening (erosion then dilation) removes small specks
     open_size = max(3, int(5 * (1 - sensitivity * 0.5)))
     if open_size % 2 == 0:
         open_size += 1
     k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_size, open_size))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_open)
 
-    # 4. Closing to bridge small internal gaps
     close_size = max(3, int(7 * (1 - sensitivity)))
     if close_size % 2 == 0:
         close_size += 1
     k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k_close)
 
-    # 5. Fill holes inside regions
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     filled = np.zeros_like(mask)
     cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
 
-    # 6. Erode to break thin noise bridges, then dilate back
     k_break = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     filled = cv2.erode(filled, k_break, iterations=1)
     filled = cv2.dilate(filled, k_break, iterations=1)
 
-    return filled
+    # 7. Component-level filtering: remove tiny survivors and elongated noise
+    min_component_px = max(80, int(h * w * 0.00004))
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(filled, connectivity=8)
+    clean = np.zeros_like(filled)
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area < min_component_px:
+            continue
+        cw = stats[i, cv2.CC_STAT_WIDTH]
+        ch = stats[i, cv2.CC_STAT_HEIGHT]
+        bbox_area = max(cw * ch, 1)
+        perimeter_approx = 2 * (cw + ch)
+        # Circularity: thin elongated noise has very high perimeter^2/area
+        circularity = (perimeter_approx ** 2) / (bbox_area + 1e-8)
+        if circularity > 80 and area < min_component_px * 3:
+            continue
+        clean[labels == i] = 255
+
+    return clean
 
 
 # ---------------------------------------------------------------------------
-# 9. Severity classification and improved visualization
+# 12. Severity classification and improved visualization
 # ---------------------------------------------------------------------------
 
 def _severity_from_region(region, total_pixels):
@@ -660,7 +799,7 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
 
 
 # ---------------------------------------------------------------------------
-# 10. Improved object classification
+# 13. Improved object classification
 # ---------------------------------------------------------------------------
 
 def extract_advanced_features(region):
@@ -957,7 +1096,7 @@ def classify_with_ensemble(image_region, bbox):
 
 
 # ---------------------------------------------------------------------------
-# 11. Vegetation sub-classification
+# 14. Vegetation sub-classification
 # ---------------------------------------------------------------------------
 
 _VEGETATION_TYPES = {"Vegetation Change"}
@@ -1094,7 +1233,7 @@ def classify_vegetation_subtype(before_img, after_img, bbox):
 
 
 # ---------------------------------------------------------------------------
-# 12. Structural change sub-classification
+# 15. Structural change sub-classification
 # ---------------------------------------------------------------------------
 
 _STRUCTURAL_TYPES = {"New Construction/Building", "Demolition/Clearing",
@@ -1286,7 +1425,7 @@ def _classify_road_subtype(struct_b, struct_a, edge_b, edge_a,
 
 
 # ---------------------------------------------------------------------------
-# 13. 3D Building Analysis — height estimation + construction stage
+# 16. 3D Building Analysis — height estimation + construction stage
 # ---------------------------------------------------------------------------
 
 _BUILDING_TYPES = {"New Construction/Building", "Demolition/Clearing"}
@@ -1510,7 +1649,7 @@ def analyze_building_3d(before_img, after_img, region, features):
 
 
 # ---------------------------------------------------------------------------
-# 14. Region analysis
+# 17. Region analysis
 # ---------------------------------------------------------------------------
 
 def _tight_bbox(labels, label_id, stats_row):
@@ -1575,8 +1714,8 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
                            before_img=None, registration_ok=True):
     """
     Find connected change regions with strict quality filters:
-    - Higher min_area (400) to reject noise
-    - Fill-ratio filter: reject boxes that are mostly empty
+    - Adaptive min_area scaled to image size
+    - Fill-ratio filter (>= 0.12) rejects sparse noise boxes
     - Tighter bounding boxes computed from actual pixel coordinates
     - NMS to remove overlapping/duplicate boxes
     - Max 60 regions cap to avoid flooding the UI
@@ -1592,7 +1731,7 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
     # - keeps sensitivity on smaller images
     # - suppresses speckle noise on larger images
     if min_area is None:
-        min_area = int(max(250, min(1200, img_area * 0.00008)))
+        min_area = int(max(350, min(1400, img_area * 0.00012)))
 
     for i in range(1, num_labels):
         raw_area = stats[i, cv2.CC_STAT_AREA]
@@ -1602,7 +1741,7 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
         x, y, w, h, fill_ratio = _tight_bbox(labels, i, stats[i])
 
         # Reject very sparse regions (bbox is mostly empty)
-        if fill_ratio < 0.10:
+        if fill_ratio < 0.12:
             continue
 
         # Keep large real changes; only suppress near-full-frame artifacts.
@@ -1685,7 +1824,7 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 
 
 # ---------------------------------------------------------------------------
-# 15. Main pipeline
+# 18. Main pipeline
 # ---------------------------------------------------------------------------
 
 def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
