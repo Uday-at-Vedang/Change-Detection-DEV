@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Change Detection</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20" />
+  <link rel="stylesheet" href="/static/css/style.css?v=21" />
 </head>
 <body>
   <div class="app">
@@ -203,6 +203,21 @@
               <label for="detect-title">Title</label>
               <input type="text" id="detect-title" value="Untitled run" placeholder="Run title" />
             </div>
+            <div class="form-group">
+              <label for="detect-method">Method</label>
+              <select id="detect-method">
+                <option value="AI-Based Deep Learning">AI-Based Deep Learning</option>
+                <option value="Image Difference">Image Difference</option>
+                <option value="Feature-Based">Feature-Based</option>
+                <option value="Hybrid Approach">Hybrid Approach</option>
+              </select>
+            </div>
+            <div class="form-group checkbox-group">
+              <label><input type="checkbox" id="detect-registration" checked /> Image Registration</label>
+            </div>
+            <div class="form-group checkbox-group">
+              <label><input type="checkbox" id="detect-normalization" checked /> Radiometric Normalization</label>
+            </div>
           </div>
           <div class="options-row">
             <div class="form-group">
@@ -345,6 +360,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=35"></script>
+  <script src="/static/js/app.js?v=36"></script>
 </body>
 </html>

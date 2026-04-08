@@ -413,12 +413,12 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   const form = new FormData();
   form.append('before', before);
   form.append('after', after);
-  form.append('method', 'AI-Based Deep Learning');
+  form.append('method', document.getElementById('detect-method').value);
   form.append('title', document.getElementById('detect-title').value || 'Untitled run');
   form.append('zone', document.getElementById('detect-zone').value || '');
   form.append('village', document.getElementById('detect-village').value || '');
-  form.append('enable_registration', 'true');
-  form.append('enable_normalization', 'true');
+  form.append('enable_registration', document.getElementById('detect-registration').checked);
+  form.append('enable_normalization', document.getElementById('detect-normalization').checked);
   const sensitivityInput = document.getElementById('detect-sensitivity');
   const minAreaInput = document.getElementById('detect-min-area');
   const sensitivity = Number(sensitivityInput?.value ?? 0.5);
