@@ -624,7 +624,7 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
 
     if regions:
         diag = np.sqrt(img2.shape[0]**2 + img2.shape[1]**2)
-        line_thickness = max(2, int(diag / 400))
+        line_thickness = max(1, int(diag / 900))
 
         for r in regions:
             x, y, w, h = r["bbox"]
@@ -638,22 +638,22 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
             y2c = min(overlay_uint8.shape[0], y + h)
             roi = overlay_uint8[y1c:y2c, x1c:x2c]
             fill = np.full_like(roi, color, dtype=np.uint8)
-            cv2.addWeighted(fill, 0.12, roi, 0.88, 0, roi)
+            cv2.addWeighted(fill, 0.07, roi, 0.93, 0, roi)
 
             cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, line_thickness)
 
             rid = r.get("id", 0)
             label = str(rid)
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = max(0.45, min(0.8, w / 120))
-            thickness = max(1, line_thickness - 1)
+            font_scale = max(0.35, min(0.55, w / 180))
+            thickness = 1
             (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
             lx = x
-            ly = max(th + 6, y - 6)
+            ly = max(th + 4, y - 4)
             cv2.rectangle(overlay_uint8,
-                          (lx, ly - th - 6), (lx + tw + 10, ly + 2),
+                          (lx, ly - th - 3), (lx + tw + 6, ly + 1),
                           color, cv2.FILLED)
-            cv2.putText(overlay_uint8, label, (lx + 5, ly - 2),
+            cv2.putText(overlay_uint8, label, (lx + 3, ly - 1),
                         font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
     return overlay_uint8
