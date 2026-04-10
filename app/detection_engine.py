@@ -728,18 +728,22 @@ def _severity_from_region(region, total_pixels):
     return "major"
 
 
-# BGR colors for severity (OpenCV uses BGR)
+# RGB colors for severity — high-contrast, colorblind-friendly palette
 _SEVERITY_COLORS = {
-    "minor": (0, 200, 0),      # Green
-    "moderate": (0, 255, 255), # Yellow
-    "major": (0, 0, 255),      # Red
+    "minor": (50, 205, 50),     # Lime green
+    "moderate": (255, 165, 0),  # Orange
+    "major": (255, 50, 50),     # Bright red
 }
+
+# Maximum bounding boxes drawn on the image to avoid visual clutter
+_MAX_VISIBLE_BOXES = 30
 
 
 def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
     """
-    Overlay change mask on 'after' image; draw color-coded bounding boxes
-    by severity (green=minor, yellow=moderate, red=major) and numbered labels.
+    Clean visualization: subtle tinted overlay for changed pixels,
+    color-coded contour outlines (not filled boxes) for the top regions,
+    and compact numbered labels.
     """
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
@@ -750,50 +754,47 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
     mask_bool = change_mask > 127
     mask_float = mask_bool.astype(np.float32)
 
-    # Lighter red overlay (35% alpha) so the image stays readable
-    red_layer = np.zeros_like(img2, dtype=np.float32)
-    red_layer[:, :, 0] = 255
-    alpha = 0.35
+    # Subtle warm tint on changed pixels (18% alpha) — enough to see, not enough to hide
+    tint = np.zeros_like(img2, dtype=np.float32)
+    tint[:, :, 0] = 255
+    tint[:, :, 1] = 80
+    alpha = 0.18
     for c in range(3):
         overlay[:, :, c] = (overlay[:, :, c] * (1 - mask_float * alpha)
-                            + red_layer[:, :, c] * mask_float * alpha)
+                            + tint[:, :, c] * mask_float * alpha)
 
     overlay_uint8 = np.clip(overlay, 0, 255).astype(np.uint8)
     total_px = total_pixels if total_pixels is not None else (img2.shape[0] * img2.shape[1])
 
     if regions:
         diag = np.sqrt(img2.shape[0]**2 + img2.shape[1]**2)
-        line_thickness = max(1, int(diag / 900))
+        line_thickness = max(1, int(diag / 1100))
 
-        for r in regions:
+        visible = regions[:_MAX_VISIBLE_BOXES]
+
+        for r in visible:
             x, y, w, h = r["bbox"]
             severity = r.get("severity") or _severity_from_region(r, total_px)
             color = _SEVERITY_COLORS.get(severity, (255, 255, 255))
 
-            # Semi-transparent fill using only the ROI (avoids full-image copy)
-            x1c = max(0, x)
-            y1c = max(0, y)
-            x2c = min(overlay_uint8.shape[1], x + w)
-            y2c = min(overlay_uint8.shape[0], y + h)
-            roi = overlay_uint8[y1c:y2c, x1c:x2c]
-            fill = np.full_like(roi, color, dtype=np.uint8)
-            cv2.addWeighted(fill, 0.07, roi, 0.93, 0, roi)
-
+            # Draw only the outline — no fill, keeps the image readable
             cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, line_thickness)
 
+            # Compact label: region number in a small pill
             rid = r.get("id", 0)
             label = str(rid)
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = max(0.35, min(0.55, w / 180))
-            thickness = 1
-            (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
+            font_scale = max(0.32, min(0.48, w / 200))
+            txt_thick = 1
+            (tw, th), _ = cv2.getTextSize(label, font, font_scale, txt_thick)
             lx = x
-            ly = max(th + 4, y - 4)
+            ly = max(th + 3, y - 3)
+            # Dark background pill for contrast on any terrain
             cv2.rectangle(overlay_uint8,
-                          (lx, ly - th - 3), (lx + tw + 6, ly + 1),
-                          color, cv2.FILLED)
-            cv2.putText(overlay_uint8, label, (lx + 3, ly - 1),
-                        font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+                          (lx, ly - th - 2), (lx + tw + 5, ly + 1),
+                          (30, 30, 30), cv2.FILLED)
+            cv2.putText(overlay_uint8, label, (lx + 2, ly - 1),
+                        font, font_scale, color, txt_thick, cv2.LINE_AA)
 
     return overlay_uint8
 
