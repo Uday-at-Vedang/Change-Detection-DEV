@@ -584,14 +584,27 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
 
 def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     """
-    Single-pass AI fusion with CVA, SNR weighting, and vegetation/shadow
-    suppression. The suppression maps make the reverse pass unnecessary,
-    halving computation and eliminating OR-induced false positives.
+    Uses the trained Siamese U-Net when available; falls back to the
+    rule-based multi-channel fusion otherwise.
     """
-    change_mask, core_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
+    from .model_inference import is_model_available, predict_change_mask
 
+    if is_model_available():
+        threshold = 0.35 + (1.0 - sensitivity) * 0.3
+        change_mask, score_map = predict_change_mask(img1, img2, threshold=threshold)
+        change_mask = _clean_mask(change_mask, sensitivity=sensitivity)
+        debug = {
+            "method": "AI-Based Deep Learning (Siamese U-Net)",
+            "model": "siamese_unet",
+            "threshold_used": int(threshold * 255),
+            "sensitivity": float(sensitivity),
+        }
+        return change_mask, debug
+
+    # Fallback: rule-based fusion
+    change_mask, core_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
     debug = {
-        "method": "AI-Based Deep Learning",
+        "method": "AI-Based Deep Learning (rule-based fallback)",
         "threshold_used": core_debug.get("threshold_used"),
         "sensitivity": float(sensitivity),
         "core": core_debug,
