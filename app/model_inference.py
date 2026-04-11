@@ -55,8 +55,10 @@ def _load_model():
 
     cache_dir = os.environ.get("HF_HOME", None)
     logger.info("Loading AdaptFormer from %s ...", _MODEL_ID)
-    _PROCESSOR = AutoImageProcessor.from_pretrained(_MODEL_ID, cache_dir=cache_dir)
-    _MODEL = AutoModel.from_pretrained(_MODEL_ID, cache_dir=cache_dir)
+    _PROCESSOR = AutoImageProcessor.from_pretrained(
+        _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+    _MODEL = AutoModel.from_pretrained(
+        _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
     _MODEL.to(_DEVICE)
     _MODEL.eval()
     logger.info("AdaptFormer loaded on %s", _DEVICE)

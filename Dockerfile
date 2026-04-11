@@ -19,7 +19,7 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=14
+ARG APP_BUILD=15
 ENV APP_BUILD=${APP_BUILD}
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
 
@@ -31,8 +31,8 @@ RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=300
 # Pre-download the AdaptFormer model so cold starts are instant
 ENV HF_HOME=/app/.hf_cache
 RUN python -c "from transformers import AutoImageProcessor, AutoModel; \
-    AutoImageProcessor.from_pretrained('deepang/adaptformer-LEVIR-CD', cache_dir='/app/.hf_cache'); \
-    AutoModel.from_pretrained('deepang/adaptformer-LEVIR-CD', cache_dir='/app/.hf_cache'); \
+    AutoImageProcessor.from_pretrained('deepang/adaptformer-LEVIR-CD', cache_dir='/app/.hf_cache', trust_remote_code=True); \
+    AutoModel.from_pretrained('deepang/adaptformer-LEVIR-CD', cache_dir='/app/.hf_cache', trust_remote_code=True); \
     print('Model pre-downloaded successfully')"
 
 # Copy application code
