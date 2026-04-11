@@ -177,15 +177,18 @@ def compute_vegetation_mask(img):
 
 def compute_combined_vegetation_suppression(img1, img2):
     """
-    Build a suppression map from both images: if EITHER image shows vegetation
-    in a region, dampen it. Returns a float map in [0, 1] where
-    1.0 = no suppression, ~0.3 = heavy suppression (vegetation area).
+    Asymmetric vegetation handling:
+    - Where BOTH images are vegetated: suppress (likely seasonal noise)
+    - Where only ONE image is vegetated: boost (real vegetation change)
+    Returns a float map where 1.0 = neutral, <1 = suppress, >1 = boost.
     """
     veg1 = compute_vegetation_mask(img1)
     veg2 = compute_vegetation_mask(img2)
-    combined_veg = np.maximum(veg1, veg2)
-    suppression = 1.0 - combined_veg * 0.7
-    return suppression.astype(np.float32)
+    both_veg = np.minimum(veg1, veg2)
+    one_only = np.abs(veg1 - veg2)
+    seasonal_suppression = 1.0 - both_veg * 0.7
+    vegetation_boost = 1.0 + one_only * 0.3
+    return (seasonal_suppression * vegetation_boost).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -584,24 +587,29 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
 
 def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     """
-    Uses the trained Siamese U-Net when available; falls back to the
+    Uses the pre-trained AdaptFormer model when available; falls back to the
     rule-based multi-channel fusion otherwise.
     """
     from .model_inference import is_model_available, predict_change_mask
 
     if is_model_available():
         threshold = 0.35 + (1.0 - sensitivity) * 0.3
-        change_mask, score_map = predict_change_mask(img1, img2, threshold=threshold)
-        change_mask = _clean_mask(change_mask, sensitivity=sensitivity)
-        debug = {
-            "method": "AI-Based Deep Learning (Siamese U-Net)",
-            "model": "siamese_unet",
-            "threshold_used": int(threshold * 255),
-            "sensitivity": float(sensitivity),
-        }
-        return change_mask, debug
+        try:
+            change_mask, score_map = predict_change_mask(
+                img1, img2, threshold=threshold)
+            change_mask = _clean_mask(change_mask, sensitivity=sensitivity)
+            debug = {
+                "method": "AI-Based Deep Learning (AdaptFormer)",
+                "model": "adaptformer-levir-cd",
+                "threshold_used": int(threshold * 255),
+                "sensitivity": float(sensitivity),
+            }
+            return change_mask, debug
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "AdaptFormer inference failed, falling back to rule-based: %s", e)
 
-    # Fallback: rule-based fusion
     change_mask, core_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
     debug = {
         "method": "AI-Based Deep Learning (rule-based fallback)",
@@ -723,16 +731,33 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
 
 def _severity_from_region(region, total_pixels):
     """
-    Classify change severity from area and confidence.
-    Green = minor, Yellow = moderate, Red = major.
-    Area is the primary signal; confidence acts as a small bonus.
+    Type-aware severity classification.
+    Building/structural changes use area + confidence.
+    Vegetation changes weight confidence (NDVI delta) more heavily.
     """
     area = region.get("area", 0)
     confidence = region.get("confidence", 0.0)
+    obj_type = region.get("object_type", "")
     if total_pixels <= 0:
         return "minor"
     area_ratio = area / total_pixels
-    # Area-dominant score: area ratio (0-1) mapped to 0-10, confidence adds 0-0.3
+
+    if obj_type in _VEGETATION_TYPES or "Vegetation" in (obj_type or ""):
+        score = area_ratio * 600 + confidence * 0.6
+        if score < 0.8:
+            return "minor"
+        if score < 3.0:
+            return "moderate"
+        return "major"
+
+    if obj_type in _STRUCTURAL_TYPES or obj_type in _BUILDING_TYPES:
+        score = area_ratio * 1200 + confidence * 0.4
+        if score < 1.2:
+            return "minor"
+        if score < 4.5:
+            return "moderate"
+        return "major"
+
     score = area_ratio * 1000 + confidence * 0.3
     if score < 1.0:
         return "minor"
@@ -900,11 +925,91 @@ def _is_transient_object(area, w, h, features):
     return False
 
 
-def classify_object_type(image_region, bbox):
+def _count_line_segments(gray_crop):
+    """Count straight line segments using LSD — buildings have many, vegetation has few."""
+    if gray_crop.size == 0 or gray_crop.shape[0] < 5 or gray_crop.shape[1] < 5:
+        return 0, 0.0
+    lsd = cv2.createLineSegmentDetector(0)
+    lines, _, _, _ = lsd.detect(gray_crop.astype(np.uint8))
+    if lines is None:
+        return 0, 0.0
+    n_lines = len(lines)
+    total_length = sum(
+        np.sqrt((l[0][2] - l[0][0])**2 + (l[0][3] - l[0][1])**2)
+        for l in lines
+    )
+    return n_lines, float(total_length)
+
+
+def _count_corners(gray_crop):
+    """Count strong corners — buildings have clustered grid-like corners."""
+    if gray_crop.size == 0 or gray_crop.shape[0] < 5 or gray_crop.shape[1] < 5:
+        return 0
+    corners = cv2.goodFeaturesToTrack(
+        gray_crop.astype(np.uint8), maxCorners=100,
+        qualityLevel=0.05, minDistance=5)
+    return 0 if corners is None else len(corners)
+
+
+def _rectangular_hull_ratio(gray_crop, threshold=128):
+    """Ratio of non-zero area to bounding rect — buildings fill their box."""
+    if gray_crop.size == 0:
+        return 0.0
+    _, binary = cv2.threshold(gray_crop.astype(np.uint8), threshold, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 0.0
+    biggest = max(contours, key=cv2.contourArea)
+    contour_area = cv2.contourArea(biggest)
+    _, _, rw, rh = cv2.boundingRect(biggest)
+    rect_area = max(rw * rh, 1)
+    return contour_area / rect_area
+
+
+def _extract_differential_features(before_crop, after_crop):
+    """Extract features from BOTH before and after crops plus their deltas."""
+    feat_b = extract_advanced_features(before_crop)
+    feat_a = extract_advanced_features(after_crop)
+    if feat_b is None or feat_a is None:
+        return None
+
+    gray_b = cv2.cvtColor(before_crop, cv2.COLOR_RGB2GRAY)
+    gray_a = cv2.cvtColor(after_crop, cv2.COLOR_RGB2GRAY)
+
+    lines_b, linelen_b = _count_line_segments(gray_b)
+    lines_a, linelen_a = _count_line_segments(gray_a)
+    corners_b = _count_corners(gray_b)
+    corners_a = _count_corners(gray_a)
+    hull_a = _rectangular_hull_ratio(gray_a)
+
+    lab_b = cv2.cvtColor(before_crop, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab_a = cv2.cvtColor(after_crop, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab_dist = float(np.mean(np.sqrt(np.sum((lab_a - lab_b) ** 2, axis=2))))
+
+    return {
+        "before": feat_b, "after": feat_a,
+        "delta_ndvi": feat_a["ndvi"] - feat_b["ndvi"],
+        "delta_green_ratio": feat_a["green_ratio"] - feat_b["green_ratio"],
+        "delta_edge_density": feat_a["edge_density"] - feat_b["edge_density"],
+        "delta_brightness": feat_a["brightness"] - feat_b["brightness"],
+        "delta_texture_std": feat_a["texture_std"] - feat_b["texture_std"],
+        "delta_saturation": feat_a["saturation"] - feat_b["saturation"],
+        "delta_orientation_entropy": feat_a["orientation_entropy"] - feat_b["orientation_entropy"],
+        "delta_lines": lines_a - lines_b,
+        "delta_line_length": linelen_a - linelen_b,
+        "delta_corners": corners_a - corners_b,
+        "lines_after": lines_a, "corners_after": corners_a,
+        "lines_before": lines_b, "corners_before": corners_b,
+        "hull_ratio_after": hull_a,
+        "lab_color_distance": lab_dist,
+    }
+
+
+def classify_object_type(image_region, bbox, before_region=None):
     """
-    Classify GROUND-LEVEL structural changes only.
-    Categories: construction, demolition, vegetation, water, road, bare land.
-    Transient objects (people, cars, animals) are filtered out.
+    Classify the type of change in a region.
+    When before_region is provided, uses differential (before vs after) analysis
+    for dramatically better accuracy. Falls back to single-image analysis otherwise.
     """
     x, y, w, h = bbox
     pad = 5
@@ -912,119 +1017,175 @@ def classify_object_type(image_region, bbox):
     y2 = min(image_region.shape[0], y + h + pad)
     x1 = max(0, x - pad)
     x2 = min(image_region.shape[1], x + w + pad)
-    region = image_region[y1:y2, x1:x2]
+    after_crop = image_region[y1:y2, x1:x2]
 
-    if region.size == 0 or region.shape[0] < 3 or region.shape[1] < 3:
+    if after_crop.size == 0 or after_crop.shape[0] < 3 or after_crop.shape[1] < 3:
         return "Unclassified", 0.0
 
-    features = extract_advanced_features(region)
-    if features is None:
+    feat_a = extract_advanced_features(after_crop)
+    if feat_a is None:
         return "Unclassified", 0.0
 
     area = w * h
-
-    # Filter out transient objects (people, cars, animals)
-    if _is_transient_object(area, w, h, features):
-        return None, 0.0  # signal to exclude this region
+    if _is_transient_object(area, w, h, feat_a):
+        return None, 0.0
 
     aspect_ratio = max(w, h) / max(min(w, h), 1)
     compactness = (4 * np.pi * area) / ((2 * (w + h)) ** 2 + 1e-6)
+
+    # --- Differential classification when before image is available ---
+    diff = None
+    if before_region is not None:
+        by1 = max(0, y - pad)
+        by2 = min(before_region.shape[0], y + h + pad)
+        bx1 = max(0, x - pad)
+        bx2 = min(before_region.shape[1], x + w + pad)
+        before_crop = before_region[by1:by2, bx1:bx2]
+        if before_crop.size > 0 and before_crop.shape[0] >= 3 and before_crop.shape[1] >= 3:
+            diff = _extract_differential_features(before_crop, after_crop)
 
     scores = {}
 
     # ---- Water Body Change ----
     water = 0.0
-    if features["blue_ratio"] > 0.36:
+    if feat_a["blue_ratio"] > 0.36:
         water += 0.22
-    if features["texture_std"] < 28:
+    if feat_a["texture_std"] < 28:
         water += 0.18
-    if features["edge_density"] < 35:
+    if feat_a["edge_density"] < 35:
         water += 0.14
-    if 90 <= features["hue"] <= 135:
+    if 90 <= feat_a["hue"] <= 135:
         water += 0.18
-    if features["lbp_variance"] < 0.05:
+    if feat_a["lbp_variance"] < 0.05:
         water += 0.14
-    if features["glcm_contrast"] < 500:
+    if feat_a["glcm_contrast"] < 500:
         water += 0.10
     if area > 800:
         water += 0.04
     scores["Water Body Change"] = water
 
-    # ---- Vegetation Change (deforestation, new growth, crop change) ----
+    # ---- Vegetation Change ----
     veg = 0.0
-    if features["ndvi"] > 0.05:
-        veg += 0.22
-    if features["ndvi"] > 0.15:
-        veg += 0.10
-    if features["green_ratio"] > 0.36:
-        veg += 0.18
-    if 35 <= features["hue"] <= 85:
-        veg += 0.15
-    if features["texture_std"] > 18:
-        veg += 0.08
-    if features["lbp_variance"] > 0.03:
-        veg += 0.08
-    if features["saturation"] > 40:
-        veg += 0.10
-    if features["orientation_entropy"] > 2.5:
-        veg += 0.05
-    if area > 500:
-        veg += 0.04
+    if diff:
+        # Differential: detect actual vegetation gain or loss
+        if abs(diff["delta_ndvi"]) > 0.08:
+            veg += 0.30
+        if abs(diff["delta_green_ratio"]) > 0.04:
+            veg += 0.20
+        if diff["lab_color_distance"] > 15 and (
+                diff["before"]["ndvi"] > 0.05 or diff["after"]["ndvi"] > 0.05):
+            veg += 0.15
+        if abs(diff["delta_saturation"]) > 15 and (
+                diff["before"]["green_ratio"] > 0.34 or diff["after"]["green_ratio"] > 0.34):
+            veg += 0.15
+        if diff["delta_lines"] < 3 and diff["delta_corners"] < 5:
+            veg += 0.08
+        if area > 500:
+            veg += 0.04
+    else:
+        if feat_a["ndvi"] > 0.05:
+            veg += 0.22
+        if feat_a["ndvi"] > 0.15:
+            veg += 0.10
+        if feat_a["green_ratio"] > 0.36:
+            veg += 0.18
+        if 35 <= feat_a["hue"] <= 85:
+            veg += 0.15
+        if feat_a["saturation"] > 40:
+            veg += 0.10
+        if feat_a["orientation_entropy"] > 2.5:
+            veg += 0.05
+        if area > 500:
+            veg += 0.04
     scores["Vegetation Change"] = veg
 
     # ---- New Construction/Building ----
     bld = 0.0
-    if features["orientation_entropy"] < 2.5:
-        bld += 0.18
-    if features["color_homogeneity"] < 28:
-        bld += 0.15
-    if 1.0 <= aspect_ratio <= 4.0:
-        bld += 0.12
-    if 0.3 <= compactness <= 0.9:
-        bld += 0.10
-    if features["edge_density"] > 30:
-        bld += 0.12
-    if features["glcm_contrast"] > 400:
-        bld += 0.10
-    if features["saturation"] < 90:
-        bld += 0.10
-    if 40 <= features["brightness"] <= 90:
-        bld += 0.08
-    if area > 1000:
-        bld += 0.05
+    if diff:
+        if diff["delta_edge_density"] > 15:
+            bld += 0.20
+        if diff["delta_orientation_entropy"] < -0.4:
+            bld += 0.15
+        if diff["delta_lines"] > 5:
+            bld += 0.15
+        if diff["delta_corners"] > 8:
+            bld += 0.12
+        if diff["after"]["ndvi"] < 0.05 and diff["before"]["ndvi"] > 0.03:
+            bld += 0.12
+        if diff["hull_ratio_after"] > 0.55:
+            bld += 0.10
+        if 1.0 <= aspect_ratio <= 4.0:
+            bld += 0.08
+        if area > 1000:
+            bld += 0.05
+    else:
+        if feat_a["orientation_entropy"] < 2.5:
+            bld += 0.18
+        if feat_a["color_homogeneity"] < 28:
+            bld += 0.15
+        if 1.0 <= aspect_ratio <= 4.0:
+            bld += 0.12
+        if 0.3 <= compactness <= 0.9:
+            bld += 0.10
+        if feat_a["edge_density"] > 30:
+            bld += 0.12
+        if feat_a["glcm_contrast"] > 400:
+            bld += 0.10
+        if feat_a["saturation"] < 90:
+            bld += 0.10
+        if 40 <= feat_a["brightness"] <= 90:
+            bld += 0.08
+        if area > 1000:
+            bld += 0.05
     scores["New Construction/Building"] = bld
 
     # ---- Demolition/Clearing ----
     demo = 0.0
-    if features["texture_std"] > 30:
-        demo += 0.18
-    if features["orientation_entropy"] > 2.8:
-        demo += 0.15
-    if features["color_homogeneity"] > 25:
-        demo += 0.15
-    if features["brightness"] > 60:
-        demo += 0.10
-    if features["ndvi"] < 0.05:
-        demo += 0.12
-    if features["saturation"] < 70:
-        demo += 0.10
-    if area > 800:
-        demo += 0.05
+    if diff:
+        if diff["delta_edge_density"] < -15:
+            demo += 0.22
+        if diff["delta_lines"] < -5:
+            demo += 0.18
+        if diff["delta_corners"] < -8:
+            demo += 0.15
+        if diff["delta_texture_std"] > 8:
+            demo += 0.12
+        if diff["delta_brightness"] > 10:
+            demo += 0.12
+        if diff["after"]["ndvi"] > 0.03 and diff["before"]["ndvi"] < 0.02:
+            demo += 0.08
+        if area > 800:
+            demo += 0.05
+    else:
+        if feat_a["texture_std"] > 30:
+            demo += 0.18
+        if feat_a["orientation_entropy"] > 2.8:
+            demo += 0.15
+        if feat_a["color_homogeneity"] > 25:
+            demo += 0.15
+        if feat_a["brightness"] > 60:
+            demo += 0.10
+        if feat_a["ndvi"] < 0.05:
+            demo += 0.12
+        if feat_a["saturation"] < 70:
+            demo += 0.10
+        if area > 800:
+            demo += 0.05
     scores["Demolition/Clearing"] = demo
 
     # ---- Road/Pavement Change ----
     road = 0.0
     if aspect_ratio > 2.5:
         road += 0.22
-    if features["color_homogeneity"] < 22:
+    if feat_a["color_homogeneity"] < 22:
         road += 0.18
-    if features["texture_std"] < 32:
+    if feat_a["texture_std"] < 32:
         road += 0.15
-    if features["saturation"] < 65:
+    if feat_a["saturation"] < 65:
         road += 0.12
-    if features["orientation_entropy"] < 2.0:
+    if feat_a["orientation_entropy"] < 2.0:
         road += 0.15
-    if 35 <= features["brightness"] <= 75:
+    if 35 <= feat_a["brightness"] <= 75:
         road += 0.10
     if compactness < 0.3:
         road += 0.05
@@ -1034,24 +1195,22 @@ def classify_object_type(image_region, bbox):
 
     # ---- Bare Land/Soil Change ----
     soil = 0.0
-    if features["red_ratio"] > 0.34 and features["green_ratio"] < 0.36:
+    if feat_a["red_ratio"] > 0.34 and feat_a["green_ratio"] < 0.36:
         soil += 0.20
-    if 8 <= features["hue"] <= 38:
+    if 8 <= feat_a["hue"] <= 38:
         soil += 0.18
-    if features["ndvi"] < 0.05:
+    if feat_a["ndvi"] < 0.05:
         soil += 0.18
-    if features["texture_std"] < 35:
+    if feat_a["texture_std"] < 35:
         soil += 0.12
-    if features["lbp_variance"] < 0.04:
+    if feat_a["lbp_variance"] < 0.04:
         soil += 0.12
-    if 40 <= features["saturation"] <= 130:
+    if 40 <= feat_a["saturation"] <= 130:
         soil += 0.10
-    if 45 <= features["brightness"] <= 82:
+    if 45 <= feat_a["brightness"] <= 82:
         soil += 0.10
     scores["Bare Land/Soil Change"] = soil
 
-    # Use raw scores as confidence (each rule set sums to ~1.0 max)
-    # Do NOT normalize by max_score — that inflates weak matches to 1.0
     best = max(scores, key=scores.get)
     conf = scores[best]
 
@@ -1060,10 +1219,10 @@ def classify_object_type(image_region, bbox):
     return best, min(conf, 1.0)
 
 
-def classify_with_ensemble(image_region, bbox):
+def classify_with_ensemble(image_region, bbox, before_region=None):
     """Ensemble: classify full region + sub-regions, vote with confidence weighting."""
     x, y, w, h = bbox
-    sub_boxes = [(x, y, w, h)]  # full region
+    sub_boxes = [(x, y, w, h)]
 
     if w > 20 and h > 20:
         hw, hh = w // 2, h // 2
@@ -1079,7 +1238,8 @@ def classify_with_ensemble(image_region, bbox):
     confidences = []
     transient_count = 0
     for sb in sub_boxes:
-        obj_type, conf = classify_object_type(image_region, sb)
+        obj_type, conf = classify_object_type(image_region, sb,
+                                              before_region=before_region)
         if obj_type is None:
             transient_count += 1
             continue
@@ -1087,14 +1247,13 @@ def classify_with_ensemble(image_region, bbox):
             classifications.append(obj_type)
             confidences.append(conf)
 
-    # Only exclude if majority of sub-regions are transient
     if transient_count > len(sub_boxes) // 2:
         return None, 0.0
 
     if not classifications:
-        return classify_object_type(image_region, (x, y, w, h))
+        return classify_object_type(image_region, (x, y, w, h),
+                                    before_region=before_region)
 
-    # Weighted voting
     weighted = {}
     counts = Counter(classifications)
     for ot, c in zip(classifications, confidences):
@@ -1767,9 +1926,11 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
         cx, cy = centroids[i]
 
         if use_ensemble and raw_area > 500:
-            object_type, confidence = classify_with_ensemble(image, (x, y, w, h))
+            object_type, confidence = classify_with_ensemble(
+                image, (x, y, w, h), before_region=before_img)
         else:
-            object_type, confidence = classify_object_type(image, (x, y, w, h))
+            object_type, confidence = classify_object_type(
+                image, (x, y, w, h), before_region=before_img)
 
         if object_type is None:
             # Do not silently drop large coherent regions; keep them as generic
