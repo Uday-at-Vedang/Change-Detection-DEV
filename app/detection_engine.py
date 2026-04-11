@@ -829,7 +829,7 @@ def _build_confidence_map_from_channels(img1, img2, dl_score=None):
     Includes color, SSIM, texture, edge, CVA, and optionally a DL score map.
     Returns float32 map in [0,1].
     """
-    from .models.model_utils import build_confidence_map
+    from .cd_models.model_utils import build_confidence_map
 
     color = compute_cva(img1, img2)
     ssim = compute_ssim_change_map(img1, img2)
@@ -853,7 +853,7 @@ def _build_confidence_map_from_channels(img1, img2, dl_score=None):
 
 def _multiscale_classical(img1, img2, sensitivity=0.5):
     """Run classical fusion at multiple scales and OR-combine for better recall."""
-    from .models.model_utils import multiscale_detect
+    from .cd_models.model_utils import multiscale_detect
 
     def _single_scale_detect(s1, s2):
         mask, _ = _ai_fusion_core(s1, s2, sensitivity=sensitivity)
@@ -892,7 +892,7 @@ def hybrid_ai_method(img1, img2, sensitivity=0.5):
 
     if dl_method == "none":
         try:
-            from .models.change_model import is_siamese_available, predict_siamese
+            from .cd_models.change_model import is_siamese_available, predict_siamese
             if is_siamese_available():
                 dl_mask, dl_score = predict_siamese(img1, img2, threshold=thr)
                 dl_method = "siamese_unet"
