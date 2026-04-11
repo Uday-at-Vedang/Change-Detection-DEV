@@ -19,7 +19,7 @@ _MODEL = None
 _PROCESSOR = None
 _DEVICE = None
 _MODEL_ID = "deepang/adaptformer-LEVIR-CD"
-_TILE_SIZE = 512
+_TILE_SIZE = 256  # LEVIR-CD native patch size
 _AVAILABLE = None
 
 
@@ -68,8 +68,9 @@ def _load_model():
 def predict_change_mask(img1, img2, threshold=0.5):
     """
     Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
-    Images are split into overlapping tiles, predicted individually,
-    and stitched back into a full-resolution binary mask.
+    Images are split into overlapping 256x256 tiles (matching LEVIR-CD
+    training resolution), predicted individually, and stitched back into
+    a full-resolution binary mask.
 
     Returns (uint8 mask [0 or 255], float32 score map [0-1]).
     """
@@ -82,7 +83,8 @@ def predict_change_mask(img1, img2, threshold=0.5):
 
     h, w = img1.shape[:2]
     tile = _TILE_SIZE
-    stride = tile * 3 // 4
+    overlap = tile // 4  # 64px overlap
+    stride = tile - overlap  # 192
 
     pad_h = (tile - h % tile) % tile
     pad_w = (tile - w % tile) % tile
@@ -93,6 +95,12 @@ def predict_change_mask(img1, img2, threshold=0.5):
     ph, pw = img1.shape[:2]
     score_sum = np.zeros((ph, pw), dtype=np.float32)
     count = np.zeros((ph, pw), dtype=np.float32)
+
+    # Blending weight: raised-cosine window avoids hard tile boundary seams
+    ramp = np.linspace(0, 1, overlap)
+    flat = np.ones(tile - 2 * overlap)
+    profile = np.concatenate([ramp, flat, ramp[::-1]])
+    weight_2d = np.outer(profile, profile).astype(np.float32)
 
     with torch.no_grad():
         for y0 in range(0, ph - tile + 1, stride):
@@ -110,7 +118,6 @@ def predict_change_mask(img1, img2, threshold=0.5):
                 logits = outputs.logits
                 probs = torch.softmax(logits, dim=1)
 
-                # Class 1 = change
                 prob_map = probs[0, 1].cpu().numpy()
 
                 out_h, out_w = prob_map.shape
@@ -118,10 +125,10 @@ def predict_change_mask(img1, img2, threshold=0.5):
                     prob_map = cv2.resize(prob_map, (tile, tile),
                                           interpolation=cv2.INTER_LINEAR)
 
-                score_sum[y0:y0+tile, x0:x0+tile] += prob_map
-                count[y0:y0+tile, x0:x0+tile] += 1.0
+                score_sum[y0:y0+tile, x0:x0+tile] += prob_map * weight_2d
+                count[y0:y0+tile, x0:x0+tile] += weight_2d
 
-    count = np.maximum(count, 1.0)
+    count = np.maximum(count, 1e-6)
     avg_score = score_sum / count
     avg_score = avg_score[:h, :w]
 

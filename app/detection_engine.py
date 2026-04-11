@@ -593,7 +593,7 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5):
     from .model_inference import is_model_available, predict_change_mask
 
     if is_model_available():
-        threshold = 0.35 + (1.0 - sensitivity) * 0.3
+        threshold = 0.25 + (1.0 - sensitivity) * 0.25
         try:
             change_mask, score_map = predict_change_mask(
                 img1, img2, threshold=threshold)
@@ -705,7 +705,7 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     filled = cv2.dilate(filled, k_break, iterations=1)
 
     # 7. Component-level filtering: remove tiny survivors and elongated noise
-    min_component_px = max(80, int(h * w * 0.00004))
+    min_component_px = max(50, int(h * w * 0.00003))
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(filled, connectivity=8)
     clean = np.zeros_like(filled)
     for i in range(1, num_labels):
@@ -980,11 +980,32 @@ def _extract_differential_features(before_crop, after_crop):
     lines_a, linelen_a = _count_line_segments(gray_a)
     corners_b = _count_corners(gray_b)
     corners_a = _count_corners(gray_a)
+    hull_b = _rectangular_hull_ratio(gray_b)
     hull_a = _rectangular_hull_ratio(gray_a)
 
     lab_b = cv2.cvtColor(before_crop, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab_a = cv2.cvtColor(after_crop, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab_dist = float(np.mean(np.sqrt(np.sum((lab_a - lab_b) ** 2, axis=2))))
+
+    # Fast SSIM approximation using cv2 (avoids scikit-image dependency)
+    ssim_val = 1.0
+    try:
+        if gray_b.shape == gray_a.shape and gray_b.shape[0] >= 7 and gray_b.shape[1] >= 7:
+            C1 = (0.01 * 255) ** 2
+            C2 = (0.03 * 255) ** 2
+            fb = gray_b.astype(np.float64)
+            fa = gray_a.astype(np.float64)
+            mu_b = cv2.GaussianBlur(fb, (11, 11), 1.5)
+            mu_a = cv2.GaussianBlur(fa, (11, 11), 1.5)
+            sig_b2 = cv2.GaussianBlur(fb * fb, (11, 11), 1.5) - mu_b * mu_b
+            sig_a2 = cv2.GaussianBlur(fa * fa, (11, 11), 1.5) - mu_a * mu_a
+            sig_ba = cv2.GaussianBlur(fb * fa, (11, 11), 1.5) - mu_b * mu_a
+            numer = (2 * mu_b * mu_a + C1) * (2 * sig_ba + C2)
+            denom = (mu_b ** 2 + mu_a ** 2 + C1) * (sig_b2 + sig_a2 + C2)
+            ssim_map = numer / (denom + 1e-12)
+            ssim_val = float(np.mean(ssim_map))
+    except Exception:
+        pass
 
     return {
         "before": feat_b, "after": feat_a,
@@ -1000,8 +1021,10 @@ def _extract_differential_features(before_crop, after_crop):
         "delta_corners": corners_a - corners_b,
         "lines_after": lines_a, "corners_after": corners_a,
         "lines_before": lines_b, "corners_before": corners_b,
+        "hull_ratio_before": hull_b,
         "hull_ratio_after": hull_a,
         "lab_color_distance": lab_dist,
+        "ssim": ssim_val,
     }
 
 
@@ -1102,60 +1125,145 @@ def classify_object_type(image_region, bbox, before_region=None):
     # ---- New Construction/Building ----
     bld = 0.0
     if diff:
-        if diff["delta_edge_density"] > 15:
-            bld += 0.20
-        if diff["delta_orientation_entropy"] < -0.4:
-            bld += 0.15
-        if diff["delta_lines"] > 5:
-            bld += 0.15
-        if diff["delta_corners"] > 8:
-            bld += 0.12
-        if diff["after"]["ndvi"] < 0.05 and diff["before"]["ndvi"] > 0.03:
-            bld += 0.12
-        if diff["hull_ratio_after"] > 0.55:
-            bld += 0.10
-        if 1.0 <= aspect_ratio <= 4.0:
+        # Edge density increase: strong for buildings, lower threshold to catch smaller ones
+        ded = diff["delta_edge_density"]
+        if ded > 20:
+            bld += 0.22
+        elif ded > 10:
+            bld += 0.16
+        elif ded > 5:
             bld += 0.08
-        if area > 1000:
+
+        # More ordered structure (lower entropy = more regular geometry)
+        doe = diff["delta_orientation_entropy"]
+        if doe < -0.6:
+            bld += 0.15
+        elif doe < -0.2:
+            bld += 0.10
+
+        # New straight lines appearing
+        dl = diff["delta_lines"]
+        if dl > 8:
+            bld += 0.16
+        elif dl > 3:
+            bld += 0.10
+        elif dl > 1:
             bld += 0.05
+
+        # New corners appearing
+        dc = diff["delta_corners"]
+        if dc > 10:
+            bld += 0.14
+        elif dc > 4:
+            bld += 0.10
+        elif dc > 1:
+            bld += 0.05
+
+        # Vegetation replaced by non-vegetation
+        if diff["after"]["ndvi"] < 0.08 and diff["before"]["ndvi"] > 0.02:
+            bld += 0.10
+        # Brightness increase (concrete/roofing vs bare ground)
+        if diff["delta_brightness"] > 8:
+            bld += 0.06
+        # Rectangular shape in after image
+        if diff["hull_ratio_after"] > 0.50:
+            bld += 0.10
+        elif diff["hull_ratio_after"] > 0.35:
+            bld += 0.05
+        # After image has structural features even if delta is modest
+        if diff["lines_after"] > 4 and diff["corners_after"] > 6:
+            bld += 0.08
+        # LAB color distance (significant visual change)
+        if diff["lab_color_distance"] > 25:
+            bld += 0.08
+        elif diff["lab_color_distance"] > 15:
+            bld += 0.04
+        # SSIM: low = big structural change; very important for building detection
+        ssim = diff.get("ssim", 1.0)
+        if ssim < 0.4:
+            bld += 0.14
+        elif ssim < 0.6:
+            bld += 0.10
+        elif ssim < 0.75:
+            bld += 0.05
+        # Low NDVI + high edge density in after = likely built structure
+        if diff["after"]["ndvi"] < 0.05 and diff["after"]["edge_density"] > 25:
+            bld += 0.08
+        # New rectangular shape appearing (hull increased)
+        hull_delta = diff["hull_ratio_after"] - diff.get("hull_ratio_before", 0)
+        if hull_delta > 0.2:
+            bld += 0.06
+        if 1.0 <= aspect_ratio <= 5.0:
+            bld += 0.06
+        if area > 600:
+            bld += 0.04
     else:
         if feat_a["orientation_entropy"] < 2.5:
             bld += 0.18
         if feat_a["color_homogeneity"] < 28:
             bld += 0.15
-        if 1.0 <= aspect_ratio <= 4.0:
-            bld += 0.12
-        if 0.3 <= compactness <= 0.9:
+        if 1.0 <= aspect_ratio <= 5.0:
             bld += 0.10
-        if feat_a["edge_density"] > 30:
-            bld += 0.12
-        if feat_a["glcm_contrast"] > 400:
+        if 0.2 <= compactness <= 0.95:
             bld += 0.10
-        if feat_a["saturation"] < 90:
+        if feat_a["edge_density"] > 25:
+            bld += 0.14
+        if feat_a["glcm_contrast"] > 300:
             bld += 0.10
-        if 40 <= feat_a["brightness"] <= 90:
+        if feat_a["saturation"] < 100:
             bld += 0.08
-        if area > 1000:
+        if 30 <= feat_a["brightness"] <= 95:
+            bld += 0.08
+        if area > 600:
             bld += 0.05
     scores["New Construction/Building"] = bld
 
     # ---- Demolition/Clearing ----
     demo = 0.0
     if diff:
-        if diff["delta_edge_density"] < -15:
+        ded_neg = diff["delta_edge_density"]
+        if ded_neg < -20:
             demo += 0.22
-        if diff["delta_lines"] < -5:
-            demo += 0.18
-        if diff["delta_corners"] < -8:
-            demo += 0.15
-        if diff["delta_texture_std"] > 8:
-            demo += 0.12
-        if diff["delta_brightness"] > 10:
-            demo += 0.12
-        if diff["after"]["ndvi"] > 0.03 and diff["before"]["ndvi"] < 0.02:
+        elif ded_neg < -10:
+            demo += 0.16
+        elif ded_neg < -5:
             demo += 0.08
-        if area > 800:
+
+        dl_neg = diff["delta_lines"]
+        if dl_neg < -8:
+            demo += 0.18
+        elif dl_neg < -3:
+            demo += 0.12
+        elif dl_neg < -1:
             demo += 0.05
+
+        dc_neg = diff["delta_corners"]
+        if dc_neg < -10:
+            demo += 0.15
+        elif dc_neg < -4:
+            demo += 0.10
+        elif dc_neg < -1:
+            demo += 0.05
+
+        if diff["delta_texture_std"] > 8:
+            demo += 0.10
+        if diff["delta_brightness"] > 10:
+            demo += 0.10
+        # Structural features disappeared
+        if diff["lines_before"] > 4 and diff["lines_after"] <= 1:
+            demo += 0.10
+        # Hull ratio dropped (rectangular structure removed)
+        hull_drop = diff.get("hull_ratio_before", 0) - diff["hull_ratio_after"]
+        if hull_drop > 0.2:
+            demo += 0.08
+        # SSIM confirms big structural change
+        ssim = diff.get("ssim", 1.0)
+        if ssim < 0.5:
+            demo += 0.08
+        if diff["after"]["ndvi"] > 0.03 and diff["before"]["ndvi"] < 0.02:
+            demo += 0.06
+        if area > 500:
+            demo += 0.04
     else:
         if feat_a["texture_std"] > 30:
             demo += 0.18
@@ -1904,7 +2012,7 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
     # - keeps sensitivity on smaller images
     # - suppresses speckle noise on larger images
     if min_area is None:
-        min_area = int(max(350, min(1400, img_area * 0.00012)))
+        min_area = int(max(200, min(1000, img_area * 0.00008)))
 
     for i in range(1, num_labels):
         raw_area = stats[i, cv2.CC_STAT_AREA]
