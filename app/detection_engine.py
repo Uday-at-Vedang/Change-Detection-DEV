@@ -38,8 +38,8 @@ def _to_float32(img):
     return img.astype(np.float32) / 255.0
 
 
-def preprocess_image(image, max_size=2000):
-    """Preprocess image: convert to RGB, limit size, Gaussian + bilateral denoise."""
+def preprocess_image(image, max_size=1600):
+    """Preprocess image: convert to RGB, limit size, light Gaussian denoise."""
     img_array = np.array(image)
     img_array = _ensure_rgb_uint8(img_array)
 
@@ -49,10 +49,11 @@ def preprocess_image(image, max_size=2000):
         new_w, new_h = max(1, int(width * scale)), max(1, int(height * scale))
         img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # Gaussian smoothing to reduce high-frequency sensor noise
     img_array = cv2.GaussianBlur(img_array, (5, 5), 0)
-    # Bilateral filter: further denoise while preserving structural edges
-    img_array = cv2.bilateralFilter(img_array, 7, 60, 60)
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if lap_var < 80.0:
+        img_array = cv2.bilateralFilter(img_array, 5, 50, 50)
     return img_array
 
 
@@ -122,15 +123,42 @@ def _match_features_orb(gray1, gray2, max_features=3000):
     return best_H, best_ir
 
 
+def _alignment_ncc(img1, img2):
+    """Global normalized cross-correlation between two RGB images."""
+    g1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY).astype(np.float32).ravel()
+    g2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY).astype(np.float32).ravel()
+    if g1.size != g2.size or g1.size < 64:
+        return 0.0
+    c = np.corrcoef(g1, g2)[0, 1]
+    return float(c) if np.isfinite(c) else 0.0
+
+
+def _phase_correlation_translate(img2, gray1, gray2):
+    """Shift img2 by phase-correlation offset (same-scale screenshot pairs)."""
+    try:
+        shift, _ = cv2.phaseCorrelate(gray1.astype(np.float32), gray2.astype(np.float32))
+        dx, dy = float(shift[0]), float(shift[1])
+        if abs(dx) < 0.5 and abs(dy) < 0.5:
+            return img2
+        h, w = img2.shape[:2]
+        M = np.float32([[1, 0, dx], [0, 1, dy]])
+        return cv2.warpAffine(img2, M, (w, h), borderMode=cv2.BORDER_REFLECT)
+    except Exception:
+        return img2
+
+
 def register_images(img1, img2, max_features=3000):
     """
-    Multi-stage image alignment pipeline:
-    1. SIFT + FLANN matcher (primary — scale/rotation invariant, float descriptors)
-    2. ORB fallback (if SIFT unavailable or fails)
-    3. Refine with ECC for sub-pixel accuracy
-    4. Multi-scale ECC fallback if feature matching fails entirely
+    Multi-stage alignment with quality metrics.
+    Returns (img1, img2_aligned, registration_ok, reg_meta).
     """
     h, w = img1.shape[:2]
+    reg_meta = {
+        "method": "none",
+        "inlier_ratio": 0.0,
+        "ncc": 0.0,
+        "homography_used": False,
+    }
 
     if img1.shape[:2] != img2.shape[:2]:
         img2 = cv2.resize(img2, (w, h), interpolation=cv2.INTER_LINEAR)
@@ -138,23 +166,36 @@ def register_images(img1, img2, max_features=3000):
     gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
 
-    # Stage 1: SIFT + FLANN (best quality)
-    H, ir = _match_features_sift(gray1, gray2)
+    img2 = _phase_correlation_translate(img2, gray1, gray2)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
 
-    # Stage 2: ORB fallback
+    match_method = "sift"
+    H, ir = _match_features_sift(gray1, gray2)
     if H is None or ir < 0.25:
         H_orb, ir_orb = _match_features_orb(gray1, gray2, max_features)
         if ir_orb > ir:
             H, ir = H_orb, ir_orb
+            match_method = "orb"
 
-    if H is not None and ir >= 0.20:
-        img2_warped = cv2.warpPerspective(img2, H, (w, h),
-                                          borderMode=cv2.BORDER_REFLECT)
+    reg_meta["inlier_ratio"] = float(ir)
+
+    if H is not None and ir >= 0.35:
+        img2_warped = cv2.warpPerspective(img2, H, (w, h), borderMode=cv2.BORDER_REFLECT)
         img2_refined = _refine_ecc(img1, img2_warped)
-        return img1, img2_refined, True
+        ncc = _alignment_ncc(img1, img2_refined)
+        reg_meta.update({
+            "method": match_method,
+            "ncc": ncc,
+            "homography_used": True,
+        })
+        if ncc >= 0.55:
+            return img1, img2_refined, True, reg_meta
+        reg_meta["method"] = f"{match_method}_rejected"
+        return img1, img2, False, reg_meta
 
-    # Stage 3: multi-scale ECC
-    return _register_images_ecc_multiscale(img1, img2)
+    img1_ecc, img2_ecc, ok, ecc_meta = _register_images_ecc_multiscale(img1, img2)
+    reg_meta.update(ecc_meta)
+    return img1_ecc, img2_ecc, ok, reg_meta
 
 
 def _refine_ecc(img1, img2_initial):
@@ -240,10 +281,14 @@ def _register_images_ecc_multiscale(img1, img2):
         g_aligned = cv2.cvtColor(aligned, cv2.COLOR_RGB2GRAY).astype(np.float32)
         g_ref = gray1.astype(np.float32)
         ncc = float(np.corrcoef(g_ref.ravel(), g_aligned.ravel())[0, 1])
-
-        return img1, aligned, bool(ncc >= 0.40)
+        if not np.isfinite(ncc):
+            ncc = 0.0
+        meta = {"method": "ecc_multiscale", "inlier_ratio": 0.0, "ncc": ncc, "homography_used": False}
+        return img1, aligned, bool(ncc >= 0.50), meta
     except Exception:
-        return img1, img2, False
+        return img1, img2, False, {
+            "method": "ecc_failed", "inlier_ratio": 0.0, "ncc": 0.0, "homography_used": False,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +296,7 @@ def _register_images_ecc_multiscale(img1, img2):
 # ---------------------------------------------------------------------------
 
 def normalize_radiometry(img1, img2):
-    """Histogram-matching normalization in LAB space. CLAHE applied symmetrically."""
+    """Match after image radiometry to before; symmetric CLAHE on L channel."""
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
 
@@ -262,17 +307,13 @@ def normalize_radiometry(img1, img2):
         if std2 > 1e-6:
             result[:, :, ch] = (lab2[:, :, ch] - mean2) * (std1 / std2) + mean1
 
-    result_uint8 = np.clip(result, 0, 255).astype(np.uint8)
-
-    # CLAHE on L channel of BOTH images so downstream comparison is symmetric
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    lab1_uint8 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB)
-    lab1_uint8[:, :, 0] = clahe.apply(lab1_uint8[:, :, 0])
-    result_uint8[:, :, 0] = clahe.apply(result_uint8[:, :, 0])
+    lab1_u = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB)
+    lab2_u = np.clip(result, 0, 255).astype(np.uint8)
+    lab1_u[:, :, 0] = clahe.apply(lab1_u[:, :, 0])
+    lab2_u[:, :, 0] = clahe.apply(lab2_u[:, :, 0])
 
-    img1_out = cv2.cvtColor(lab1_uint8, cv2.COLOR_LAB2RGB)
-    img2_out = cv2.cvtColor(result_uint8, cv2.COLOR_LAB2RGB)
-    return img1_out, img2_out
+    return cv2.cvtColor(lab1_u, cv2.COLOR_LAB2RGB), cv2.cvtColor(lab2_u, cv2.COLOR_LAB2RGB)
 
 
 # ---------------------------------------------------------------------------
@@ -627,21 +668,16 @@ def _snr_weight(channel):
     return signal / noise
 
 
-def _ai_fusion_core(img1, img2, sensitivity=0.5):
-    """
-    Single-pass AI fusion with 5 channels, SNR weighting, and
-    vegetation + shadow suppression. Returns (mask, debug).
-    """
+def _compute_classical_score_map(img1, img2, registration_ok=True):
+    """SNR-weighted classical change score in [0,1] before binary threshold."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    # ---- Channel 1: Multi-scale LAB color difference ----
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
 
-    scales = [1, 2, 4]
     color_maps = []
-    for scale in scales:
+    for scale in (1, 2, 4):
         if scale > 1:
             s1 = cv2.resize(lab1, (lab1.shape[1] // scale, lab1.shape[0] // scale))
             s2 = cv2.resize(lab2, (lab2.shape[1] // scale, lab2.shape[0] // scale))
@@ -658,21 +694,17 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
     color_change = np.mean(color_maps, axis=0)
     color_change = color_change / (color_change.max() + 1e-8)
 
-    # ---- Channel 2: SSIM structural dissimilarity ----
     ssim_change = compute_ssim_change_map(img1, img2)
     ssim_change = ssim_change / (ssim_change.max() + 1e-8)
-
-    # ---- Channel 3: Texture change (LBP) ----
     texture_change = compute_texture_change(img1, img2)
     texture_change = texture_change / (texture_change.max() + 1e-8)
-
-    # ---- Channel 4: Edge change ----
     edge_change = compute_edge_change(img1, img2)
-
-    # ---- Channel 5: Change Vector Analysis ----
     cva_change = compute_cva(img1, img2)
 
-    # ---- SNR-weighted fusion ----
+    if not registration_ok:
+        ssim_change = ssim_change * 0.45
+        edge_change = edge_change * 0.45
+
     channels = [color_change, ssim_change, texture_change, edge_change, cva_change]
     weights = [_snr_weight(ch) for ch in channels]
     total_w = sum(weights) + 1e-8
@@ -682,42 +714,76 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
     for ch, w in zip(channels, weights):
         fused += w * ch.astype(np.float64)
 
-    # ---- Apply vegetation + shadow suppression before thresholding ----
     veg_suppression = compute_combined_vegetation_suppression(img1, img2)
     shadow_suppression = compute_shadow_suppression(img1, img2)
     fused = fused * veg_suppression.astype(np.float64) * shadow_suppression.astype(np.float64)
 
-    # Percentile normalization
     p995 = float(np.quantile(fused, 0.995))
     if p995 <= 1e-8:
         p995 = float(fused.max() + 1e-8)
     fused_norm = np.clip(fused / (p995 + 1e-8), 0.0, 1.0)
+    fused_norm = np.power(fused_norm, 0.85)
+    return cv2.GaussianBlur(fused_norm.astype(np.float32), (5, 5), 0), weights
 
-    gamma = 0.85
-    fused_norm = np.power(fused_norm, gamma)
 
-    fused_smooth = cv2.GaussianBlur(fused_norm.astype(np.float32), (7, 7), 0)
-
+def fuse_dl_and_classical(dl_score, classical_score, img1, img2, sensitivity=0.5):
+    """
+    Confidence-gated fusion (not union): DL drives structure; classical + ExG for vegetation.
+    Returns (mask, final_score_map, debug).
+    """
     sens = float(np.clip(sensitivity, 0.0, 1.0))
-    q = 0.93 - (sens - 0.5) * 0.06
-    q = float(np.clip(q, 0.85, 0.96))
+    h, w = classical_score.shape
+    if dl_score is None or dl_score.shape != classical_score.shape:
+        dl_score = np.zeros((h, w), dtype=np.float32)
 
-    thr_score = float(np.quantile(fused_smooth, q))
-    change_mask = (fused_smooth >= thr_score).astype(np.uint8) * 255
+    q = float(np.clip(0.96 - (sens - 0.5) * 0.04, 0.92, 0.98))
+    T_cl = float(np.quantile(classical_score, q))
 
+    final_score = 0.65 * dl_score.astype(np.float32) + 0.35 * classical_score
+
+    med_dl, med_cl = 0.35, T_cl * 0.7
+    both_agree = (dl_score >= med_dl) & (classical_score >= med_cl)
+    final_score = np.where(both_agree, np.maximum(dl_score, classical_score), final_score)
+
+    exg1 = compute_excess_green(img1)
+    exg2 = compute_excess_green(img2)
+    delta_exg = np.abs(exg2 - exg1)
+    veg_boost = (delta_exg > 0.04) & (classical_score >= T_cl * 0.8)
+    final_score = np.where(veg_boost, np.maximum(final_score, classical_score), final_score)
+
+    fused_thr = 0.45 + (1.0 - sens) * 0.15
+    change_mask = (final_score >= fused_thr).astype(np.uint8) * 255
     change_mask = _clean_mask(change_mask, sensitivity=sens)
 
-    change_mask = cv2.bilateralFilter(change_mask, 9, 75, 75)
-    _, change_mask = cv2.threshold(change_mask, 127, 255, cv2.THRESH_BINARY)
+    debug = {
+        "fusion": "confidence_gated",
+        "T_dl": 0.40 + (1.0 - sens) * 0.25,
+        "T_cl_percentile_q": q,
+        "T_cl_score": T_cl,
+        "fused_threshold": fused_thr,
+        "dl_changed_px": int(np.sum(dl_score >= med_dl)),
+        "classical_changed_px": int(np.sum(classical_score >= T_cl)),
+        "fused_changed_px": int(np.sum(change_mask > 127)),
+    }
+    return change_mask, final_score, debug
+
+
+def _ai_fusion_core(img1, img2, sensitivity=0.5, registration_ok=True):
+    """Classical-only path: score map + threshold. Returns (mask, score_map, debug)."""
+    classical_score, weights = _compute_classical_score_map(
+        img1, img2, registration_ok=registration_ok)
+
+    sens = float(np.clip(sensitivity, 0.0, 1.0))
+    q = float(np.clip(0.96 - (sens - 0.5) * 0.04, 0.92, 0.98))
+    thr_score = float(np.quantile(classical_score, q))
+    change_mask = (classical_score >= thr_score).astype(np.uint8) * 255
+    change_mask = _clean_mask(change_mask, sensitivity=sens)
 
     debug = {
         "method": "AI-Core",
         "threshold_used": int(thr_score * 255),
         "threshold_percentile_q": q,
         "threshold_score": thr_score,
-        "fused_p95": float(np.quantile(fused_smooth, 0.95)),
-        "fused_p99": float(np.quantile(fused_smooth, 0.99)),
-        "fused_mean": float(np.mean(fused_smooth)),
         "sensitivity": float(sensitivity),
         "channel_weights": {
             "color": round(weights[0], 4),
@@ -727,86 +793,70 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5):
             "cva": round(weights[4], 4),
         },
     }
-    return change_mask, debug
+    return change_mask, classical_score, debug
 
 
-def ai_deep_learning_method(img1, img2, sensitivity=0.5):
-    """
-    Dual-engine approach:
-    1. AdaptFormer model (excellent for buildings/structural changes)
-    2. Rule-based multi-channel fusion (catches vegetation, texture, color changes)
-    Combines both via union to maximize recall for all change types.
-    """
+def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
+    """AdaptFormer + confidence-gated classical fusion (no blind union)."""
     from .model_inference import is_model_available, predict_change_mask
-    import logging
-    _log = logging.getLogger(__name__)
 
-    model_mask = None
+    dl_score = None
     model_ok = False
+    T_dl = 0.40 + (1.0 - float(np.clip(sensitivity, 0, 1))) * 0.25
 
     if is_model_available():
-        threshold = 0.25 + (1.0 - sensitivity) * 0.25
         try:
-            model_mask, score_map = predict_change_mask(
-                img1, img2, threshold=threshold)
-            model_mask = _clean_mask(model_mask, sensitivity=sensitivity)
-            model_ok = True
+            _, dl_score = predict_change_mask(img1, img2, threshold=2.0)
+            model_ok = dl_score is not None
         except Exception as e:
             _log.warning("AdaptFormer inference failed: %s", e)
 
-    # Always run rule-based fusion to catch vegetation/texture changes
-    rule_mask, core_debug = _ai_fusion_core(img1, img2, sensitivity=sensitivity)
+    classical_score, _ = _compute_classical_score_map(
+        img1, img2, registration_ok=registration_ok)
 
-    if model_ok and model_mask is not None:
-        # Union: any pixel detected by either engine is kept
-        combined = np.maximum(model_mask, rule_mask)
-        combined = _clean_mask(combined, sensitivity=sensitivity)
+    if model_ok and dl_score is not None:
+        combined, _, fuse_debug = fuse_dl_and_classical(
+            dl_score, classical_score, img1, img2, sensitivity=sensitivity)
         debug = {
-            "method": "AI-Based Deep Learning (AdaptFormer + rule-based fusion)",
+            "method": "AI-Based Deep Learning (AdaptFormer + gated fusion)",
             "model": "adaptformer-levir-cd",
-            "threshold_used": int(threshold * 255),
+            "threshold_used": int(T_dl * 255),
             "sensitivity": float(sensitivity),
-            "model_changed_px": int(np.sum(model_mask > 127)),
-            "rule_changed_px": int(np.sum(rule_mask > 127)),
-            "combined_changed_px": int(np.sum(combined > 127)),
+            **fuse_debug,
         }
         return combined, debug
 
+    rule_mask, _, core_debug = _ai_fusion_core(
+        img1, img2, sensitivity=sensitivity, registration_ok=registration_ok)
     debug = {
-        "method": "AI-Based Deep Learning (rule-based fallback)",
-        "threshold_used": core_debug.get("threshold_used"),
+        "method": "AI-Based Deep Learning (classical fallback)",
         "sensitivity": float(sensitivity),
         "core": core_debug,
     }
     return rule_mask, debug
 
 
-def hybrid_method(img1, img2, sensitivity=0.5):
+def hybrid_method(img1, img2, sensitivity=0.5, registration_ok=True):
     """Hybrid: weighted fusion of all methods with confidence-based merging."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
     diff_mask, diff_debug = image_difference_method(img1, img2, sensitivity=sensitivity)
-    feature_mask = feature_based_method(img1, img2)
-    ai_mask, ai_debug = ai_deep_learning_method(img1, img2, sensitivity=sensitivity)
+    feature_mask = feature_based_method(img1, img2, sensitivity=sensitivity)
+    ai_mask, ai_debug = ai_deep_learning_method(
+        img1, img2, sensitivity=sensitivity, registration_ok=registration_ok)
 
-    # Weighted combination: AI method gets most weight
     combined = (
         0.2 * diff_mask.astype(np.float32) +
         0.3 * feature_mask.astype(np.float32) +
         0.5 * ai_mask.astype(np.float32)
     )
 
-    # Combined mask values:
-    # - diff only: 0.2*255 ≈ 51
-    # - feature only: 0.3*255 ≈ 76
-    # - ai only: 0.5*255 ≈ 127
-    # Keep threshold low enough that ai-only regions can pass.
-    base_thr = 98
+    base_thr = 110
     sens = float(np.clip(sensitivity, 0.0, 1.0))
-    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 36), 60, 150))
+    hybrid_thr = int(np.clip(base_thr + int((0.5 - sens) * 36), 70, 160))
     _, final_mask = cv2.threshold(combined.astype(np.uint8), hybrid_thr, 255, cv2.THRESH_BINARY)
-    final_mask = _clean_mask(final_mask)
+    final_mask = _clean_mask(final_mask, sensitivity=sensitivity)
     debug = {
         "method": "Hybrid Approach",
         "threshold_used": int(hybrid_thr),
@@ -851,87 +901,55 @@ def _build_confidence_map_from_channels(img1, img2, dl_score=None):
     return build_confidence_map(channels, weights)
 
 
-def _multiscale_classical(img1, img2, sensitivity=0.5):
-    """Run classical fusion at multiple scales and OR-combine for better recall."""
-    from .cd_models.model_utils import multiscale_detect
-
-    def _single_scale_detect(s1, s2):
-        mask, _ = _ai_fusion_core(s1, s2, sensitivity=sensitivity)
-        return mask
-
-    return multiscale_detect(_single_scale_detect, img1, img2, scales=(1.0, 0.5))
-
-
-def hybrid_ai_method(img1, img2, sensitivity=0.5):
-    """
-    Hybrid AI mode: weighted fusion of deep-learning mask + multi-scale
-    classical mask, informed by a confidence map.
-    Pipeline:
-      1. Deep learning mask (AdaptFormer or Siamese U-Net)
-      2. Multi-scale classical mask (rule-based fusion at 1x + 0.5x)
-      3. Build per-pixel confidence map
-      4. Weighted combination: 0.7 * DL + 0.3 * classical → threshold
-    """
+def hybrid_ai_method(img1, img2, sensitivity=0.5, registration_ok=True):
+    """Hybrid AI: same confidence-gated fusion as default AI path."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    # --- Deep learning mask ---
     from .model_inference import is_model_available, predict_change_mask
-    dl_mask = np.zeros(img1.shape[:2], dtype=np.uint8)
-    dl_score = np.zeros(img1.shape[:2], dtype=np.float32)
-    dl_method = "none"
 
-    thr = 0.25 + (1.0 - sensitivity) * 0.25
+    dl_score = None
+    dl_method = "none"
 
     if is_model_available():
         try:
-            dl_mask, dl_score = predict_change_mask(img1, img2, threshold=thr)
+            _, dl_score = predict_change_mask(img1, img2, threshold=2.0)
             dl_method = "adaptformer"
         except Exception:
             pass
 
     if dl_method == "none":
         try:
-            from .cd_models.change_model import is_siamese_available, predict_siamese
-            if is_siamese_available():
-                dl_mask, dl_score = predict_siamese(img1, img2, threshold=thr)
+            from .cd_models.change_model import has_siamese_weights, predict_siamese
+            if has_siamese_weights():
+                _, dl_score = predict_siamese(img1, img2, threshold=2.0)
                 dl_method = "siamese_unet"
         except Exception:
             pass
 
-    # --- Multi-scale classical mask ---
-    classical_mask = _multiscale_classical(img1, img2, sensitivity=sensitivity)
+    classical_score, _ = _compute_classical_score_map(
+        img1, img2, registration_ok=registration_ok)
 
-    # --- Build confidence map ---
-    conf_map = _build_confidence_map_from_channels(
-        img1, img2, dl_score=dl_score if dl_method != "none" else None)
+    if dl_method != "none" and dl_score is not None:
+        final_mask, _, fuse_debug = fuse_dl_and_classical(
+            dl_score, classical_score, img1, img2, sensitivity=sensitivity)
+        debug = {
+            "method": f"Hybrid AI ({dl_method} + gated fusion)",
+            "dl_method": dl_method,
+            "sensitivity": float(sensitivity),
+            **fuse_debug,
+        }
+        return final_mask, debug
 
-    # --- Weighted fusion ---
-    dl_w = 0.7 if dl_method != "none" else 0.0
-    cl_w = 1.0 - dl_w
+    mask, _, core_debug = _ai_fusion_core(
+        img1, img2, sensitivity=sensitivity, registration_ok=registration_ok)
+    return mask, {"method": "Hybrid AI (classical fallback)", "core": core_debug}
 
-    fused = (dl_w * dl_mask.astype(np.float32) +
-             cl_w * classical_mask.astype(np.float32))
 
-    # Boost regions where confidence is high
-    if conf_map is not None:
-        conf_boost = np.clip(conf_map * 1.5, 0, 1)
-        fused = fused * (0.6 + 0.4 * conf_boost)
-
-    fused_thr = max(80, int(128 - (sensitivity - 0.5) * 60))
-    _, final_mask = cv2.threshold(fused.astype(np.uint8), fused_thr, 255, cv2.THRESH_BINARY)
-    final_mask = _clean_mask(final_mask, sensitivity=sensitivity)
-
-    debug = {
-        "method": f"Hybrid AI ({dl_method} + multi-scale classical)",
-        "dl_method": dl_method,
-        "threshold_used": fused_thr,
-        "sensitivity": float(sensitivity),
-        "dl_changed_px": int(np.sum(dl_mask > 127)),
-        "classical_changed_px": int(np.sum(classical_mask > 127)),
-        "final_changed_px": int(np.sum(final_mask > 127)),
-    }
-    return final_mask, debug
+ALIGNMENT_WARNING_MSG = (
+    "Images may differ in zoom/crop; use the same map location, zoom level, and crop "
+    "for before and after screenshots."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -981,7 +999,7 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     filled = cv2.dilate(filled, k_break, iterations=1)
 
     # 7. Component-level filtering: remove tiny survivors and elongated noise
-    min_component_px = max(50, int(h * w * 0.00003))
+    min_component_px = max(200, int(h * w * 0.00003))
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(filled, connectivity=8)
     clean = np.zeros_like(filled)
     for i in range(1, num_labels):
@@ -991,10 +1009,12 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
         cw = stats[i, cv2.CC_STAT_WIDTH]
         ch = stats[i, cv2.CC_STAT_HEIGHT]
         bbox_area = max(cw * ch, 1)
+        aspect = max(cw, ch) / (min(cw, ch) + 1e-8)
         perimeter_approx = 2 * (cw + ch)
-        # Circularity: thin elongated noise has very high perimeter^2/area
         circularity = (perimeter_approx ** 2) / (bbox_area + 1e-8)
         if circularity > 80 and area < min_component_px * 3:
+            continue
+        if aspect > 12 and area < min_component_px * 2:
             continue
         clean[labels == i] = 255
 
@@ -2442,21 +2462,29 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     after_array = preprocess_image(after_pil)
 
     registration_ok = False
+    reg_meta = {}
     if enable_registration:
-        before_array, after_array, registration_ok = register_images(before_array, after_array)
+        before_array, after_array, registration_ok, reg_meta = register_images(
+            before_array, after_array)
     if enable_normalization:
         before_array, after_array = normalize_radiometry(before_array, after_array)
 
+    alignment_warning = None
+    if enable_registration and not registration_ok:
+        alignment_warning = ALIGNMENT_WARNING_MSG
+
     if method == "AI-Based Deep Learning":
         change_mask, threshold_debug = ai_deep_learning_method(
-            before_array, after_array, sensitivity=detection_sensitivity
+            before_array, after_array,
+            sensitivity=detection_sensitivity,
+            registration_ok=registration_ok,
         )
     elif method == "Image Difference":
         change_mask, threshold_debug = image_difference_method(
-            before_array, after_array, sensitivity=detection_sensitivity
-        )
+            before_array, after_array, sensitivity=detection_sensitivity)
     elif method == "Feature-Based":
-        change_mask = feature_based_method(before_array, after_array)
+        change_mask = feature_based_method(
+            before_array, after_array, sensitivity=detection_sensitivity)
         threshold_debug = {
             "method": "Feature-Based",
             "threshold_used": None,
@@ -2465,38 +2493,21 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         }
     elif method == "Hybrid AI":
         change_mask, threshold_debug = hybrid_ai_method(
-            before_array, after_array, sensitivity=detection_sensitivity
+            before_array, after_array,
+            sensitivity=detection_sensitivity,
+            registration_ok=registration_ok,
         )
     else:
         change_mask, threshold_debug = hybrid_method(
-            before_array, after_array, sensitivity=detection_sensitivity
+            before_array, after_array,
+            sensitivity=detection_sensitivity,
+            registration_ok=registration_ok,
         )
 
-    # --- Adaptive fallback for empty/sparse masks ---
-    # In some scenes, ORB/ECC registration + fused thresholding can produce an overly
-    # sparse binary mask (leading to 0 detected regions). If that happens, fall back
-    # to the more stable Image Difference mask.
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
-    changed_pixels_ratio = float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
-
-    used_fallback = False
-    if method in ("AI-Based Deep Learning", "Hybrid Approach", "Hybrid AI") and changed_pixels_ratio < 0.0025:
-        diff_mask, diff_debug = image_difference_method(
-            before_array, after_array, sensitivity=detection_sensitivity
-        )
-        diff_ratio = float(np.sum(diff_mask > 127)) / float(total_pixels) if total_pixels else 0.0
-        # Only switch if the diff mask clearly contains more signal.
-        if diff_ratio > max(0.005, changed_pixels_ratio * 3.0):
-            change_mask = diff_mask
-            used_fallback = True
-            threshold_debug = {
-                "method": f"{method} (fallback->Image Difference)",
-                "fallback_used": True,
-                "ai_hybrid_changed_ratio": changed_pixels_ratio,
-                "diff_changed_ratio": diff_ratio,
-                "diff_debug": diff_debug,
-                "sensitivity": float(detection_sensitivity),
-            }
+    changed_pixels_ratio = (
+        float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
+    )
 
     change_regions = analyze_change_regions(
         change_mask,
@@ -2506,10 +2517,32 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         registration_ok=registration_ok,
     )
 
+    if (
+        method in ("AI-Based Deep Learning", "Hybrid Approach", "Hybrid AI")
+        and len(change_regions) == 0
+        and registration_ok
+        and changed_pixels_ratio == 0.0
+    ):
+        diff_mask, diff_debug = image_difference_method(
+            before_array, after_array, sensitivity=detection_sensitivity)
+        diff_regions = analyze_change_regions(
+            diff_mask, after_array, min_area=min_region_area,
+            before_img=before_array, registration_ok=registration_ok,
+        )
+        if len(diff_regions) > 0:
+            change_mask = diff_mask
+            change_regions = diff_regions
+            threshold_debug = {
+                "method": f"{method} (fallback->Image Difference)",
+                "fallback_used": True,
+                "diff_debug": diff_debug,
+                "sensitivity": float(detection_sensitivity),
+            }
+
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
     result_image = visualize_changes(
         before_array, after_array, change_mask,
-        regions=change_regions, total_pixels=total_pixels
+        regions=change_regions, total_pixels=total_pixels,
     )
     changed_pixels = int(np.sum(change_mask > 127))
     change_pct = (changed_pixels / total_pixels * 100.0) if total_pixels else 0.0
@@ -2522,12 +2555,14 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         "image_width": change_mask.shape[1],
         "image_height": change_mask.shape[0],
         "threshold_debug": threshold_debug,
+        "alignment_warning": alignment_warning,
         "params": {
             "detection_sensitivity": float(detection_sensitivity),
             "min_region_area": min_region_area,
             "enable_registration": bool(enable_registration),
             "enable_normalization": bool(enable_normalization),
             "registration_ok": bool(registration_ok),
+            "registration": reg_meta,
         },
     }
 

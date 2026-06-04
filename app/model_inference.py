@@ -21,6 +21,7 @@ _DEVICE = None
 _MODEL_ID = "deepang/adaptformer-LEVIR-CD"
 _TILE_SIZE = 256  # LEVIR-CD native patch size
 _AVAILABLE = None
+_LOAD_FAILED = False
 
 
 def _try_import():
@@ -32,20 +33,12 @@ def _try_import():
         return None, None, None
 
 
-def is_model_available():
-    """Check if torch and transformers are installed."""
-    global _AVAILABLE
-    if _AVAILABLE is not None:
-        return _AVAILABLE
-    torch, _, _ = _try_import()
-    _AVAILABLE = torch is not None
-    return _AVAILABLE
-
-
 def _load_model():
-    global _MODEL, _PROCESSOR, _DEVICE
+    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED
     if _MODEL is not None:
         return _MODEL, _PROCESSOR
+    if _LOAD_FAILED:
+        raise RuntimeError("AdaptFormer load previously failed")
 
     torch, AutoImageProcessor, AutoModel = _try_import()
     if torch is None:
@@ -55,24 +48,53 @@ def _load_model():
 
     cache_dir = os.environ.get("HF_HOME", None)
     logger.info("Loading AdaptFormer from %s ...", _MODEL_ID)
-    _PROCESSOR = AutoImageProcessor.from_pretrained(
-        _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
-    _MODEL = AutoModel.from_pretrained(
-        _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
-    _MODEL.to(_DEVICE)
-    _MODEL.eval()
-    logger.info("AdaptFormer loaded on %s", _DEVICE)
+    try:
+        _PROCESSOR = AutoImageProcessor.from_pretrained(
+            _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+        _MODEL = AutoModel.from_pretrained(
+            _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+        _MODEL.to(_DEVICE)
+        _MODEL.eval()
+        _AVAILABLE = True
+        logger.info("AdaptFormer loaded on %s", _DEVICE)
+    except Exception as exc:
+        _LOAD_FAILED = True
+        _AVAILABLE = False
+        logger.error("AdaptFormer load failed: %s", exc)
+        raise
     return _MODEL, _PROCESSOR
+
+
+def is_model_available():
+    """True only if PyTorch is installed and the model loads successfully."""
+    global _AVAILABLE
+    if _AVAILABLE is not None:
+        return _AVAILABLE
+    if _LOAD_FAILED:
+        return False
+    try:
+        _load_model()
+        return True
+    except Exception:
+        return False
+
+
+def preload_model():
+    """Warm-load AdaptFormer at app startup (best-effort)."""
+    try:
+        _load_model()
+        logger.info("AdaptFormer preload complete")
+        return True
+    except Exception as exc:
+        logger.warning("AdaptFormer preload skipped: %s", exc)
+        return False
 
 
 def predict_change_mask(img1, img2, threshold=0.5):
     """
     Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
-    Images are split into overlapping 256x256 tiles (matching LEVIR-CD
-    training resolution), predicted individually, and stitched back into
-    a full-resolution binary mask.
-
     Returns (uint8 mask [0 or 255], float32 score map [0-1]).
+    Use threshold > 1.0 to obtain score map only (empty mask).
     """
     torch, _, _ = _try_import()
     model, processor = _load_model()
@@ -83,8 +105,8 @@ def predict_change_mask(img1, img2, threshold=0.5):
 
     h, w = img1.shape[:2]
     tile = _TILE_SIZE
-    overlap = tile // 4  # 64px overlap
-    stride = tile - overlap  # 192
+    overlap = tile // 4
+    stride = tile - overlap
 
     pad_h = (tile - h % tile) % tile
     pad_w = (tile - w % tile) % tile
@@ -96,7 +118,6 @@ def predict_change_mask(img1, img2, threshold=0.5):
     score_sum = np.zeros((ph, pw), dtype=np.float32)
     count = np.zeros((ph, pw), dtype=np.float32)
 
-    # Blending weight: raised-cosine window avoids hard tile boundary seams
     ramp = np.linspace(0, 1, overlap)
     flat = np.ones(tile - 2 * overlap)
     profile = np.concatenate([ramp, flat, ramp[::-1]])

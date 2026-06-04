@@ -530,12 +530,30 @@ function showResult(data) {
   const chPx = stats.changedPixels ?? 0;
   const totPx = stats.totalPixels ?? 0;
 
-  statsEl.innerHTML = `
+  const regOk = stats.registrationOk;
+  const alignWarn = stats.alignmentWarning;
+  const thrDbg = stats.thresholdDebug || {};
+  const fusionPx = thrDbg.fused_changed_px != null
+    ? `DL ${thrDbg.dl_changed_px ?? '—'} / fused ${thrDbg.fused_changed_px}`
+    : (thrDbg.model_changed_px != null
+      ? `Model ${thrDbg.model_changed_px} / rule ${thrDbg.rule_changed_px ?? '—'}`
+      : '');
+
+  let warnHtml = '';
+  if (alignWarn) {
+    warnHtml = `<div class="result-warning" role="alert">${alignWarn}</div>`;
+  } else if (regOk === false) {
+    warnHtml = '<div class="result-warning" role="alert">Image alignment was weak — results may include false detections.</div>';
+  }
+
+  statsEl.innerHTML = warnHtml + `
     <div class="stat-box"><div class="value">${pct}%</div><div class="label">Changed</div></div>
     <div class="stat-box"><div class="value" title="${chPx.toLocaleString()}">${formatCompact(chPx)}</div><div class="label">Changed px</div></div>
     <div class="stat-box"><div class="value" title="${totPx.toLocaleString()}">${formatCompact(totPx)}</div><div class="label">Total px</div></div>
     <div class="stat-box"><div class="value">${(data.regions || []).length}</div><div class="label">Regions</div></div>
     <div class="stat-box stat-box-wide"><div class="value value-sm" title="${locLabel}">${locLabel}</div><div class="label">Location</div></div>
+    ${fusionPx ? `<div class="stat-box stat-box-wide"><div class="value value-sm">${fusionPx}</div><div class="label">Fusion px</div></div>` : ''}
+    <div class="stat-box"><div class="value value-sm">${regOk === true ? 'OK' : regOk === false ? 'Weak' : '—'}</div><div class="label">Alignment</div></div>
   `;
 
   const beforeImg = document.getElementById('compare-before-img');

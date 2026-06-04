@@ -126,13 +126,18 @@ def _build_model():
 # Model loading (singleton)
 # ---------------------------------------------------------------------------
 
+def has_siamese_weights():
+    """True only when a trained weights file is present."""
+    return _WEIGHTS_FILE.is_file()
+
+
 def is_siamese_available():
-    """Check if PyTorch is installed and model can be constructed."""
+    """PyTorch installed and pretrained weights available."""
     global _AVAILABLE
     if _AVAILABLE is not None:
         return _AVAILABLE
     torch, _ = _try_torch()
-    _AVAILABLE = torch is not None
+    _AVAILABLE = torch is not None and has_siamese_weights()
     return _AVAILABLE
 
 

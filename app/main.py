@@ -82,6 +82,11 @@ def health():
 @app.on_event("startup")
 def log_startup():
     logger.info("FastAPI startup event completed")
+    try:
+        from .model_inference import preload_model
+        preload_model()
+    except Exception as exc:
+        logger.warning("Model preload at startup failed: %s", exc)
 
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -395,6 +400,8 @@ async def detect(
             "changePercentage": change_pct,
             "thresholdDebug": stats.get("threshold_debug", {}),
             "params": stats.get("params", {}),
+            "alignmentWarning": stats.get("alignment_warning"),
+            "registrationOk": stats.get("params", {}).get("registration_ok"),
         },
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,

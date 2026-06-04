@@ -604,6 +604,16 @@ input:focus, select:focus, textarea:focus {
 .stat-box .value-sm {
   font-size: clamp(0.75rem, 3vw, 1.05rem);
 }
+.result-warning {
+  grid-column: 1 / -1;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.5rem;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
 @media (max-width: 640px) {
   .stat-box-wide { grid-column: span 1; }
 }
