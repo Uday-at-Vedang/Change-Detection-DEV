@@ -9,12 +9,12 @@ app_port: 7860
 
 # Satellite Change Detection — Standalone Web App
 
-Standalone web application for satellite image change detection with **user accounts**, **database storage**, and a **clean, modern UI**.
+Standalone web application for satellite image change detection with **database storage** and a **clean, modern UI**. Opens directly on the detection page — no sign-in required.
 
 ## Features
 
-- **Login / Register** — JWT-based auth, passwords hashed with bcrypt
-- **Database** — SQLite (or set `DATABASE_URL` for PostgreSQL); stores users and detection runs
+- **Direct access** — upload and run detection immediately (no login)
+- **Database** — SQLite (or set `DATABASE_URL` for PostgreSQL); stores detection runs
 - **Change detection** — Same model as the original app: AI-based, image difference, feature-based, hybrid
 - **Detection menu** — Choose between General Change Detection and Landslide Detection (Uttarakhand starter)
 - **Pothole detection** — Separate detection type for road damage (starter pipeline + future model hook)
@@ -49,7 +49,6 @@ Standalone web application for satellite image change detection with **user acco
 ## First run
 
 - The SQLite DB and `data/` (overlay images) are created automatically on first use.
-- Register a new account from the welcome screen, then sign in.
 - Upload **Before** and **After** images, choose a method, and click **Run detection**.
 - Results appear below; runs are saved in **History**.
 
