@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text as sa_text
-from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -21,6 +21,7 @@ from .auth import (
     get_password_hash,
     get_user_by_email,
     get_current_user,
+    get_or_create_guest_user,
     get_user_from_token,
     verify_password,
 )
@@ -226,7 +227,6 @@ def me(user: Optional[User] = Depends(get_current_user)):
 # --- Detection route ---
 @app.post("/api/detect")
 async def detect(
-    request: Request,
     before: UploadFile = File(...),
     after: UploadFile = File(...),
     method: str = Form("AI-Based Deep Learning"),
@@ -238,21 +238,9 @@ async def detect(
     detection_sensitivity: float = Form(0.5),
     min_region_area: Optional[int] = Form(None),
     notify_email: Optional[str] = Form(None),
-    access_token: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    # Resolve user from token (header, cookie, or form - in case browser strips headers for multipart)
-    token = None
-    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
-    if auth_header and auth_header.lower().startswith("bearer "):
-        token = auth_header[7:].strip()
-    if not token:
-        token = request.cookies.get(COOKIE_NAME)
-    if not token:
-        token = access_token
-    user = get_user_from_token(token, db) if token else None
-    if not user:
-        raise HTTPException(status_code=401, detail="Login required")
+    user = get_or_create_guest_user(db)
     MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
     def _read_upload(upload: UploadFile, field_name: str):
@@ -418,10 +406,9 @@ async def detect(
 @app.post("/api/notify/test")
 def notify_test(
     data: EmailRequest,
-    user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    if not user:
-        raise HTTPException(status_code=401, detail="Login required")
+    get_or_create_guest_user(db)
     sent, error = send_test_email(data.email.strip())
     if not sent:
         raise HTTPException(status_code=400, detail=error or "Failed to send test email")
@@ -445,11 +432,9 @@ def serve_overlay(path: str):
 # --- History ---
 @app.get("/api/history")
 def history(
-    user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not user:
-        raise HTTPException(status_code=401, detail="Login required")
+    user = get_or_create_guest_user(db)
     runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(100).all()
     return [
         {
@@ -474,12 +459,10 @@ def history(
 @app.get("/api/history/{run_id}")
 def get_run(
     run_id: int,
-    user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Fetch a single run by id for opening from history (result view with slider, table, zoom)."""
-    if not user:
-        raise HTTPException(status_code=401, detail="Login required")
+    user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -509,11 +492,9 @@ def get_run(
 def notify_run(
     run_id: int,
     data: EmailRequest,
-    user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not user:
-        raise HTTPException(status_code=401, detail="Login required")
+    user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -539,11 +520,9 @@ def notify_run(
 @app.delete("/api/history/{run_id}")
 def delete_run(
     run_id: int,
-    user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not user:
-        raise HTTPException(status_code=401, detail="Login required")
+    user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")

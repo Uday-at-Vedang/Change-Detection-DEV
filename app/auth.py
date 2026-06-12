@@ -71,6 +71,23 @@ def get_user_from_token(token: str, db: Session) -> Optional[User]:
     return get_user_by_id(db, user_id)
 
 
+def get_or_create_guest_user(db: Session) -> User:
+    """Shared anonymous account when login is disabled."""
+    guest_email = "__guest__@system.local"
+    user = get_user_by_email(db, guest_email)
+    if user:
+        return user
+    user = User(
+        email=guest_email,
+        hashed_password=get_password_hash("guest-not-used"),
+        full_name="Guest",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

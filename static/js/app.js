@@ -1,15 +1,16 @@
 const API_BASE = '';
 
-function getToken() { return localStorage.getItem('token'); }
-function setToken(token) {
-  if (token) localStorage.setItem('token', token);
-  else localStorage.removeItem('token');
-}
-
-function showView(id) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  const el = document.getElementById('view-' + id);
-  if (el) el.classList.add('active');
+async function api(method, path, options = {}) {
+  const headers = { ...options.headers };
+  if (options.body && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(API_BASE + path, { method, headers, credentials: 'include', ...options });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) {}
+  if (!res.ok) throw new Error(data?.detail || res.statusText || 'Request failed');
+  return data;
 }
 
 function showError(id, msg) {
@@ -34,118 +35,8 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || '').trim());
 }
 
-async function api(method, path, options = {}) {
-  const headers = { ...options.headers };
-  const token = getToken();
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  if (options.body && !(options.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
-  }
-  const res = await fetch(API_BASE + path, { method, headers, credentials: 'include', ...options });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) {}
-  if (!res.ok) throw new Error(data?.detail || res.statusText || 'Request failed');
-  return data;
-}
-
-// ---- Auth ----
-document.getElementById('form-login')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  hideError('login-error');
-  const email = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-password').value;
-  try {
-    const data = await api('POST', '/api/auth/login', { body: JSON.stringify({ email, password }) });
-    setToken(data.access_token);
-    document.getElementById('user-email').textContent = data.user.email;
-    handlePostAuthNavigation();
-  } catch (err) { showError('login-error', err.message); }
-});
-
-document.getElementById('form-register')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  hideError('register-error');
-  const full_name = document.getElementById('register-name').value.trim();
-  const email = document.getElementById('register-email').value.trim();
-  const password = document.getElementById('register-password').value;
-  try {
-    const data = await api('POST', '/api/auth/register', { body: JSON.stringify({ email, password, full_name }) });
-    setToken(data.access_token);
-    document.getElementById('user-email').textContent = data.user.email;
-    handlePostAuthNavigation();
-  } catch (err) { showError('register-error', err.message); }
-});
-
-function handlePostAuthNavigation() {
-  showView('dashboard');
+function init() {
   loadHistory();
-}
-
-// ---- Forgot password ----
-document.getElementById('form-forgot')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  hideError('forgot-error');
-  hideError('forgot-success');
-  const email = document.getElementById('forgot-email').value.trim();
-  const new_password = document.getElementById('forgot-password').value;
-  try {
-    const data = await api('POST', '/api/auth/reset-password', { body: JSON.stringify({ email, new_password }) });
-    showSuccess('forgot-success', data.message || 'Password reset! You can now sign in.');
-    document.getElementById('form-forgot').reset();
-  } catch (err) { showError('forgot-error', err.message); }
-});
-
-// ---- Password visibility toggle ----
-document.querySelectorAll('.password-toggle').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const input = document.getElementById(btn.dataset.target);
-    if (!input) return;
-    const showing = input.type !== 'password';
-    input.type = showing ? 'password' : 'text';
-    btn.style.opacity = showing ? '' : '0.9';
-  });
-});
-
-document.querySelectorAll('[data-view]').forEach((a) => {
-  a.addEventListener('click', (e) => {
-    e.preventDefault();
-    showView(a.getAttribute('data-view'));
-    hideError('login-error');
-    hideError('register-error');
-    hideError('forgot-error');
-    hideError('forgot-success');
-  });
-});
-
-document.getElementById('btn-logout')?.addEventListener('click', async () => {
-  try { await fetch(API_BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
-  setToken(null);
-  document.getElementById('nav-dropdown')?.classList.add('hidden');
-  showView('login');
-});
-
-// ---- Avatar dropdown toggle ----
-document.getElementById('btn-avatar')?.addEventListener('click', (e) => {
-  e.stopPropagation();
-  document.getElementById('nav-dropdown')?.classList.toggle('hidden');
-});
-document.addEventListener('click', (e) => {
-  const dd = document.getElementById('nav-dropdown');
-  if (dd && !dd.classList.contains('hidden') && !e.target.closest('.nav-user')) {
-    dd.classList.add('hidden');
-  }
-});
-
-async function init() {
-  const token = getToken();
-  if (!token) { showView('login'); return; }
-  try {
-    const user = await api('GET', '/api/me');
-    document.getElementById('user-email').textContent = user.email;
-    showView('dashboard');
-    loadHistory();
-  } catch (_) { setToken(null); showView('login'); }
 }
 
 // ---- Upload zones with preview ----
@@ -409,7 +300,6 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
   loading.classList.remove('hidden');
   startDetectionProgress();
 
-  const token = getToken();
   const form = new FormData();
   form.append('before', before);
   form.append('after', after);
@@ -457,15 +347,7 @@ document.getElementById('form-detect')?.addEventListener('submit', async (e) => 
     form.append('notify_email', email);
   }
 
-  if (token) form.append('access_token', token);
-
   try {
-    if (!token) {
-      showError('dashboard-error', 'Session expired. Please sign in again.');
-      setToken(null);
-      showView('login');
-      return;
-    }
     const data = await api('POST', '/api/detect', { body: form });
     showResult(data);
     const notifyCbDone = document.getElementById('detect-notify');

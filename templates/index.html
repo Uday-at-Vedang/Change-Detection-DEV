@@ -4,147 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Change Detection</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=26" />
+  <link rel="stylesheet" href="/static/css/style.css?v=28" />
 </head>
 <body>
   <div class="app">
-    <!-- Login view -->
-    <section id="view-login" class="view">
-      <div class="auth-container">
-        <div class="auth-logo">
-          <div class="auth-logo-icon">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-          </div>
-          <span>AI Change Detection</span>
-        </div>
-        <div class="card">
-          <h2>Welcome back</h2>
-          <p class="sub">Sign in to your account to continue.</p>
-          <div id="login-error" class="alert alert-error hidden"></div>
-          <form id="form-login">
-            <div class="form-group">
-              <label for="login-email">Email</label>
-              <input type="email" id="login-email" required placeholder="you@example.com" />
-            </div>
-            <div class="form-group">
-              <label for="login-password">Password</label>
-              <div class="input-password-wrap">
-                <input type="password" id="login-password" required placeholder="Enter your password" />
-                <button type="button" class="password-toggle" data-target="login-password" aria-label="Toggle password visibility">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="auth-actions">
-              <button type="submit" class="btn btn-primary btn-block">Sign in</button>
-            </div>
-          </form>
-          <p class="forgot-link"><a href="#" data-view="forgot">Forgot your password?</a></p>
-          <p class="toggle-auth">Don't have an account? <a href="#" data-view="register">Create one</a></p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Register view -->
-    <section id="view-register" class="view">
-      <div class="auth-container">
-        <div class="auth-logo">
-          <div class="auth-logo-icon">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-          </div>
-          <span>AI Change Detection</span>
-        </div>
-        <div class="card">
-          <h2>Create account</h2>
-          <p class="sub">Register to save and manage your detection runs.</p>
-          <div id="register-error" class="alert alert-error hidden"></div>
-          <form id="form-register">
-            <div class="form-group">
-              <label for="register-name">Full name</label>
-              <input type="text" id="register-name" placeholder="Your name" />
-            </div>
-            <div class="form-group">
-              <label for="register-email">Email</label>
-              <input type="email" id="register-email" required placeholder="you@example.com" />
-            </div>
-            <div class="form-group">
-              <label for="register-password">Password</label>
-              <div class="input-password-wrap">
-                <input type="password" id="register-password" required placeholder="Min. 6 characters" minlength="6" />
-                <button type="button" class="password-toggle" data-target="register-password" aria-label="Toggle password visibility">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="auth-actions">
-              <button type="submit" class="btn btn-primary btn-block">Create account</button>
-            </div>
-          </form>
-          <p class="toggle-auth">Already have an account? <a href="#" data-view="login">Sign in</a></p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Forgot password view -->
-    <section id="view-forgot" class="view">
-      <div class="auth-container">
-        <div class="auth-logo">
-          <div class="auth-logo-icon">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-          </div>
-          <span>AI Change Detection</span>
-        </div>
-        <div class="card">
-          <div class="forgot-header-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-          </div>
-          <h2 style="text-align:center;">Reset your password</h2>
-          <p class="sub" style="text-align:center;">Enter the email you registered with and choose a new password.</p>
-          <div id="forgot-error" class="alert alert-error hidden"></div>
-          <div id="forgot-success" class="alert alert-success hidden"></div>
-          <form id="form-forgot">
-            <div class="form-group">
-              <label for="forgot-email">Email address</label>
-              <input type="email" id="forgot-email" required placeholder="you@example.com" />
-            </div>
-            <div class="form-group">
-              <label for="forgot-password">New password</label>
-              <div class="input-password-wrap">
-                <input type="password" id="forgot-password" required placeholder="Min. 6 characters" minlength="6" />
-                <button type="button" class="password-toggle" data-target="forgot-password" aria-label="Toggle password visibility">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="auth-actions">
-              <button type="submit" class="btn btn-primary btn-block">Reset password</button>
-            </div>
-          </form>
-          <div style="text-align:center;">
-            <a href="#" class="back-to-login" data-view="login">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-              Back to sign in
-            </a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Dashboard view -->
-    <section id="view-dashboard" class="view">
+    <!-- Detection dashboard (shown immediately — no login) -->
+    <section id="view-dashboard" class="view active">
       <div class="topbar">
-        <div class="nav-user">
-          <button type="button" class="nav-avatar" id="btn-avatar" aria-label="Account menu">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </button>
-          <div class="nav-dropdown hidden" id="nav-dropdown">
-            <div class="nav-dropdown-email" id="user-email"></div>
-            <div class="nav-dropdown-divider"></div>
-            <button type="button" class="nav-dropdown-item" id="btn-logout">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-              Log out
-            </button>
-          </div>
+        <div class="app-brand">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          <span>AI Change Detection</span>
         </div>
       </div>
 
@@ -364,6 +233,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=41"></script>
+  <script src="/static/js/app.js?v=42"></script>
 </body>
 </html>
