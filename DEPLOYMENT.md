@@ -133,6 +133,7 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 | Variable | Purpose |
 |----------|---------|
 | `APP_MODE` | Set to `dda` on **satdetect-dev** only (enables DDA library UI) |
+| `LOCAL_LIBRARY_ROOT` | Path to year folders (default: `library_sources/` in project) |
 | `MAX_GEOTIFF_MB` | Library GeoTIFF upload cap (default **2048** = 2 GB on dev) |
 | `MAX_IMAGE_MB` | PNG/JPEG library cap (default 50 MB) |
 | `SECRET_KEY` | Optional legacy JWT setting (login disabled) |

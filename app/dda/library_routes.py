@@ -65,7 +65,7 @@ def _image_to_dict(asset: ImageAsset, zone_name: str = "", village_name: str = "
 @router.get("/config")
 def dda_config():
     _require_dda()
-    from .config import MAX_GEOTIFF_BYTES, MAX_IMAGE_BYTES
+    from .config import MAX_GEOTIFF_BYTES, MAX_IMAGE_BYTES, LOCAL_LIBRARY_ROOT
     max_gb = MAX_GEOTIFF_BYTES / (1024 ** 3)
     return {
         "mode": "dda",
@@ -76,6 +76,8 @@ def dda_config():
         "geotiffEnabled": geotiff_io_available(),
         "allowedExtensions": sorted(ALLOWED_EXTENSIONS),
         "hierarchyMode": "admin",
+        "librarySource": "local_folder",
+        "localLibraryPath": str(LOCAL_LIBRARY_ROOT),
     }
 
 

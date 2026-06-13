@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=2" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=3" />
 </head>
 <body>
   <div class="app dda-app">
@@ -25,70 +25,35 @@
     <div id="dda-error" class="alert alert-error hidden"></div>
     <div id="dda-success" class="alert alert-success hidden"></div>
 
-    <!-- Tab: Image Library (FR-01, FR-02) -->
+    <!-- Tab: Image Library — reads from library_sources/ year folders -->
     <section id="tab-library" class="dda-panel active" role="tabpanel">
       <div class="dda-layout">
         <aside class="dda-sidebar card">
-          <div class="card-header"><h3>Hierarchy</h3></div>
-          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter zones…" />
+          <div class="card-header">
+            <h3>Years</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" title="Rescan folder">Refresh</button>
+          </div>
+          <div id="lib-folder-path" class="dda-folder-path dim"></div>
+          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter years…" />
           <div id="lib-tree" class="dda-tree"><p class="dim">Loading…</p></div>
         </aside>
         <main class="dda-main">
-          <div class="card">
+          <div class="card dda-instructions">
             <div class="card-header">
-              <h3>Upload Image</h3>
+              <h3>Local folder library</h3>
               <span class="dim" id="lib-config-hint"></span>
             </div>
-            <form id="form-upload" class="dda-upload-form">
-              <div class="location-row">
-                <div class="form-group">
-                  <label for="up-zone">Zone</label>
-                  <select id="up-zone" required><option value="">— Select —</option></select>
-                </div>
-                <div class="form-group">
-                  <label for="up-village">Village / Area</label>
-                  <select id="up-village" required disabled><option value="">— Select zone —</option></select>
-                </div>
-                <div class="form-group">
-                  <label for="up-area">Area name</label>
-                  <input type="text" id="up-area" placeholder="Optional sub-area" />
-                </div>
-                <div class="form-group">
-                  <label for="up-year">Year</label>
-                  <input type="number" id="up-year" required min="2000" max="2100" value="2025" />
-                </div>
-              </div>
-              <div class="location-row">
-                <div class="form-group">
-                  <label for="up-date">Capture date</label>
-                  <input type="date" id="up-date" required />
-                </div>
-                <div class="form-group">
-                  <label for="up-source">Source</label>
-                  <select id="up-source"><option value="satellite">Satellite</option><option value="drone">Drone</option></select>
-                </div>
-              <div class="form-group">
-                <label for="up-file">Image file (.tif up to 2 GB)</label>
-                <input type="file" id="up-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
-              </div>
-            </div>
-            <div id="upload-progress" class="dda-upload-progress hidden">
-              <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
-              <span id="upload-progress-label" class="dim">Uploading… 0%</span>
-            </div>
-              <div class="form-group">
-                <label for="up-manual-bounds">Manual bounds (WGS84)</label>
-                <input type="text" id="up-manual-bounds" placeholder="west,south,east,north — required if GeoTIFF has no georef" />
-              </div>
-              <button type="submit" class="btn btn-primary" id="btn-upload">Upload to Library</button>
-            </form>
+            <p class="sub" id="lib-instructions">
+              Copy <code>.tif</code> images into <code>library_sources/YEAR/</code> in your project folder, then click <strong>Refresh</strong>.
+            </p>
+            <pre id="lib-path-display" class="dda-path-code"></pre>
           </div>
           <div class="card">
             <div class="card-header">
-              <h3>Library Images</h3>
-              <input type="search" id="lib-filter" class="dda-search" placeholder="Search…" />
+              <h3 id="lib-grid-title">Images</h3>
+              <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
             </div>
-            <div id="lib-grid" class="dda-grid"><p class="dim">Select a village or upload an image.</p></div>
+            <div id="lib-grid" class="dda-grid"><p class="dim">Select a year or add images to library_sources/.</p></div>
           </div>
         </main>
       </div>
@@ -123,7 +88,7 @@
     </section>
   </div>
 
-  <script src="/static/js/dda/app.js?v=2"></script>
-  <script src="/static/js/dda/library.js?v=2"></script>
+  <script src="/static/js/dda/app.js?v=3"></script>
+  <script src="/static/js/dda/library.js?v=3"></script>
 </body>
 </html>

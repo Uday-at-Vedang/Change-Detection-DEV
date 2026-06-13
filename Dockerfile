@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=26
+ARG APP_BUILD=27
 ENV APP_BUILD=${APP_BUILD}
 ENV GDAL_CONFIG=/usr/bin/gdal-config
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
