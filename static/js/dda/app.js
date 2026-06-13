@@ -77,10 +77,11 @@ async function initDda() {
     if (hint) {
       hint.textContent = localCfg.geotiffEnabled ? 'GeoTIFF ready' : 'GeoTIFF limited';
     }
+    const paths = (localCfg.rootPaths || [localCfg.rootPath || ddaConfig.localLibraryPaths?.[0]]).filter(Boolean);
     const pathEl = document.getElementById('lib-path-display');
-    if (pathEl) pathEl.textContent = localCfg.rootPath || ddaConfig.localLibraryPath || '';
+    if (pathEl) pathEl.textContent = paths.join('\n');
     const folderPath = document.getElementById('lib-folder-path');
-    if (folderPath) folderPath.textContent = 'Folder: library_sources/';
+    if (folderPath) folderPath.textContent = paths.length ? `Scanning: ${paths[0]}` : '';
 
     const yearsData = await ddaApi('GET', '/api/dda/local/years');
     localYears = yearsData.years || [];
@@ -108,15 +109,18 @@ async function loadLibraryImages() {
       grid.innerHTML = `<p class="dim">No images in ${selectedYear || 'library_sources'}. Copy .tif files into <code>library_sources/${selectedYear || 'YEAR'}/</code> and click Refresh.</p>`;
       return;
     }
-    grid.innerHTML = items.map((img) => `
-      <div class="dda-card-img" draggable="true" data-image-path="${img.path}" title="${img.filename}">
-        ${img.thumbUrl ? `<img src="${img.thumbUrl}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
+    grid.innerHTML = items.map((img) => {
+      const thumb = img.thumbUrl ? img.thumbUrl.replace(/path=[^&]+/, 'path=' + encodeURIComponent(img.path)) : '';
+      return `
+      <div class="dda-card-img" draggable="true" data-image-path="${img.path.replace(/"/g, '&quot;')}" title="${img.filename}">
+        ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
         <div class="meta">
           <strong>${img.year}</strong><br/>
           ${img.filename}<br/>
           <span class="dim">${formatBytes(img.fileSizeBytes)}</span>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     grid.querySelectorAll('.dda-card-img').forEach((card) => {
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('application/x-dda-image-path', card.dataset.imagePath);

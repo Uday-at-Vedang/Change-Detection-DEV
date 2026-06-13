@@ -35,6 +35,9 @@ def main():
     if here not in sys.path:
         sys.path.insert(0, here)
 
+    # Local runs use DDA dev UI + folder library unless already set
+    os.environ.setdefault("APP_MODE", "dda")
+
     try:
         import uvicorn
     except ImportError:

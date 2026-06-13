@@ -4,10 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from .config import IS_DDA_MODE, LOCAL_LIBRARY_ROOT, geotiff_io_available
+from .config import IS_DDA_MODE, geotiff_io_available, get_library_roots
 from .local_library import (
     entry_to_dict,
     get_or_build_thumb,
+    library_debug_info,
     safe_resolve,
     scan_images,
     scan_years,
@@ -24,21 +25,30 @@ def _require_dda():
 @router.get("/local/config")
 def local_library_config():
     _require_dda()
+    roots = [str(r) for r in get_library_roots()]
     return {
         "source": "local_folder",
-        "rootPath": str(LOCAL_LIBRARY_ROOT),
+        "rootPath": roots[0] if roots else "",
+        "rootPaths": roots,
         "instructions": (
-            "Copy .tif / .tiff images into year folders under library_sources/ "
-            "(e.g. library_sources/2025/my_image.tif), then click Refresh."
+            "Copy .tif / .tiff images into library_sources/YEAR/ inside the project folder "
+            "(e.g. change_detection_webapp/library_sources/2025/), then click Refresh. "
+            "Run locally with: python run.py (DDA mode is enabled automatically)."
         ),
         "geotiffEnabled": geotiff_io_available(),
     }
 
 
+@router.get("/local/debug")
+def local_debug():
+    _require_dda()
+    return library_debug_info()
+
+
 @router.get("/local/years")
 def local_years():
     _require_dda()
-    return {"years": scan_years(), "rootPath": str(LOCAL_LIBRARY_ROOT)}
+    return {"years": scan_years(), "rootPaths": [str(r) for r in get_library_roots()]}
 
 
 @router.get("/local/images")
@@ -82,4 +92,4 @@ def local_rescan():
     _require_dda()
     years = scan_years()
     total = sum(y["imageCount"] for y in years)
-    return {"ok": True, "years": years, "totalImages": total, "rootPath": str(LOCAL_LIBRARY_ROOT)}
+    return {"ok": True, "years": years, "totalImages": total, "rootPaths": [str(r) for r in get_library_roots()]}
