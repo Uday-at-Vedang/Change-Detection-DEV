@@ -27,6 +27,10 @@ from .auth import (
 )
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
+from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
+from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob  # noqa: F401
+from .dda.config import IS_DDA_MODE
+from .dda.bootstrap import init_dda_database, setup_dda
 from .notifier import send_notification, send_test_email
 
 import logging
@@ -66,18 +70,25 @@ try:
             except Exception:
                 conn.rollback()
     logger.info("Database initialization complete")
+    init_dda_database()
 except Exception as e:
     import logging
     logging.getLogger("uvicorn.error").warning("Startup migration skipped: %s", e)
 
-app = FastAPI(title="AI Change Detection", version="2.2.0")
+app = FastAPI(title="AI Change Detection", version="2.3.0-dda" if IS_DDA_MODE else "2.2.0")
+setup_dda(app)
 
 
 @app.get("/health")
 def health():
     """Lightweight health check so Hugging Face can mark the Space as running quickly."""
     from datetime import datetime
-    return {"status": "ok", "version": "2.2.0", "server_time_ist": _isoformat_ist(datetime.now(timezone.utc))}
+    return {
+        "status": "ok",
+        "version": "2.3.0-dda" if IS_DDA_MODE else "2.2.0",
+        "appMode": "dda" if IS_DDA_MODE else "legacy",
+        "server_time_ist": _isoformat_ist(datetime.now(timezone.utc)),
+    }
 
 
 @app.on_event("startup")
@@ -541,7 +552,10 @@ def delete_run(
 # --- Serve SPA ---
 @app.get("/", response_class=HTMLResponse)
 def index():
-    index_file = TEMPLATES_DIR / "index.html"
+    if IS_DDA_MODE:
+        index_file = TEMPLATES_DIR / "index_dda.html"
+    else:
+        index_file = TEMPLATES_DIR / "index.html"
     if not index_file.exists():
         return HTMLResponse("<h1>Satellite Change Detection</h1><p>Create <code>templates/index.html</code> and <code>static/</code>.</p>")
     return FileResponse(index_file)

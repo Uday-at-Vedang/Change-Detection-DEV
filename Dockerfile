@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender1 \
+    gdal-bin \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (required by Hugging Face Spaces)
@@ -19,8 +21,9 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=23
+ARG APP_BUILD=25
 ENV APP_BUILD=${APP_BUILD}
+ENV GDAL_CONFIG=/usr/bin/gdal-config
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
 
 # Install Python dependencies

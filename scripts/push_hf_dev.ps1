@@ -14,5 +14,16 @@ if ($branch -ne "master") {
 }
 
 Write-Host "Pushing master -> hf-dev/main (satdetect-dev)..."
-git push hf-dev master:main
+$force = $args -contains "-Force" -or $args -contains "--force"
+if ($force) {
+    git push hf-dev master:main --force
+} else {
+    git push hf-dev master:main
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "Push rejected? Hugging Face may have a starter README commit."
+        Write-Host "Re-run with: .\scripts\push_hf_dev.ps1 -Force"
+        exit $LASTEXITCODE
+    }
+}
 Write-Host "Done. Dev app: https://huggingface.co/spaces/coderuday21/satdetect-dev"

@@ -1,0 +1,93 @@
+Scope of Work
+The System will provide a simple workflow for change detection over satellite / drone imagery, covering the following:
+A centralized image library organized by Zone, Village, Area and Year (e.g., 2025, 2026), or on a Grid basis.
+Upload of satellite and drone images in TIF / TIFF format.
+A drag-and-drop interface to select two images (Base image and Comparison image) for analysis.
+AI-based change detection using pre-trained deep learning models.
+Notification to the end user along with a change detection report.
+Navigation to change locations based on latitude / longitude.
+Clickable change regions in the report, which pan the image viewer to the corresponding area.
+Typical use cases: monitoring of unauthorized construction, encroachment detection and land-use change monitoring.
+Functional Requirements
+All requirements below are Mandatory unless stated otherwise.
+FR-01: Centralized Image Library
+Requirement ID
+FR-01
+Title
+Centralized Satellite / Drone Image Library
+Description
+The System shall provide a centralized library to store, organize and search satellite and drone images, organized by Zone, Village, Area and Year, or on a Grid basis.
+Hierarchical organization: Zone → Village → Area → Year, maintained through image metadata.
+Basic metadata per image: image ID, capture date, source (satellite / drone), format and location reference.
+Browse (tree view) and search / filter by zone, village, area, year or capture date.
+Role-based access for viewing and uploading images.
+Providing images of suitable size and resolution for change detection shall be the responsibility of DDA.
+FR-02: Upload of Images
+Requirement ID
+FR-02
+Title
+Upload of Satellite / Drone Images
+Description
+The System shall allow authorized users to upload satellite and drone images in TIF / TIFF format with basic validation.
+Supported format: GeoTIFF (.tif / .tiff).
+Where georeferencing is not embedded, the user shall provide location reference and capture date before the image is saved.
+Upload success / failure status shall be shown to the user.
+FR-03: Selection of Two Images for Comparison
+Requirement ID
+FR-03
+Title
+Drag-and-Drop Selection of Two Images
+Description
+The System shall provide a drag-and-drop interface to select a Base (older) image and a Comparison (newer) image for change detection.
+Two clearly labelled drop targets: Base Image (T1) and Comparison Image (T2).
+Images can be dragged from the library or selected through a picker dialog.
+Thumbnail preview and capture dates of both images shown before analysis is started.
+FR-04: AI-Based Change Detection
+Requirement ID
+FR-04
+Title
+AI-Based Change Detection Using Pre-Trained Models
+Description
+The System shall run change detection on the selected image pair using pre-trained deep learning models, subject to the AI accuracy note above.
+Detected changes shall be shown as change regions with change type, approximate area and location (latitude / longitude) along with a model confidence score.
+Indicative change types: New Construction, Demolition, Extension, Vegetation Change, Other. The list may be refined during implementation.
+Detection runs as a background job; the user is informed when it completes.
+Output accuracy depends on image quality and model training maturity, as described in the AI accuracy note.
+FR-05: Notification and Change Detection Report
+Requirement ID
+FR-05
+Title
+Notification with Change Detection Report
+Description
+On completion of analysis, the System shall notify the user and provide a change detection report.
+In-application notification (email optional) with a link to the report.
+Report viewable in the browser and exportable to PDF.
+Reports remain available in the System for later reference.
+FR-06: Geo-Navigation to Change Locations
+Requirement ID
+FR-06
+Title
+Geo-Navigation Based on Latitude / Longitude
+Description
+The System shall allow the user to navigate to the location where a change has been found, based on its latitude / longitude.
+Each change record displays its coordinates in the report.
+A Locate action zooms / pans the viewer to that change location.
+FR-07: Clickable Change Regions
+Requirement ID
+FR-07
+Title
+Clickable Change Types / Regions with Auto-Pan
+Description
+Change regions in the report shall be clickable; on click, the viewer shall pan and zoom to the corresponding area of the image.
+Clicking a change record pans and highlights that region in the viewer.
+Side-by-side view of Base and Comparison images with the change overlay.
+FR-08: Entry of Confirmed Changes into the Departmental System
+Requirement ID
+FR-08
+Title
+Direct Entry of Reported Changes
+Description
+After review, the user shall be able to enter confirmed changes from the report into the departmental system for further action.
+The user verifies each change (Confirmed / False Positive) before submission; only confirmed changes are submitted.
+Submission via API where the departmental system provides one; otherwise a structured export (Excel / CSV / PDF) shall be generated for manual entry.
+False-positive markings are retained and used for future model training and improvement.

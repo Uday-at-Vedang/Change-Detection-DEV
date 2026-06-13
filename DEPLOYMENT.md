@@ -35,8 +35,10 @@ git remote set-url hf-dev https://huggingface.co/spaces/coderuday21/satdetect-de
 Push the current development code to the new Space:
 
 ```powershell
-git push hf-dev master:main
+git push hf-dev master:main --force
 ```
+
+> **First push only:** Hugging Face creates a starter README commit when you create the Space. Use `--force` once to replace it with your app. Later pushes can omit `--force`.
 
 Or run the helper script:
 
@@ -99,18 +101,27 @@ Helper:
 
 ---
 
-## GitHub (optional mirror)
+## GitHub mirror
 
-GitHub tracks `master` only:
+**Repo:** https://github.com/Uday-at-Vedang/DDA.ChangeDetection  
+**Default branch on GitHub:** `main`
+
+Push the full app from local `master`:
 
 ```powershell
-git push origin master
+git push origin master:main
 ```
 
-You can add a `production` branch on GitHub too:
+Push the production branch too:
 
 ```powershell
-git push origin production
+git push origin production:main-production
+```
+
+Set upstream (once, after first push):
+
+```powershell
+git branch --set-upstream-to=origin/main master
 ```
 
 ---
