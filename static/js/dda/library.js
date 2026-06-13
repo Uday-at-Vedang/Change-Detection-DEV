@@ -79,6 +79,32 @@ function populateUploadSelects(data) {
   }
 }
 
+function formatBytes(n) {
+  if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
+  if (n >= 1024 ** 2) return (n / 1024 ** 2).toFixed(1) + ' MB';
+  return (n / 1024).toFixed(0) + ' KB';
+}
+
+function uploadWithProgress(url, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+    });
+    xhr.addEventListener('load', () => {
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data?.detail || xhr.statusText || 'Upload failed'));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+    xhr.send(formData);
+  });
+}
+
 document.getElementById('form-upload')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideDdaError?.();
@@ -100,14 +126,29 @@ document.getElementById('form-upload')?.addEventListener('submit', async (e) => 
   form.append('manual_bounds_json', document.getElementById('up-manual-bounds').value || '');
 
   const btn = document.getElementById('btn-upload');
+  const progWrap = document.getElementById('upload-progress');
+  const progFill = document.getElementById('upload-progress-fill');
+  const progLabel = document.getElementById('upload-progress-label');
+
   btn.disabled = true;
   btn.textContent = 'Uploading…';
+  progWrap?.classList.remove('hidden');
+  if (progFill) progFill.style.width = '0%';
+  if (progLabel) progLabel.textContent = `Uploading ${file.name} (${formatBytes(file.size)})… 0%`;
+
   try {
-    const data = await ddaApi('POST', '/api/dda/images/upload', { body: form });
+    const data = await uploadWithProgress('/api/dda/images/upload', form, (loaded, total) => {
+      const pct = total ? Math.round((loaded / total) * 100) : 0;
+      if (progFill) progFill.style.width = pct + '%';
+      if (progLabel) progLabel.textContent = `Uploading… ${pct}% (${formatBytes(loaded)} / ${formatBytes(total)})`;
+    });
+    if (progFill) progFill.style.width = '100%';
     showDdaSuccess?.(data?.status === 'success' ? 'Image uploaded to library.' : 'Upload complete.');
     document.getElementById('form-upload').reset();
     document.getElementById('up-year').value = '2025';
     fileInput.value = '';
+    const dateInput = document.getElementById('up-date');
+    if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
     window.ddaState.hierarchy = await ddaApi('GET', '/api/dda/hierarchy');
     renderHierarchy(window.ddaState.hierarchy);
     populateUploadSelects(window.ddaState.hierarchy);
@@ -117,6 +158,7 @@ document.getElementById('form-upload')?.addEventListener('submit', async (e) => 
   } finally {
     btn.disabled = false;
     btn.textContent = 'Upload to Library';
+    setTimeout(() => progWrap?.classList.add('hidden'), 1500);
   }
 });
 

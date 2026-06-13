@@ -63,7 +63,9 @@ async function initDda() {
     ddaConfig = await ddaApi('GET', '/api/dda/config');
     const hint = document.getElementById('lib-config-hint');
     if (hint) {
-      hint.textContent = `Max ${ddaConfig.maxUploadMb} MB · GeoTIFF: ${ddaConfig.geotiffEnabled ? 'yes' : 'limited'}`;
+      const gb = ddaConfig.maxUploadGb;
+      const label = gb >= 1 ? `${gb} GB GeoTIFF` : `${ddaConfig.maxGeotiffMb || ddaConfig.maxUploadMb} MB`;
+      hint.textContent = `Max ${label} · GeoTIFF engine: ${ddaConfig.geotiffEnabled ? 'yes' : 'limited'}`;
     }
     ddaHierarchy = await ddaApi('GET', '/api/dda/hierarchy');
     if (typeof renderHierarchy === 'function') renderHierarchy(ddaHierarchy);

@@ -74,16 +74,24 @@ def inspect_image(path: Path) -> IngestResult:
 
 
 def raster_to_preview_png(src_path: Path, dest_path: Path, max_side: int = 512) -> None:
-    """Create RGB thumbnail/preview from GeoTIFF or raster image."""
+    """Create RGB thumbnail/preview — uses decimated read for large GeoTIFFs."""
     ext = src_path.suffix.lower()
     if ext in (".tif", ".tiff"):
         try:
             import numpy as np
             import rasterio
+            from rasterio.enums import Resampling
 
             with rasterio.open(src_path) as src:
                 count = min(3, src.count)
-                data = src.read(indexes=list(range(1, count + 1)))
+                scale = min(1.0, max_side / max(src.width, src.height, 1))
+                out_h = max(1, int(src.height * scale))
+                out_w = max(1, int(src.width * scale))
+                data = src.read(
+                    indexes=list(range(1, count + 1)),
+                    out_shape=(count, out_h, out_w),
+                    resampling=Resampling.bilinear,
+                )
                 if count == 1:
                     rgb = np.stack([data[0], data[0], data[0]])
                 else:
@@ -93,7 +101,8 @@ def raster_to_preview_png(src_path: Path, dest_path: Path, max_side: int = 512) 
                     lo, hi = np.percentile(rgb, (2, 98))
                     rgb = np.clip((rgb - lo) / max(hi - lo, 1e-6), 0, 1) * 255
                 img = Image.fromarray(rgb.astype("uint8"), mode="RGB")
-                img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+                if max(img.size) > max_side:
+                    img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 img.save(dest_path, format="PNG")
                 return

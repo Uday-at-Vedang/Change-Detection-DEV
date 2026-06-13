@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=25
+ARG APP_BUILD=26
 ENV APP_BUILD=${APP_BUILD}
 ENV GDAL_CONFIG=/usr/bin/gdal-config
 RUN echo "Docker build start: APP_BUILD=${APP_BUILD}" && python -V
@@ -51,4 +51,4 @@ ENV PORT=7860
 EXPOSE 7860
 
 # Bind to runtime PORT so health checks always reach the server.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --log-level info"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --log-level info --timeout-keep-alive 600"]

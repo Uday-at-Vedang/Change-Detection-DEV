@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=1" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=2" />
 </head>
 <body>
   <div class="app dda-app">
@@ -67,11 +67,15 @@
                   <label for="up-source">Source</label>
                   <select id="up-source"><option value="satellite">Satellite</option><option value="drone">Drone</option></select>
                 </div>
-                <div class="form-group">
-                  <label for="up-file">Image file</label>
-                  <input type="file" id="up-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
-                </div>
+              <div class="form-group">
+                <label for="up-file">Image file (.tif up to 2 GB)</label>
+                <input type="file" id="up-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
               </div>
+            </div>
+            <div id="upload-progress" class="dda-upload-progress hidden">
+              <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
+              <span id="upload-progress-label" class="dim">Uploading… 0%</span>
+            </div>
               <div class="form-group">
                 <label for="up-manual-bounds">Manual bounds (WGS84)</label>
                 <input type="text" id="up-manual-bounds" placeholder="west,south,east,north — required if GeoTIFF has no georef" />
@@ -119,7 +123,7 @@
     </section>
   </div>
 
-  <script src="/static/js/dda/app.js?v=1"></script>
-  <script src="/static/js/dda/library.js?v=1"></script>
+  <script src="/static/js/dda/app.js?v=2"></script>
+  <script src="/static/js/dda/library.js?v=2"></script>
 </body>
 </html>

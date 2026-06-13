@@ -17,14 +17,15 @@ from .config import (
     ALLOWED_EXTENSIONS,
     IS_DDA_MODE,
     LIBRARY_DIR,
-    MAX_GEOTIFF_BYTES,
     PREVIEWS_DIR,
     THUMBS_DIR,
     ensure_library_dirs,
     geotiff_io_available,
+    max_upload_bytes_for_extension,
 )
 from .geotiff_io import bounds_to_json, inspect_image, raster_to_preview_png
 from .models import DdaVillage, DdaZone, ImageAsset
+from .upload_io import stream_upload_to_file
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -64,9 +65,14 @@ def _image_to_dict(asset: ImageAsset, zone_name: str = "", village_name: str = "
 @router.get("/config")
 def dda_config():
     _require_dda()
+    from .config import MAX_GEOTIFF_BYTES, MAX_IMAGE_BYTES
+    max_gb = MAX_GEOTIFF_BYTES / (1024 ** 3)
     return {
         "mode": "dda",
         "maxUploadMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
+        "maxUploadGb": round(max_gb, 2),
+        "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
+        "maxImageMb": MAX_IMAGE_BYTES // (1024 * 1024),
         "geotiffEnabled": geotiff_io_available(),
         "allowedExtensions": sorted(ALLOWED_EXTENSIONS),
         "hierarchyMode": "admin",
@@ -201,15 +207,6 @@ async def upload_image(
             detail=f"Unsupported format. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="File is empty")
-    if len(raw) > MAX_GEOTIFF_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large (max {MAX_GEOTIFF_BYTES // (1024 * 1024)} MB)",
-        )
-
     try:
         cap_date = date.fromisoformat(capture_date.strip())
     except ValueError:
@@ -221,8 +218,8 @@ async def upload_image(
     asset_uuid = uuid.uuid4().hex
     stored_name = f"{asset_uuid}{ext}"
     dest_file = LIBRARY_DIR / str(year) / stored_name
-    dest_file.parent.mkdir(parents=True, exist_ok=True)
-    dest_file.write_bytes(raw)
+    max_bytes = max_upload_bytes_for_extension(ext)
+    file_size = await stream_upload_to_file(file, dest_file, max_bytes)
 
     ingest = inspect_image(dest_file)
     has_georef = ingest.has_georef
@@ -277,7 +274,7 @@ async def upload_image(
         manual_location_json=manual_location,
         width=ingest.width,
         height=ingest.height,
-        file_size_bytes=len(raw),
+        file_size_bytes=file_size,
         uploaded_by=user.id,
     )
     db.add(asset)
