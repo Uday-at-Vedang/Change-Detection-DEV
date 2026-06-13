@@ -48,6 +48,30 @@
             </p>
             <pre id="lib-path-display" class="dda-path-code"></pre>
           </div>
+          <div class="card hidden" id="hf-upload-card">
+            <div class="card-header">
+              <h3>Upload to Space storage</h3>
+              <span class="dim">Required on Hugging Face</span>
+            </div>
+            <p class="sub">Files on your computer are not on the server. Upload .tif images here (up to 2 GB each).</p>
+            <form id="form-hf-upload" class="dda-upload-form">
+              <div class="location-row">
+                <div class="form-group">
+                  <label for="hf-year">Year folder</label>
+                  <input type="number" id="hf-year" required min="2000" max="2100" value="2025" />
+                </div>
+                <div class="form-group">
+                  <label for="hf-file">GeoTIFF file</label>
+                  <input type="file" id="hf-file" accept=".tif,.tiff" required />
+                </div>
+              </div>
+              <div id="hf-upload-progress" class="dda-upload-progress hidden">
+                <div class="dda-progress-bar"><div id="hf-upload-progress-fill" class="dda-progress-fill"></div></div>
+                <span id="hf-upload-progress-label" class="dim">Uploading…</span>
+              </div>
+              <button type="submit" class="btn btn-primary" id="btn-hf-upload">Upload to library</button>
+            </form>
+          </div>
           <div class="card">
             <div class="card-header">
               <h3 id="lib-grid-title">Images</h3>
@@ -88,7 +112,7 @@
     </section>
   </div>
 
-  <script src="/static/js/dda/app.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=4"></script>
+  <script src="/static/js/dda/app.js?v=5"></script>
+  <script src="/static/js/dda/library.js?v=5"></script>
 </body>
 </html>

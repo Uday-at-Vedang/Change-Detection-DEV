@@ -31,3 +31,68 @@ function renderYearTree(years) {
 document.getElementById('lib-tree-search')?.addEventListener('input', () => {
   if (window.ddaState?.years) renderYearTree(window.ddaState.years);
 });
+
+function uploadWithProgress(url, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+    });
+    xhr.addEventListener('load', () => {
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data?.detail || xhr.statusText || 'Upload failed'));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.send(formData);
+  });
+}
+
+function formatBytes(n) {
+  if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
+  if (n >= 1024 ** 2) return (n / 1024 ** 2).toFixed(1) + ' MB';
+  return (n / 1024).toFixed(0) + ' KB';
+}
+
+document.getElementById('form-hf-upload')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideDdaError?.();
+  const fileInput = document.getElementById('hf-file');
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showDdaError?.('Select a .tif file.');
+    return;
+  }
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('year', document.getElementById('hf-year').value);
+
+  const btn = document.getElementById('btn-hf-upload');
+  const progWrap = document.getElementById('hf-upload-progress');
+  const progFill = document.getElementById('hf-upload-progress-fill');
+  const progLabel = document.getElementById('hf-upload-progress-label');
+
+  btn.disabled = true;
+  progWrap?.classList.remove('hidden');
+  if (progFill) progFill.style.width = '0%';
+
+  try {
+    await uploadWithProgress('/api/dda/local/upload', form, (loaded, total) => {
+      const pct = total ? Math.round((loaded / total) * 100) : 0;
+      if (progFill) progFill.style.width = pct + '%';
+      if (progLabel) progLabel.textContent = `Uploading… ${pct}% (${formatBytes(loaded)} / ${formatBytes(total)})`;
+    });
+    showDdaSuccess?.('Uploaded to Space library. Click Refresh if images do not appear.');
+    fileInput.value = '';
+    await window.ddaState.rescan();
+  } catch (err) {
+    showDdaError?.(err.message || 'Upload failed. Large files may exceed HF timeout — try a smaller file or run locally.');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => progWrap?.classList.add('hidden'), 2000);
+  }
+});

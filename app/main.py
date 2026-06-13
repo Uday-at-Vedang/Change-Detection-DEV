@@ -87,6 +87,7 @@ def health():
         "status": "ok",
         "version": "2.3.0-dda" if IS_DDA_MODE else "2.2.0",
         "appMode": "dda" if IS_DDA_MODE else "legacy",
+        "spaceId": os.environ.get("SPACE_ID", ""),
         "server_time_ist": _isoformat_ist(datetime.now(timezone.utc)),
     }
 

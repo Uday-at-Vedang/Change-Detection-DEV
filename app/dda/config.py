@@ -4,19 +4,46 @@ from typing import List
 
 from ..database import DATA_DIR
 
-APP_MODE = os.environ.get("APP_MODE", "legacy").strip().lower()
-IS_DDA_MODE = APP_MODE == "dda"
+APP_MODE_RAW = os.environ.get("APP_MODE", "").strip().lower()
+_SPACE_ID = os.environ.get("SPACE_ID", "").strip().lower()
+
+
+def is_hf_hosted() -> bool:
+    return bool(_SPACE_ID)
+
+
+def _is_dda_mode() -> bool:
+    if APP_MODE_RAW == "legacy":
+        return False
+    if APP_MODE_RAW == "dda":
+        return True
+    # APP_MODE unset: auto-enable on satdetect-dev only (production satdetect stays legacy)
+    return _SPACE_ID.endswith("/satdetect-dev")
+
+
+IS_DDA_MODE = _is_dda_mode()
+APP_MODE = APP_MODE_RAW or ("dda" if IS_DDA_MODE else "legacy")
 
 # Project root: change_detection_webapp/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def get_writable_library_root() -> Path:
+    """Persistent folder for uploads (HF: /home/appuser/data/library_sources)."""
+    return (DATA_DIR / "library_sources").resolve()
+
+
 def get_library_roots() -> List[Path]:
-    """All folders scanned for year-based images (project + writable data copy)."""
+    """Folders scanned for year-based images."""
     roots: List[Path] = []
     if os.environ.get("LOCAL_LIBRARY_ROOT"):
         roots.append(Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve())
-    for candidate in (PROJECT_ROOT / "library_sources", DATA_DIR / "library_sources"):
+    # Writable data dir first on Hugging Face (where uploads land)
+    if is_hf_hosted():
+        wr = get_writable_library_root()
+        if wr not in roots:
+            roots.append(wr)
+    for candidate in (get_writable_library_root(), PROJECT_ROOT / "library_sources"):
         resolved = candidate.resolve()
         if resolved not in roots:
             roots.append(resolved)

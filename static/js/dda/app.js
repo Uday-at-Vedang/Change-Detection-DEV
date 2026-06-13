@@ -42,6 +42,7 @@ let selectedYear = null;
 
 window.ddaState = {
   get config() { return ddaConfig; },
+  get localCfg() { return window._localCfg; },
   get years() { return localYears; },
   get selectedYear() { return selectedYear; },
   setYear(year) { selectedYear = year; },
@@ -72,16 +73,36 @@ async function initDda() {
   try {
     ddaConfig = await ddaApi('GET', '/api/dda/config');
     const localCfg = await ddaApi('GET', '/api/dda/local/config');
+    window._localCfg = localCfg;
 
     const hint = document.getElementById('lib-config-hint');
     if (hint) {
       hint.textContent = localCfg.geotiffEnabled ? 'GeoTIFF ready' : 'GeoTIFF limited';
     }
-    const paths = (localCfg.rootPaths || [localCfg.rootPath || ddaConfig.localLibraryPaths?.[0]]).filter(Boolean);
+    const paths = (localCfg.rootPaths || []).filter(Boolean);
     const pathEl = document.getElementById('lib-path-display');
-    if (pathEl) pathEl.textContent = paths.join('\n');
+    if (pathEl) {
+      pathEl.textContent = [
+        localCfg.isHosted ? 'HF writable storage:' : 'Local folders:',
+        localCfg.writablePath || paths[0] || '',
+        ...paths.filter((p) => p !== localCfg.writablePath),
+      ].filter(Boolean).join('\n');
+    }
     const folderPath = document.getElementById('lib-folder-path');
-    if (folderPath) folderPath.textContent = paths.length ? `Scanning: ${paths[0]}` : '';
+    if (folderPath) {
+      folderPath.textContent = localCfg.isHosted
+        ? 'Hugging Face — upload files below'
+        : (paths[0] ? `Scanning: ${paths[0]}` : '');
+    }
+    const instr = document.getElementById('lib-instructions');
+    if (instr && localCfg.instructions) instr.textContent = localCfg.instructions;
+
+    const hfUpload = document.getElementById('hf-upload-card');
+    if (hfUpload) hfUpload.classList.toggle('hidden', !localCfg.isHosted);
+
+    if (!localCfg.isHosted && ddaConfig.appMode !== 'dda') {
+      showDdaError('DDA mode is off. Run locally with: python run.py');
+    }
 
     const yearsData = await ddaApi('GET', '/api/dda/local/years');
     localYears = yearsData.years || [];
@@ -106,7 +127,10 @@ async function loadLibraryImages() {
   try {
     const items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
     if (!items.length) {
-      grid.innerHTML = `<p class="dim">No images in ${selectedYear || 'library_sources'}. Copy .tif files into <code>library_sources/${selectedYear || 'YEAR'}/</code> and click Refresh.</p>`;
+      const hf = window.ddaState?.localCfg?.isHosted;
+      grid.innerHTML = hf
+        ? `<p class="dim">No images on this Space yet. Use <strong>Upload to Space storage</strong> above (2025 / 2026), then click Refresh.</p>`
+        : `<p class="dim">No images in ${selectedYear || 'library_sources'}. Copy .tif files into <code>library_sources/${selectedYear || 'YEAR'}/</code> and click Refresh.</p>`;
       return;
     }
     grid.innerHTML = items.map((img) => {
