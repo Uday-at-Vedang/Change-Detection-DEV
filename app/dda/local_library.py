@@ -23,7 +23,7 @@ from urllib.parse import quote
 from fastapi import HTTPException
 
 from .config import ALLOWED_EXTENSIONS, LOCAL_THUMB_CACHE, get_library_roots
-from .geotiff_io import inspect_image, raster_to_preview_png
+from .geotiff_io import inspect_image, raster_to_preview_png, write_placeholder_png
 
 logger = logging.getLogger(__name__)
 
@@ -157,11 +157,16 @@ def thumb_cache_path(relative_path: str) -> Path:
 def get_or_build_thumb(relative_path: str, max_side: int = 256) -> Path:
     full = safe_resolve(relative_path)
     cache = thumb_cache_path(relative_path)
-    if cache.exists() and cache.stat().st_mtime >= full.stat().st_mtime:
+    try:
+        if cache.exists() and cache.stat().st_mtime >= full.stat().st_mtime:
+            return cache
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        raster_to_preview_png(full, cache, max_side=max_side)
         return cache
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    raster_to_preview_png(full, cache, max_side=max_side)
-    return cache
+    except Exception as exc:
+        logger.warning("Thumb build failed for %s: %s", relative_path, exc)
+        write_placeholder_png(cache, Path(relative_path).name, max_side)
+        return cache
 
 
 def ensure_root() -> None:
