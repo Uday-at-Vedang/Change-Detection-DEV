@@ -72,6 +72,7 @@ def dda_config():
         "maxUploadMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
         "maxUploadGb": round(max_gb, 2),
         "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
+        "maxGeotiffBytes": MAX_GEOTIFF_BYTES,
         "maxImageMb": MAX_IMAGE_BYTES // (1024 * 1024),
         "geotiffEnabled": geotiff_io_available(),
         "allowedExtensions": sorted(ALLOWED_EXTENSIONS),

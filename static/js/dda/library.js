@@ -67,6 +67,13 @@ document.getElementById('form-hf-upload')?.addEventListener('submit', async (e) 
     return;
   }
 
+  const maxBytes = window.ddaState?.localCfg?.maxGeotiffBytes
+    || (window.ddaState?.localCfg?.maxGeotiffMb || 5120) * 1024 * 1024;
+  if (file.size > maxBytes) {
+    showDdaError?.(`File is ${formatBytes(file.size)} — maximum upload size is ${formatBytes(maxBytes)}.`);
+    return;
+  }
+
   const form = new FormData();
   form.append('file', file);
   form.append('year', document.getElementById('hf-year').value);

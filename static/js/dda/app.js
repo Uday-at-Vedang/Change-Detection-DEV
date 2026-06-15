@@ -57,6 +57,9 @@ document.querySelectorAll('.dda-tab').forEach((btn) => {
     btn.classList.add('active');
     const tab = btn.dataset.tab;
     document.getElementById('tab-' + tab)?.classList.add('active');
+    if (tab === 'detect' && typeof loadCompareLibraryGrid === 'function') {
+      loadCompareLibraryGrid();
+    }
   });
 });
 
@@ -100,6 +103,16 @@ async function initDda() {
     const hfUpload = document.getElementById('hf-upload-card');
     if (hfUpload) hfUpload.classList.toggle('hidden', !localCfg.isHosted);
 
+    const resHint = document.getElementById('dda-detect-res-hint');
+    if (resHint && localCfg.detectionMaxSide) {
+      resHint.textContent = `Detection runs at up to ${localCfg.detectionMaxSide}px per side for sharper results (set DETECTION_MAX_SIDE to change).`;
+    }
+
+    const uploadLimit = document.getElementById('hf-upload-limit');
+    if (uploadLimit && localCfg.maxUploadGb) {
+      uploadLimit.textContent = `Files on your computer are not on the server. Upload .tif images here (up to ${localCfg.maxUploadGb} GB each).`;
+    }
+
     if (!localCfg.isHosted && ddaConfig.appMode !== 'dda') {
       showDdaError('DDA mode is off. Run locally with: python run.py');
     }
@@ -126,6 +139,7 @@ async function loadLibraryImages() {
   }
   try {
     const items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
+    window.ddaState.libraryItems = items;
     if (!items.length) {
       const hf = window.ddaState?.localCfg?.isHosted;
       grid.innerHTML = hf
@@ -151,6 +165,7 @@ async function loadLibraryImages() {
         e.dataTransfer.setData('text/plain', card.dataset.imagePath);
       });
     });
+    if (typeof loadCompareLibraryGrid === 'function') loadCompareLibraryGrid();
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
   }

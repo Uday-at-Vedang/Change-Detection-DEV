@@ -58,8 +58,8 @@ THUMBS_DIR = LIBRARY_DIR / "thumbs"
 PREVIEWS_DIR = LIBRARY_DIR / "previews"
 LOCAL_THUMB_CACHE = DATA_DIR / "library_cache" / "thumbs"
 
-# GeoTIFF library upload limit (default 2 GB; override with MAX_GEOTIFF_MB on HF dev Space)
-MAX_GEOTIFF_BYTES = int(os.environ.get("MAX_GEOTIFF_MB", "2048")) * 1024 * 1024
+# GeoTIFF library upload limit (default 5 GB; override with MAX_GEOTIFF_MB on HF dev Space)
+MAX_GEOTIFF_BYTES = int(os.environ.get("MAX_GEOTIFF_MB", "5120")) * 1024 * 1024
 
 # Raster sidecar formats (PNG/JPEG) — smaller cap for library uploads
 MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_MB", "50")) * 1024 * 1024
@@ -104,3 +104,13 @@ def geotiff_io_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+def get_detection_max_side() -> int:
+    """Max pixel dimension for GeoTIFF load + detection pipeline (higher = sharper, more RAM)."""
+    default = "2048" if is_hf_hosted() else "4096"
+    try:
+        value = int(os.environ.get("DETECTION_MAX_SIDE", default))
+    except ValueError:
+        value = int(default)
+    return max(1024, min(8192, value))

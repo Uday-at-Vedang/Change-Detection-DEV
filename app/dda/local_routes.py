@@ -3,12 +3,20 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from PIL import Image
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from .detect_service import run_detection_and_save
+from .geotiff_io import load_rgb_pil
 
 from .config import (
     IS_DDA_MODE,
+    MAX_GEOTIFF_BYTES,
     geotiff_io_available,
+    get_detection_max_side,
     get_library_roots,
     get_writable_library_root,
     is_hf_hosted,
@@ -69,6 +77,10 @@ def local_library_config():
         "writablePath": writable,
         "instructions": instructions,
         "geotiffEnabled": geotiff_io_available(),
+        "detectionMaxSide": get_detection_max_side(),
+        "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
+        "maxGeotiffBytes": MAX_GEOTIFF_BYTES,
+        "maxUploadGb": round(MAX_GEOTIFF_BYTES / (1024 ** 3), 2),
     }
 
 
@@ -117,7 +129,13 @@ def local_thumb(path: str = Query(...)):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Thumbnail failed: {exc}") from exc
+        logger.warning("Thumb endpoint fallback for %s: %s", path, exc)
+        from .config import LOCAL_THUMB_CACHE
+        from .geotiff_io import write_placeholder_png
+
+        cache = LOCAL_THUMB_CACHE / "fallback.png"
+        write_placeholder_png(cache, Path(path).name)
+        return FileResponse(cache, media_type="image/png")
 
 
 @router.post("/local/upload")
@@ -177,3 +195,74 @@ def local_rescan():
         "writablePath": str(get_writable_library_root()),
         "debug": info,
     }
+
+
+@router.post("/detect/from-library")
+async def detect_from_library(
+    base_path: str = Form(...),
+    comparison_path: str = Form(...),
+    method: str = Form("AI-Based Deep Learning"),
+    title: str = Form("Untitled run"),
+    zone: str = Form(""),
+    village: str = Form(""),
+    enable_registration: bool = Form(True),
+    enable_normalization: bool = Form(True),
+    detection_sensitivity: float = Form(0.5),
+    min_region_area: Optional[int] = Form(150),
+    notify_email: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Run change detection on two library images by relative path (e.g. 2025/aerial.tif)."""
+    _require_dda()
+    base_norm = base_path.replace("\\", "/").strip()
+    comp_norm = comparison_path.replace("\\", "/").strip()
+    if not base_norm or not comp_norm:
+        raise HTTPException(status_code=400, detail="base_path and comparison_path are required")
+    if base_norm == comp_norm:
+        raise HTTPException(status_code=400, detail="Base and comparison images must be different")
+
+    try:
+        base_file = safe_resolve(base_norm)
+        comp_file = safe_resolve(comp_norm)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid library path: {exc}") from exc
+
+    try:
+        before_pil = load_rgb_pil(base_file, max_side=get_detection_max_side())
+        after_pil = load_rgb_pil(comp_file, max_side=get_detection_max_side())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not load images: {exc}") from exc
+
+    # Match dimensions so registration and overlay align with the before image
+    if before_pil.size != after_pil.size:
+        after_pil = after_pil.resize(before_pil.size, Image.Resampling.LANCZOS)
+
+    max_side = get_detection_max_side()
+
+    if title == "Untitled run":
+        title = f"{Path(base_norm).name} vs {Path(comp_norm).name}"
+
+    try:
+        return run_detection_and_save(
+            db,
+            before_pil,
+            after_pil,
+            method=method,
+            title=title,
+            zone=zone,
+            village=village,
+            enable_registration=enable_registration,
+            enable_normalization=enable_normalization,
+            detection_sensitivity=detection_sensitivity,
+            min_region_area=min_region_area,
+            notify_email=notify_email,
+            max_size=max_side,
+            geo_bounds_path=base_file,
+        )
+    except Exception as exc:
+        logger.exception("Library detection failed for %s vs %s", base_norm, comp_norm)
+        raise HTTPException(status_code=500, detail=f"Detection failed: {exc}") from exc

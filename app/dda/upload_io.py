@@ -30,9 +30,11 @@ async def stream_upload_to_file(
                     break
                 total += len(chunk)
                 if total > max_bytes:
+                    max_mb = max_bytes // (1024 * 1024)
+                    limit = f"{max_mb // 1024} GB" if max_mb >= 1024 else f"{max_mb} MB"
                     raise HTTPException(
                         status_code=400,
-                        detail=f"File too large (max {max_bytes // (1024 * 1024)} MB)",
+                        detail=f"File too large (max {limit})",
                     )
                 out.write(chunk)
     except HTTPException:

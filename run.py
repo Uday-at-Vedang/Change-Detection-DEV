@@ -54,7 +54,13 @@ def main():
 
     # reload=False keeps it simple and IDLE-friendly. For live-reload during
     # development, run instead:  uvicorn app.main:app --reload --port 8000
-    uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False)
+    uvicorn.run(
+        "app.main:app",
+        host=HOST,
+        port=PORT,
+        reload=False,
+        timeout_keep_alive=600,
+    )
 
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ library_sources/
 
 ## Large files
 
-GeoTIFF files up to **2 GB** are supported when read from disk. Copy files via Explorer/Finder — much faster than browser upload.
+GeoTIFF files up to **5 GB** are supported when read from disk. Copy files via Explorer/Finder — much faster than browser upload.
 
 ## Custom location
 
