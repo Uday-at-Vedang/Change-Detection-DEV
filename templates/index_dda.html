@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=3" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=7" />
 </head>
 <body>
   <div class="app dda-app">
@@ -53,7 +53,7 @@
               <h3>Upload to Space storage</h3>
               <span class="dim">Required on Hugging Face</span>
             </div>
-            <p class="sub">Files on your computer are not on the server. Upload .tif images here (up to 2 GB each).</p>
+            <p class="sub" id="hf-upload-limit">Files on your computer are not on the server. Upload .tif images here (up to 5 GB each).</p>
             <form id="form-hf-upload" class="dda-upload-form">
               <div class="location-row">
                 <div class="form-group">
@@ -83,36 +83,155 @@
       </div>
     </section>
 
-    <!-- Tab: Change Detection (FR-03 placeholder — Phase 2) -->
+    <!-- Tab: Change Detection -->
     <section id="tab-detect" class="dda-panel" role="tabpanel">
       <div class="card">
         <div class="card-header"><h3>Compare Images</h3></div>
-        <p class="sub">Select <strong>Base (T1)</strong> and <strong>Comparison (T2)</strong> from the library. Async job pipeline — Phase 2.</p>
+        <p class="sub">Select <strong>Base (T1)</strong> and <strong>Comparison (T2)</strong> from the library, then run detection.</p>
         <div class="dda-compare-slots">
           <div class="dda-slot" id="slot-t1" data-slot="t1">
             <span class="dda-slot-label">Base Image (T1)</span>
-            <p class="dim">Drag from library or click to pick</p>
+            <div id="slot-t1-preview" class="dda-slot-preview-wrap"></div>
+            <select id="select-t1" class="dda-image-select" aria-label="Select base image">
+              <option value="">— Choose base image —</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t1">Browse library</button>
           </div>
           <div class="dda-slot" id="slot-t2" data-slot="t2">
             <span class="dda-slot-label">Comparison Image (T2)</span>
-            <p class="dim">Drag from library or click to pick</p>
+            <div id="slot-t2-preview" class="dda-slot-preview-wrap"></div>
+            <select id="select-t2" class="dda-image-select" aria-label="Select comparison image">
+              <option value="">— Choose comparison image —</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t2">Browse library</button>
           </div>
         </div>
-        <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection (coming Phase 2)</button>
+        <div class="dda-compare-library card">
+          <div class="card-header">
+            <h3>Pick from library</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-compare-refresh">Refresh list</button>
+          </div>
+          <p class="sub dim">Click <strong>T1</strong> or <strong>T2</strong> on an image, or use the dropdowns above.</p>
+          <div id="compare-lib-grid" class="dda-grid dda-compare-grid">
+            <p class="dim">Loading library images…</p>
+          </div>
+        </div>
+        <div class="dda-detect-options">
+          <div class="form-group">
+            <label for="dda-detect-method">Method</label>
+            <select id="dda-detect-method">
+              <option value="AI-Based Deep Learning">AI-Based Deep Learning</option>
+              <option value="Hybrid AI">Hybrid AI</option>
+              <option value="Hybrid Approach">Hybrid Approach</option>
+              <option value="Image Difference">Image Difference</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="dda-detect-sensitivity">Sensitivity (0–1)</label>
+            <input type="number" id="dda-detect-sensitivity" min="0" max="1" step="0.05" value="0.45" />
+          </div>
+          <div class="form-group">
+            <label for="dda-detect-min-area">Min region area (px)</label>
+            <input type="number" id="dda-detect-min-area" min="50" max="10000" step="10" value="150" />
+          </div>
+          <label class="dda-check"><input type="checkbox" id="dda-detect-registration" checked /> Image registration</label>
+          <label class="dda-check"><input type="checkbox" id="dda-detect-normalization" checked /> Normalization</label>
+        </div>
+        <p class="dim" id="dda-detect-res-hint"></p>
+        <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection</button>
+        <p id="dda-detect-loading" class="dim hidden" style="margin-top:0.75rem">Detection runs as a background job — large GeoTIFFs may take several minutes…</p>
       </div>
     </section>
 
-    <!-- Tab: Reports (FR-05 placeholder) -->
+    <!-- Tab: Reports (FR-05) -->
     <section id="tab-reports" class="dda-panel" role="tabpanel">
       <div class="card">
-        <div class="card-header"><h3>Detection Reports</h3></div>
-        <p class="dim">Completed detection reports and PDF export — Phase 4.</p>
-        <div id="reports-list"></div>
+        <div class="card-header">
+          <h3>Detection Reports</h3>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-reports-refresh">Refresh</button>
+        </div>
+        <p class="sub dim">Completed jobs and detection history. PDF export — coming in Phase 4.</p>
+        <div id="reports-list"><p class="dim">Open this tab to load reports.</p></div>
       </div>
     </section>
   </div>
 
-  <script src="/static/js/dda/app.js?v=5"></script>
+  <div id="dda-picker-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card">
+      <div class="card-header">
+        <h3 id="dda-picker-title">Select image</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-picker-close">Close</button>
+      </div>
+      <div id="dda-picker-list" class="dda-picker-grid"></div>
+    </div>
+  </div>
+
+  <!-- Result modal — same before/changes slider as production -->
+  <div class="result-modal-backdrop hidden" id="result-modal">
+    <div class="result-modal">
+      <div class="result-modal-header">
+        <h3 id="result-modal-title">Detection Result</h3>
+        <button type="button" class="btn-close-modal" id="result-modal-close" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="result-stats" id="result-stats"></div>
+      <div class="zoom-slider-section">
+        <div class="zoom-controls">
+          <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+          <span class="zoom-level" id="zoom-level">100%</span>
+          <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
+        <div class="zoom-wrapper" id="zoom-wrapper">
+          <div class="compare-slider compare-slider-zoomed" id="compare-slider">
+            <div class="compare-before">
+              <img id="compare-before-img" alt="Before" draggable="false" />
+              <span class="compare-label compare-label-left">Before</span>
+            </div>
+            <div class="compare-after" id="compare-after-clip">
+              <img id="compare-after-img" alt="Changes detected" draggable="false" />
+              <span class="compare-label compare-label-right">Changes</span>
+            </div>
+            <div class="compare-handle" id="compare-handle">
+              <div class="compare-handle-line"></div>
+              <div class="compare-handle-knob">
+                <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 10l4-5v10z" fill="currentColor"/><path d="M14 10l-4-5v10z" fill="currentColor"/></svg>
+              </div>
+              <div class="compare-handle-line"></div>
+            </div>
+            <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
+          </div>
+        </div>
+      </div>
+      <div class="regions-table-wrap">
+        <table class="regions-table" id="regions-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Change Type</th>
+              <th>DDA Type</th>
+              <th>Lat/Lng</th>
+              <th>Sub-Type</th>
+              <th>Severity</th>
+              <th>Confidence</th>
+              <th>Area (px)</th>
+              <th>Coordinates</th>
+              <th>Stories</th>
+              <th>Height</th>
+              <th>Stage</th>
+            </tr>
+          </thead>
+          <tbody id="regions-tbody"></tbody>
+        </table>
+        <div class="pagination" id="regions-pagination"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/app.js?v=9"></script>
   <script src="/static/js/dda/library.js?v=5"></script>
+  <script src="/static/js/dda/result.js?v=3"></script>
+  <script src="/static/js/dda/compare.js?v=6"></script>
+  <script src="/static/js/dda/reports.js?v=1"></script>
 </body>
 </html>
