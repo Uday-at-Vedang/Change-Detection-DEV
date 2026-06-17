@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DDA Detection Report</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=30" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=9" />
+</head>
+<body>
+  <div class="app dda-app dda-report-page">
+    <header class="dda-header dda-report-header">
+      <div class="app-brand">
+        <span>DDA Change Detection — Report</span>
+      </div>
+      <div class="dda-report-actions">
+        <a href="/" class="btn btn-secondary btn-sm">← Back to app</a>
+        <button type="button" class="btn btn-secondary btn-sm" id="report-pdf-btn" disabled>Download PDF</button>
+        <button type="button" class="btn btn-primary btn-sm" id="report-view-btn" disabled>Interactive view</button>
+      </div>
+    </header>
+
+    <div id="report-error" class="alert alert-error hidden"></div>
+    <div id="report-loading" class="card"><p class="dim">Loading report…</p></div>
+    <div id="report-content" class="hidden">
+      <div class="card dda-report-summary">
+        <h1 id="report-title"></h1>
+        <p class="dim" id="report-meta"></p>
+        <div class="dda-report-stats" id="report-stats"></div>
+      </div>
+      <div class="card dda-report-overlay-wrap">
+        <h3>Change overlay</h3>
+        <img id="report-overlay" alt="Change overlay" class="dda-report-overlay" />
+      </div>
+      <div class="card">
+        <h3>Detected regions</h3>
+        <div class="table-wrap">
+          <table class="dda-reports-table dda-report-regions" id="report-regions-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>DDA type</th>
+                <th>Internal type</th>
+                <th>Confidence</th>
+                <th>Area (px)</th>
+                <th>Lat</th>
+                <th>Lng</th>
+              </tr>
+            </thead>
+            <tbody id="report-regions-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card dda-report-email">
+        <h3>Email this report</h3>
+        <div class="dda-report-email-row">
+          <input type="email" id="report-email" placeholder="recipient@example.com" />
+          <button type="button" class="btn btn-secondary" id="report-email-btn">Send link</button>
+        </div>
+        <p class="dim" id="report-email-msg"></p>
+      </div>
+    </div>
+  </div>
+  <script src="/static/js/dda/app.js?v=11"></script>
+  <script src="/static/js/dda/report_page.js?v=1"></script>
+</body>
+</html>

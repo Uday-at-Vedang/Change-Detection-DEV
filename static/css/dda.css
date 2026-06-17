@@ -347,3 +347,75 @@
 
 .regions-table tr.region-selected { background: rgba(16, 185, 129, 0.12); }
 .regions-table tr { cursor: pointer; }
+
+.dda-notify-wrap { position: relative; margin-left: auto; }
+.dda-notify-btn {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  align-items: center;
+}
+.dda-notify-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger, #dc2626);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.dda-notify-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: min(320px, 90vw);
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  padding: 0.35rem;
+}
+.dda-notify-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0.55rem 0.65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+}
+.dda-notify-item:hover { background: rgba(0,0,0,0.04); }
+.dda-notify-item.unread { background: rgba(46, 51, 197, 0.06); }
+.dda-notify-item-title { display: block; font-size: 0.85rem; font-weight: 600; }
+.dda-notify-item-meta { display: block; font-size: 0.75rem; color: var(--text-muted, #888); margin-top: 0.15rem; }
+.dda-notify-empty { padding: 0.75rem; margin: 0; font-size: 0.85rem; }
+
+.dda-notify-email { margin-top: 0.35rem; width: 100%; max-width: 280px; }
+.dda-report-actions-cell { white-space: nowrap; }
+.dda-report-actions-cell .btn, .dda-report-actions-cell a.btn { margin-right: 0.25rem; margin-bottom: 0.25rem; }
+
+.dda-report-page { max-width: 960px; margin: 0 auto; padding: 1rem; }
+.dda-report-header { justify-content: space-between; }
+.dda-report-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dda-report-stats { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin-top: 0.75rem; }
+.dda-stat .label { display: block; font-size: 0.75rem; color: var(--text-muted, #888); }
+.dda-stat .value { font-size: 1.25rem; font-weight: 700; }
+.dda-report-overlay { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); }
+.dda-report-email-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.dda-report-email-row input { flex: 1; min-width: 200px; }

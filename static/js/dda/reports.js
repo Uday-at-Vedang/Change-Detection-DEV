@@ -1,4 +1,4 @@
-/** Reports tab — detection jobs and history (Phase 4 foundation). */
+/** Reports tab — detection jobs, history, PDF export (FR-05). */
 
 function formatReportDate(iso) {
   if (!iso) return '—';
@@ -68,7 +68,7 @@ async function loadReportsList() {
             <th>Status</th>
             <th>Change %</th>
             <th>Regions</th>
-            <th></th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -79,10 +79,12 @@ async function loadReportsList() {
               <td><span class="dda-status dda-status-${r.status}">${r.status}</span></td>
               <td>${r.changePct != null ? r.changePct.toFixed(2) + '%' : '—'}</td>
               <td>${r.regions ?? '—'}</td>
-              <td>
+              <td class="dda-report-actions-cell">
                 ${r.status === 'completed' && r.runId
-                  ? `<button type="button" class="btn btn-secondary btn-sm" data-view-run="${r.runId}">View</button>`
-                  : (r.error ? `<span class="dim" title="${r.error.replace(/"/g, '')}">Error</span>` : '—')}
+                  ? `<button type="button" class="btn btn-secondary btn-sm" data-view-run="${r.runId}">View</button>
+                     <a class="btn btn-secondary btn-sm" href="/dda/reports/${r.runId}" target="_blank" rel="noopener">Report</a>
+                     <a class="btn btn-secondary btn-sm" href="/api/dda/reports/${r.runId}/pdf" download>PDF</a>`
+                  : (r.error ? `<span class="dim" title="${String(r.error).replace(/"/g, '')}">Error</span>` : '—')}
               </td>
             </tr>`).join('')}
         </tbody>
@@ -114,6 +116,22 @@ document.querySelectorAll('.dda-tab').forEach((btn) => {
   }
 });
 
-if (document.getElementById('tab-reports')?.classList.contains('active')) {
-  loadReportsList();
-}
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const openRun = sessionStorage.getItem('dda_open_run');
+    if (openRun) {
+      sessionStorage.removeItem('dda_open_run');
+      document.querySelector('.dda-tab[data-tab="reports"]')?.click();
+      setTimeout(async () => {
+        try {
+          const data = await ddaApi('GET', `/api/history/${openRun}`);
+          if (typeof showDdaResult === 'function') showDdaResult(data);
+        } catch (_) {}
+      }, 300);
+    }
+  } catch (_) {}
+
+  if (document.getElementById('tab-reports')?.classList.contains('active')) {
+    loadReportsList();
+  }
+});

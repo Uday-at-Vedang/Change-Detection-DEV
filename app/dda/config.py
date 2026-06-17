@@ -21,8 +21,19 @@ def _is_dda_mode() -> bool:
     return _SPACE_ID.endswith("/satdetect-dev")
 
 
+def get_public_base_url() -> str:
+    """Public URL for deep links (email, share). Override with PUBLIC_BASE_URL."""
+    explicit = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    if _SPACE_ID:
+        return f"https://{_SPACE_ID.replace('/', '-')}.hf.space"
+    return "http://localhost:7860"
+
+
 IS_DDA_MODE = _is_dda_mode()
 APP_MODE = APP_MODE_RAW or ("dda" if IS_DDA_MODE else "legacy")
+
 
 # Project root: change_detection_webapp/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent

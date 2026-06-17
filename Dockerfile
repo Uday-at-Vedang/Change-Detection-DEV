@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Build-time info + cache-bust:
 # Changing APP_BUILD forces Docker to re-run subsequent layers (including pip install).
-ARG APP_BUILD=33
+ARG APP_BUILD=34
 ENV MAX_GEOTIFF_MB=5120
 ENV APP_BUILD=${APP_BUILD}
 ENV GDAL_CONFIG=/usr/bin/gdal-config

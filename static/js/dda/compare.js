@@ -279,6 +279,12 @@ function setupCompareInteractions() {
   });
   document.getElementById('btn-run-job')?.addEventListener('click', runLibraryDetection);
 
+  const notifyCb = document.getElementById('dda-detect-notify');
+  const notifyEmail = document.getElementById('dda-detect-notify-email');
+  notifyCb?.addEventListener('change', () => {
+    if (notifyEmail) notifyEmail.classList.toggle('hidden', !notifyCb.checked);
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const picker = document.getElementById('dda-picker-modal');
@@ -304,7 +310,7 @@ async function runDetectionWithFallback(form, loadingEl) {
       loadingEl.textContent = 'Running detection (sync fallback)…';
     }
   }
-  return ddaApi('POST', '/api/dda/detect/from-library', { body: form });
+  return ddaApi('POST', '/api/dda/detect/from-library', { body: form }).then((result) => ({ result, jobId: null }));
 }
 
 async function pollJobUntilDone(jobId, loadingEl) {
@@ -315,7 +321,10 @@ async function pollJobUntilDone(jobId, loadingEl) {
     if (loadingEl) {
       loadingEl.textContent = `Detection job #${jobId} — ${status}… (${i + 1})`;
     }
-    if (status === 'completed' && job.result) return job.result;
+    if (status === 'completed' && job.result) {
+      if (typeof window.refreshDdaNotifications === 'function') window.refreshDdaNotifications();
+      return { result: job.result, jobId };
+    }
     if (status === 'failed') throw new Error(job.errorMessage || 'Detection job failed');
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -344,11 +353,21 @@ async function runLibraryDetection() {
   form.append('detection_sensitivity', String(Math.max(0, Math.min(1, Number(document.getElementById('dda-detect-sensitivity')?.value ?? 0.45)))));
   const minArea = Number(document.getElementById('dda-detect-min-area')?.value ?? 150);
   if (!Number.isNaN(minArea) && minArea >= 50) form.append('min_region_area', String(Math.round(minArea)));
+  const notifyCb = document.getElementById('dda-detect-notify');
+  const notifyEmail = document.getElementById('dda-detect-notify-email');
+  if (notifyCb?.checked && notifyEmail?.value?.trim()) {
+    form.append('notify_email', notifyEmail.value.trim());
+  }
 
   try {
-    const data = await runDetectionWithFallback(form, loading);
+    const { result: data, jobId } = await runDetectionWithFallback(form, loading);
+    if (jobId && typeof window.markDdaJobSeen === 'function') window.markDdaJobSeen(jobId);
     showDetectResult(data);
-    if (typeof showDdaSuccess === 'function') showDdaSuccess('Detection complete.');
+    if (typeof showDdaSuccess === 'function') {
+      let msg = 'Detection complete.';
+      if (data.notificationSent) msg += ' Report email sent.';
+      showDdaSuccess(msg);
+    }
     if (typeof loadReportsList === 'function') loadReportsList();
   } catch (err) {
     if (typeof showDdaError === 'function') showDdaError(err.message || 'Detection failed');

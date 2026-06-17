@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=8" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=9" />
 </head>
 <body>
   <div class="app dda-app">
@@ -20,6 +20,13 @@
         <button type="button" class="dda-tab" data-tab="detect" role="tab">Change Detection</button>
         <button type="button" class="dda-tab" data-tab="reports" role="tab">Reports</button>
       </nav>
+      <div class="dda-notify-wrap">
+        <button type="button" id="dda-notify-btn" class="dda-notify-btn" title="Job notifications" aria-label="Notifications">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          <span id="dda-notify-badge" class="dda-notify-badge hidden">0</span>
+        </button>
+        <div id="dda-notify-panel" class="dda-notify-panel hidden" role="menu"></div>
+      </div>
     </header>
 
     <div id="dda-error" class="alert alert-error hidden"></div>
@@ -140,6 +147,8 @@
           </div>
           <label class="dda-check"><input type="checkbox" id="dda-detect-registration" checked /> Image registration</label>
           <label class="dda-check"><input type="checkbox" id="dda-detect-normalization" checked /> Normalization</label>
+          <label class="dda-check"><input type="checkbox" id="dda-detect-notify" /> Email report when done</label>
+          <input type="email" id="dda-detect-notify-email" class="dda-notify-email hidden" placeholder="recipient@example.com" />
         </div>
         <p class="dim" id="dda-detect-res-hint"></p>
         <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection</button>
@@ -154,7 +163,7 @@
           <h3>Detection Reports</h3>
           <button type="button" class="btn btn-secondary btn-sm" id="btn-reports-refresh">Refresh</button>
         </div>
-        <p class="sub dim">Completed jobs and detection history. PDF export — coming in Phase 4.</p>
+        <p class="sub dim">Completed jobs and detection history. Download PDF or open the browser report.</p>
         <div id="reports-list"><p class="dim">Open this tab to load reports.</p></div>
       </div>
     </section>
@@ -232,10 +241,11 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/app.js?v=10"></script>
+  <script src="/static/js/dda/app.js?v=11"></script>
   <script src="/static/js/dda/library.js?v=6"></script>
   <script src="/static/js/dda/result.js?v=4"></script>
-  <script src="/static/js/dda/compare.js?v=7"></script>
-  <script src="/static/js/dda/reports.js?v=2"></script>
+  <script src="/static/js/dda/compare.js?v=8"></script>
+  <script src="/static/js/dda/reports.js?v=3"></script>
+  <script src="/static/js/dda/notifications.js?v=1"></script>
 </body>
 </html>

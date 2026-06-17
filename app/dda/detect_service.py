@@ -167,6 +167,8 @@ def run_detection_and_save(
     notification_sent = False
     notification_error = None
     if notify_email and notify_email.strip():
+        from .config import IS_DDA_MODE, get_public_base_url
+        report_url = f"{get_public_base_url()}/dda/reports/{run.id}" if IS_DDA_MODE else ""
         notification_sent, notification_error = send_notification(
             recipient=notify_email.strip(),
             title=title,
@@ -177,6 +179,7 @@ def run_detection_and_save(
             changed_px=changed_px,
             total_px=total_px,
             regions=regions_serializable,
+            report_url=report_url,
         )
 
     return {

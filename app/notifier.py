@@ -71,6 +71,18 @@ def _build_region_rows(regions: list) -> str:
     return "\n".join(rows)
 
 
+def _report_link_section(report_url: str) -> str:
+    if not report_url:
+        return ""
+    safe = report_url.replace('"', "%22")
+    return (
+        '<p style="margin:0 0 20px; text-align:center;">'
+        f'<a href="{safe}" style="display:inline-block; background:#2e33c5; color:#fff; '
+        'text-decoration:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600;">'
+        "View full report online</a></p>"
+    )
+
+
 def build_email_body(
     title: str,
     method: str,
@@ -80,6 +92,7 @@ def build_email_body(
     changed_px: int,
     total_px: int,
     regions: list,
+    report_url: str = "",
 ) -> str:
     """Populate the HTML template with detection results."""
     html = _load_template()
@@ -97,6 +110,7 @@ def build_email_body(
         "{{regions_count}}": str(len(regions)),
         "{{region_rows}}": region_rows,
         "{{timestamp}}": now,
+        "{{report_link_section}}": _report_link_section(report_url),
     }
     for key, val in replacements.items():
         html = html.replace(key, val)
@@ -208,10 +222,12 @@ def send_notification(
     changed_px: int,
     total_px: int,
     regions: list,
+    report_url: str = "",
 ):
     """Send a detection report email and return (success, error_message)."""
     html_body = build_email_body(
-        title, method, zone, village, change_pct, changed_px, total_px, regions
+        title, method, zone, village, change_pct, changed_px, total_px, regions,
+        report_url=report_url,
     )
     subject = f"Change Detection Report — {title or 'Untitled run'}"
     return _send_html_email(recipient, subject, html_body)

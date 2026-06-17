@@ -555,6 +555,17 @@ def delete_run(
 
 
 # --- Serve SPA ---
+@app.get("/dda/reports/{run_id}", response_class=HTMLResponse)
+def dda_report_page(run_id: int):
+    """Standalone browser report (FR-05)."""
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    report_file = TEMPLATES_DIR / "report_dda.html"
+    if not report_file.exists():
+        raise HTTPException(status_code=404, detail="Report template missing")
+    return FileResponse(report_file)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     if IS_DDA_MODE:
