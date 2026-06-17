@@ -77,8 +77,8 @@ class DetectionJob(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     status = Column(String(32), default="queued", index=True)  # queued|running|completed|failed
-    base_image_id = Column(Integer, ForeignKey("dda_image_assets.id"), nullable=False)
-    comparison_image_id = Column(Integer, ForeignKey("dda_image_assets.id"), nullable=False)
+    base_image_id = Column(Integer, ForeignKey("dda_image_assets.id"), nullable=True)
+    comparison_image_id = Column(Integer, ForeignKey("dda_image_assets.id"), nullable=True)
     method = Column(String(64), default="AI-Based Deep Learning")
     params_json = Column(Text, default="{}")
     run_id = Column(Integer, ForeignKey("detection_runs.id"), nullable=True)

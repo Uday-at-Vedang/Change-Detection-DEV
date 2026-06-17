@@ -121,10 +121,40 @@ async function initDda() {
     localYears = yearsData.years || [];
     if (typeof renderYearTree === 'function') renderYearTree(localYears);
     await loadLibraryImages();
+    await loadHierarchyTree();
   } catch (err) {
     showDdaError(err.message || 'Failed to load library');
   }
 }
+
+async function loadHierarchyTree() {
+  const el = document.getElementById('lib-hierarchy');
+  if (!el) return;
+  try {
+    const data = await ddaApi('GET', '/api/dda/hierarchy');
+    const zones = data.zones || [];
+    if (!zones.length) {
+      el.innerHTML = '<p class="dim">No zones seeded.</p>';
+      return;
+    }
+    el.innerHTML = zones.map((z) => {
+      const villages = z.villages || [];
+      const zoneCount = villages.reduce((s, v) => s + (v.imageCount || 0), 0);
+      const villageItems = villages.map((v) =>
+        `<li class="dda-hierarchy-village">${v.name}${v.imageCount ? ` <span class="dim">(${v.imageCount})</span>` : ''}</li>`
+      ).join('');
+      return `
+        <details class="dda-hierarchy-zone" open>
+          <summary>${z.name}${zoneCount ? ` <span class="dim">(${zoneCount})</span>` : ''}</summary>
+          <ul class="dda-hierarchy-list">${villageItems || '<li class="dim">No villages</li>'}</ul>
+        </details>`;
+    }).join('');
+  } catch (_) {
+    el.innerHTML = '<p class="dim">Zone tree unavailable.</p>';
+  }
+}
+
+window.loadHierarchyTree = loadHierarchyTree;
 
 async function loadLibraryImages() {
   const grid = document.getElementById('lib-grid');

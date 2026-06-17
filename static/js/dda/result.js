@@ -99,7 +99,7 @@ function showDdaResult(data) {
       <td>${subType}</td>
       <td><span class="severity-badge ${severity}">${severity}</span></td>
       <td>${(r.confidence * 100).toFixed(1)}%</td>
-      <td>${r.area.toLocaleString()}</td>
+      <td>${r.areaSqM != null ? r.areaSqM.toLocaleString() + ' m²' : r.area.toLocaleString()}</td>
       <td>(${r.center.x}, ${r.center.y})</td>
       <td>${stories}</td>
       <td>${height}</td>
@@ -156,37 +156,62 @@ function renderDdaRegionPage() {
 function setupDdaRegionHover(tbody, regions) {
   const overlay = document.getElementById('region-highlight-overlay');
   if (!overlay) return;
-  overlay.innerHTML = '';
+
+  function showRegionHighlight(r, zoomTo) {
+    if (!r || !r.bbox) return;
+    overlay.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'highlight-box';
+    const imgEl = document.getElementById('compare-after-img');
+    const slider = document.getElementById('compare-slider');
+    const wrapper = document.getElementById('zoom-wrapper');
+    if (!imgEl || !slider || !imgEl.naturalWidth) return;
+    const rw = slider.offsetWidth;
+    const rh = slider.offsetHeight;
+    const imgW = imgEl.naturalWidth || 1;
+    const imgH = imgEl.naturalHeight || 1;
+    const scale = Math.min(rw / imgW, rh / imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+    const offsetX = (rw - drawW) / 2;
+    const offsetY = (rh - drawH) / 2;
+    box.style.left = (offsetX + r.bbox.x * scale) + 'px';
+    box.style.top = (offsetY + r.bbox.y * scale) + 'px';
+    box.style.width = (r.bbox.w * scale) + 'px';
+    box.style.height = (r.bbox.h * scale) + 'px';
+    overlay.appendChild(box);
+
+    if (zoomTo && wrapper && r.bbox.w > 0 && r.bbox.h > 0) {
+      const cx = r.bbox.x + r.bbox.w / 2;
+      const cy = r.bbox.y + r.bbox.h / 2;
+      const targetZoom = Math.min(DDA_ZOOM_MAX, Math.max(1.5, Math.min(drawW / (r.bbox.w * scale * 2.5), drawH / (r.bbox.h * scale * 2.5))));
+      ddaZoom = targetZoom;
+      applyDdaZoom();
+      wrapper.scrollLeft = Math.max(0, (offsetX + cx * scale) * ddaZoom - wrapper.clientWidth / 2);
+      wrapper.scrollTop = Math.max(0, (offsetY + cy * scale) * ddaZoom - wrapper.clientHeight / 2);
+    }
+  }
+
   tbody.querySelectorAll('tr[data-region-id]').forEach((tr) => {
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to locate on map';
     tr.addEventListener('mouseenter', () => {
       const id = parseInt(tr.dataset.regionId, 10);
       const r = regions.find((x) => x.id === id);
-      if (!r || !r.bbox) return;
       tbody.querySelectorAll('tr').forEach((row) => row.classList.remove('region-hover'));
       tr.classList.add('region-hover');
-      const box = document.createElement('div');
-      box.className = 'highlight-box';
-      const imgEl = document.getElementById('compare-after-img');
-      const slider = document.getElementById('compare-slider');
-      if (!imgEl || !slider || !imgEl.naturalWidth) return;
-      const rw = slider.offsetWidth;
-      const rh = slider.offsetHeight;
-      const imgW = imgEl.naturalWidth || 1;
-      const imgH = imgEl.naturalHeight || 1;
-      const scale = Math.min(rw / imgW, rh / imgH);
-      const drawW = imgW * scale;
-      const drawH = imgH * scale;
-      const offsetX = (rw - drawW) / 2;
-      const offsetY = (rh - drawH) / 2;
-      box.style.left = (offsetX + r.bbox.x * scale) + 'px';
-      box.style.top = (offsetY + r.bbox.y * scale) + 'px';
-      box.style.width = (r.bbox.w * scale) + 'px';
-      box.style.height = (r.bbox.h * scale) + 'px';
-      overlay.appendChild(box);
+      showRegionHighlight(r, false);
     });
     tr.addEventListener('mouseleave', () => {
       tr.classList.remove('region-hover');
       overlay.innerHTML = '';
+    });
+    tr.addEventListener('click', () => {
+      const id = parseInt(tr.dataset.regionId, 10);
+      const r = regions.find((x) => x.id === id);
+      tbody.querySelectorAll('tr').forEach((row) => row.classList.remove('region-selected'));
+      tr.classList.add('region-selected');
+      showRegionHighlight(r, true);
     });
   });
 }

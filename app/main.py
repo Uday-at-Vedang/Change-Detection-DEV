@@ -81,14 +81,18 @@ setup_dda(app)
 
 @app.get("/health")
 def health():
-    """Lightweight health check so Hugging Face can mark the Space as running quickly."""
+    """Health check + AdaptFormer model status (HF Spaces + diagnostics)."""
     from datetime import datetime
+    from .model_inference import get_model_status
+
+    model = get_model_status()
     return {
-        "status": "ok",
-        "version": "2.3.0-dda" if IS_DDA_MODE else "2.2.0",
+        "status": "ok" if model.get("available") else "degraded",
+        "version": "2.3.0-dda" if IS_DDA_MODE else "2.2.1",
         "appMode": "dda" if IS_DDA_MODE else "legacy",
         "spaceId": os.environ.get("SPACE_ID", ""),
         "server_time_ist": _isoformat_ist(datetime.now(timezone.utc)),
+        "adaptFormer": model,
     }
 
 

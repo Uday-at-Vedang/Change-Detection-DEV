@@ -291,6 +291,22 @@ function showDetectResult(data) {
   else if (typeof showDdaError === 'function') showDdaError('Result viewer failed to load.');
 }
 
+async function runDetectionWithFallback(form, loadingEl) {
+  const hosted = window.ddaState?.localCfg?.isHosted;
+  if (hosted) {
+    loadingEl.textContent = 'Queuing detection job…';
+    try {
+      const queued = await ddaApi('POST', '/api/dda/jobs', { body: form });
+      return await pollJobUntilDone(queued.jobId, loadingEl);
+    } catch (err) {
+      const msg = String(err.message || '');
+      if (!msg.includes('Not Found') && !msg.includes('404')) throw err;
+      loadingEl.textContent = 'Running detection (sync fallback)…';
+    }
+  }
+  return ddaApi('POST', '/api/dda/detect/from-library', { body: form });
+}
+
 async function pollJobUntilDone(jobId, loadingEl) {
   const maxAttempts = 600;
   for (let i = 0; i < maxAttempts; i++) {
@@ -330,7 +346,7 @@ async function runLibraryDetection() {
   if (!Number.isNaN(minArea) && minArea >= 50) form.append('min_region_area', String(Math.round(minArea)));
 
   try {
-    const data = await ddaApi('POST', '/api/dda/detect/from-library', { body: form });
+    const data = await runDetectionWithFallback(form, loading);
     showDetectResult(data);
     if (typeof showDdaSuccess === 'function') showDdaSuccess('Detection complete.');
     if (typeof loadReportsList === 'function') loadReportsList();

@@ -22,6 +22,7 @@ _MODEL_ID = "deepang/adaptformer-LEVIR-CD"
 _TILE_SIZE = 256  # LEVIR-CD native patch size
 _AVAILABLE = None
 _LOAD_FAILED = False
+_LOAD_ERROR: str | None = None
 
 
 def _try_import():
@@ -34,7 +35,7 @@ def _try_import():
 
 
 def _load_model():
-    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED
+    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED, _LOAD_ERROR
     if _MODEL is not None:
         return _MODEL, _PROCESSOR
     if _LOAD_FAILED:
@@ -56,10 +57,12 @@ def _load_model():
         _MODEL.to(_DEVICE)
         _MODEL.eval()
         _AVAILABLE = True
+        _LOAD_ERROR = None
         logger.info("AdaptFormer loaded on %s", _DEVICE)
     except Exception as exc:
         _LOAD_FAILED = True
         _AVAILABLE = False
+        _LOAD_ERROR = str(exc)
         logger.error("AdaptFormer load failed: %s", exc)
         raise
     return _MODEL, _PROCESSOR
@@ -81,13 +84,36 @@ def is_model_available():
 
 def preload_model():
     """Warm-load AdaptFormer at app startup (best-effort)."""
+    global _LOAD_ERROR
     try:
         _load_model()
         logger.info("AdaptFormer preload complete")
         return True
     except Exception as exc:
+        _LOAD_ERROR = str(exc)
         logger.warning("AdaptFormer preload skipped: %s", exc)
         return False
+
+
+def get_model_status() -> dict:
+    """Status for /health — shows whether AI detection or classical fallback is active."""
+    if _AVAILABLE is True:
+        mode = "adaptformer_smart_union"
+        available = True
+    elif _LOAD_FAILED:
+        mode = "classical_fallback"
+        available = False
+    else:
+        available = is_model_available()
+        mode = "adaptformer_smart_union" if available else "classical_fallback"
+
+    return {
+        "modelId": _MODEL_ID,
+        "available": available,
+        "detectionMode": mode,
+        "device": str(_DEVICE) if _DEVICE is not None else None,
+        "error": _LOAD_ERROR,
+    }
 
 
 def predict_change_mask(img1, img2, threshold=0.5):
