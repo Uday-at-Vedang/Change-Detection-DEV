@@ -84,6 +84,7 @@ def _run_job_sync(job_id: int) -> None:
             notify_email=job.notify_email or params.get("notify_email"),
             max_size=get_detection_max_side(),
             geo_bounds_path=base_file,
+            user_id=job.created_by,
         )
 
         job.status = "completed"

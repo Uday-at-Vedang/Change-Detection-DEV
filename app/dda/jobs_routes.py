@@ -5,12 +5,12 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from ..auth import get_or_create_guest_user
 from ..database import get_db
-from ..models import DetectionRun
+from ..models import DetectionRun, User
+from .dda_auth import current_dda_user
 from .job_runner import (
     create_local_folder_job,
     enqueue_detection_job,
@@ -44,6 +44,7 @@ async def create_job(
     min_region_area: Optional[int] = Form(150),
     notify_email: Optional[str] = Form(None),
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     """Queue async detection from local library paths. Returns immediately with jobId."""
     _require_dda()
@@ -68,7 +69,6 @@ async def create_job(
             detail="Another detection job is already running. Wait for it to finish, then try again.",
         )
 
-    user = get_or_create_guest_user(db)
     if not title.strip():
         from pathlib import Path
         title = f"{Path(base_norm).name} vs {Path(comp_norm).name}"
@@ -99,9 +99,8 @@ async def create_job(
 
 
 @router.get("/jobs/{job_id}")
-def get_job(job_id: int, db: Session = Depends(get_db)):
+def get_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
-    user = get_or_create_guest_user(db)
     job = db.query(DetectionJob).filter(DetectionJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -173,12 +172,12 @@ def list_jobs(
     status: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     """Recent detection jobs for in-app notifications / reports feed (FR-05 partial)."""
     _require_dda()
     from .job_runner import reconcile_stale_jobs
     reconcile_stale_jobs(db)
-    user = get_or_create_guest_user(db)
     q = db.query(DetectionJob).filter(DetectionJob.created_by == user.id)
     if status:
         q = q.filter(DetectionJob.status == status)

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text as sa_text
-from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -75,8 +75,29 @@ except Exception as e:
     import logging
     logging.getLogger("uvicorn.error").warning("Startup migration skipped: %s", e)
 
-app = FastAPI(title="AI Change Detection", version="2.3.0-dda" if IS_DDA_MODE else "2.2.0")
+app = FastAPI(title="AI Change Detection", version="2.4.0-dda" if IS_DDA_MODE else "2.2.0")
 setup_dda(app)
+
+
+if IS_DDA_MODE:
+    from .dda.dda_auth import DDA_SESSION_COOKIE
+
+    @app.middleware("http")
+    async def dda_session_middleware(request: Request, call_next):
+        session_id = request.cookies.get(DDA_SESSION_COOKIE)
+        new_session = not session_id
+        if new_session:
+            session_id = str(uuid.uuid4())
+        response = await call_next(request)
+        if new_session:
+            response.set_cookie(
+                DDA_SESSION_COOKIE,
+                session_id,
+                httponly=True,
+                max_age=60 * 60 * 24 * 30,
+                samesite="lax",
+            )
+        return response
 
 
 @app.get("/health")
@@ -86,14 +107,25 @@ def health():
     from .model_inference import get_model_status
 
     model = get_model_status()
-    return {
+    payload = {
         "status": "ok" if model.get("available") else "degraded",
-        "version": "2.3.0-dda" if IS_DDA_MODE else "2.2.1",
+        "version": "2.4.0-dda" if IS_DDA_MODE else "2.2.1",
         "appMode": "dda" if IS_DDA_MODE else "legacy",
         "spaceId": os.environ.get("SPACE_ID", ""),
         "server_time_ist": _isoformat_ist(datetime.now(timezone.utc)),
         "adaptFormer": model,
     }
+    if IS_DDA_MODE:
+        try:
+            from .dda.job_runner import is_job_runner_busy
+            from .dda.local_library import scan_images
+            payload["dda"] = {
+                "libraryImages": len(scan_images()),
+                "jobRunnerBusy": is_job_runner_busy(),
+            }
+        except Exception as exc:
+            payload["dda"] = {"error": str(exc)[:200]}
+    return payload
 
 
 @app.on_event("startup")
@@ -448,9 +480,14 @@ def serve_overlay(path: str):
 # --- History ---
 @app.get("/api/history")
 def history(
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    user = get_or_create_guest_user(db)
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user
+        user = get_dda_user(request, db)
+    else:
+        user = get_or_create_guest_user(db)
     runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(100).all()
     return [
         {
@@ -475,10 +512,15 @@ def history(
 @app.get("/api/history/{run_id}")
 def get_run(
     run_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Fetch a single run by id for opening from history (result view with slider, table, zoom)."""
-    user = get_or_create_guest_user(db)
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user
+        user = get_dda_user(request, db)
+    else:
+        user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -545,9 +587,15 @@ def notify_run(
 @app.delete("/api/history/{run_id}")
 def delete_run(
     run_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    user = get_or_create_guest_user(db)
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user, require_min_role
+        user = get_dda_user(request, db)
+        require_min_role(user, db, "analyst")
+    else:
+        user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")

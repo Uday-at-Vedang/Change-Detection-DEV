@@ -3,12 +3,14 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..models import User
+from .dda_auth import current_dda_user, require_min_role
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
 
@@ -140,11 +142,15 @@ def local_thumb(path: str = Query(...)):
 
 @router.post("/local/upload")
 async def local_upload(
+    request: Request,
     file: UploadFile = File(...),
     year: int = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     """Upload GeoTIFF into persistent library_sources/YEAR/ (required on HF)."""
     _require_dda()
+    require_min_role(user, db, "uploader")
     if year < 1990 or year > 2100:
         raise HTTPException(status_code=400, detail="year must be between 1990 and 2100")
 
@@ -199,6 +205,7 @@ def local_rescan():
 
 @router.post("/detect/from-library")
 async def detect_from_library(
+    request: Request,
     base_path: str = Form(...),
     comparison_path: str = Form(...),
     method: str = Form("AI-Based Deep Learning"),
@@ -211,6 +218,7 @@ async def detect_from_library(
     min_region_area: Optional[int] = Form(150),
     notify_email: Optional[str] = Form(None),
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     """Run change detection on two library images by relative path (e.g. 2025/aerial.tif)."""
     _require_dda()
@@ -262,6 +270,7 @@ async def detect_from_library(
             notify_email=notify_email,
             max_size=max_side,
             geo_bounds_path=base_file,
+            user_id=user.id,
         )
     except Exception as exc:
         logger.exception("Library detection failed for %s vs %s", base_norm, comp_norm)

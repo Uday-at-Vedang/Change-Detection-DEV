@@ -9,10 +9,10 @@ from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
-from ..auth import get_or_create_guest_user
 from ..database import get_db
-from ..models import DetectionRun
+from ..models import DetectionRun, User
 from ..notifier import send_notification
+from .dda_auth import current_dda_user
 from .config import get_public_base_url
 from .report_pdf import build_report_dict, generate_report_pdf
 from .review_service import load_regions, merge_reviews
@@ -38,10 +38,9 @@ def _get_user_run(db: Session, run_id: int, user_id: int) -> DetectionRun:
 
 
 @router.get("/reports/{run_id}")
-def get_report(run_id: int, db: Session = Depends(get_db)):
+def get_report(run_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     """JSON payload for the standalone report page and API clients."""
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     regions = merge_reviews(db, run.id, load_regions(run))
     data = build_report_dict(run, include_overlay_b64=True, regions=regions)
@@ -50,10 +49,9 @@ def get_report(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/reports/{run_id}/pdf")
-def download_report_pdf(run_id: int, db: Session = Depends(get_db)):
+def download_report_pdf(run_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     """Download detection report as PDF."""
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     regions = merge_reviews(db, run.id, load_regions(run))
     try:
@@ -75,10 +73,9 @@ class ReportNotifyBody(BaseModel):
 
 
 @router.post("/reports/{run_id}/notify")
-def notify_report(run_id: int, body: ReportNotifyBody, db: Session = Depends(get_db)):
+def notify_report(run_id: int, body: ReportNotifyBody, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     """Email report summary with link to the browser report page."""
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     regions = merge_reviews(db, run.id, load_regions(run))
     report_url = f"{get_public_base_url()}/dda/reports/{run.id}"

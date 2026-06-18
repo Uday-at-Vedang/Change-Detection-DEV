@@ -140,8 +140,30 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 | `DATABASE_URL` | PostgreSQL instead of SQLite (optional) |
 | `SMTP_USER` / `SMTP_PASS` | Email notifications via Gmail SMTP |
 | `EMAIL_API_URL` | Custom email API (default in code) |
+| `DEPT_API_URL` / `DEPT_API_KEY` | Departmental submit API (optional) |
+| `DDA_ADMIN_EMAIL` / `DDA_ADMIN_PASSWORD` | Seed admin user on dev (role: admin) |
+| `DDA_TRAINING_EXPORT_KEY` | Header `X-DDA-Training-Key` for false-positive export |
 
 Dev Space can omit `SECRET_KEY` (login is disabled on both Spaces).
+
+---
+
+## UAT checklist (satdetect-dev)
+
+Run before promoting any DDA feature to production:
+
+1. **Health** — `GET /health` returns `status: ok`, `appMode: dda`, `dda.libraryImages` ≥ 0
+2. **Library** — Upload GeoTIFF to year folder; Refresh shows image; thumb loads
+3. **Compare** — Select T1/T2; Run Detection completes (async job or sync fallback)
+4. **Viewer** — Slider / T1 / T2 / Overlay modes; click region to locate
+5. **Review** — Confirm and False Positive; Export confirmed CSV; Submit confirmed
+6. **Reports** — PDF download; `/dda/reports/{id}` page; email link (if SMTP configured)
+7. **Session isolation** — Two browsers see separate history (per-session cookie)
+8. **Admin** — `GET /api/dda/admin/status` (analyst+); stale job reconcile after restart
+9. **Training export** — Mark false positives → `GET /api/dda/training/export` (admin or export key)
+10. **Security** — Path traversal blocked (`../` in library path); upload size limit enforced
+
+Sign-off: DDA stakeholder approves sample runs on dev Space before any push to `satdetect` production.
 
 ---
 

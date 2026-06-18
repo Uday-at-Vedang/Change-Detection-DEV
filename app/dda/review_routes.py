@@ -9,9 +9,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..auth import get_or_create_guest_user
 from ..database import get_db
-from ..models import DetectionRun
+from ..models import DetectionRun, User
+from .dda_auth import current_dda_user
 from .dept_export import ExportResult, get_exporter, regions_to_csv_rows
 from .review_service import (
     filter_regions_by_review,
@@ -53,10 +53,10 @@ def patch_region_review(
     region_id: int,
     body: RegionReviewBody,
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     """Mark a region as confirmed or false positive."""
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     if body.reviewStatus not in ("confirmed", "false_positive", "pending"):
         raise HTTPException(status_code=400, detail="reviewStatus must be confirmed, false_positive, or pending")
@@ -74,9 +74,8 @@ def patch_region_review(
 
 
 @router.get("/reports/{run_id}/review-summary")
-def get_review_summary(run_id: int, db: Session = Depends(get_db)):
+def get_review_summary(run_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     regions = merge_reviews(db, run.id, load_regions(run))
     return {"runId": run.id, "summary": review_summary(regions)}
@@ -87,10 +86,10 @@ def export_csv(
     run_id: int,
     confirmed: int = Query(0, ge=0, le=1),
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     """Export regions as CSV. Use ?confirmed=1 for confirmed-only."""
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     regions = merge_reviews(db, run.id, load_regions(run))
     if confirmed:
@@ -108,10 +107,9 @@ def export_csv(
 
 
 @router.post("/reports/{run_id}/submit")
-def submit_confirmed(run_id: int, db: Session = Depends(get_db)):
+def submit_confirmed(run_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     """Submit confirmed regions to departmental API (or file fallback)."""
     _require_dda()
-    user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
     regions = merge_reviews(db, run.id, load_regions(run))
     confirmed = filter_regions_by_review(regions, "confirmed")

@@ -158,6 +158,8 @@ Expected: `"appMode": "dda"`, `"status": "ok"`.
 3. **Reports** — history, PDF download, browser report at `/dda/reports/{id}`.
 4. **Bell icon** — in-app notifications for completed jobs.
 5. **Review (FR-08)** — Confirm / False Positive per region, export confirmed CSV, submit to dept API (`DEPT_API_URL`).
+6. **Session users** — Each browser gets isolated history via `dda_session_id` cookie (no login required).
+7. **Admin** — Optional `DDA_ADMIN_EMAIL` / `DDA_ADMIN_PASSWORD` for admin role; `GET /api/dda/admin/status`.
 
 ---
 

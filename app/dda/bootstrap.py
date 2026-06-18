@@ -5,12 +5,15 @@ from sqlalchemy import text as sa_text
 
 from ..database import engine
 from .config import IS_DDA_MODE, ensure_library_dirs, ensure_local_year_folders, is_hf_hosted
+from .admin_routes import router as admin_router
 from .jobs_routes import router as jobs_router
 from .library_routes import router as library_router
 from .local_routes import router as local_router
 from .reports_routes import router as reports_router
 from .review_routes import router as review_router
+from .training_routes import router as training_router
 from .seed import seed_delhi_hierarchy
+from .dda_auth import seed_dda_admin
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,7 @@ def init_dda_database():
     db = SessionLocal()
     try:
         seed_delhi_hierarchy(db)
+        seed_dda_admin(db)
         from .job_runner import reconcile_stale_jobs
         reconcile_stale_jobs(db)
     finally:
@@ -73,5 +77,7 @@ def setup_dda(app: FastAPI) -> None:
     app.include_router(jobs_router, prefix="/api/dda", tags=["dda-jobs"])
     app.include_router(reports_router, prefix="/api/dda", tags=["dda-reports"])
     app.include_router(review_router, prefix="/api/dda", tags=["dda-review"])
+    app.include_router(training_router, prefix="/api/dda", tags=["dda-training"])
+    app.include_router(admin_router, prefix="/api/dda", tags=["dda-admin"])
     app.include_router(local_router, prefix="/api/dda", tags=["dda-local"])
-    logger.info("APP_MODE=dda — DDA routes enabled (library, jobs, reports, review, local folder)")
+    logger.info("APP_MODE=dda — DDA routes enabled (library, jobs, reports, review, training, admin, local)")

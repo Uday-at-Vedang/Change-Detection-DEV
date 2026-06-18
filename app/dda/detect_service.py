@@ -79,10 +79,17 @@ def run_detection_and_save(
     notify_email: Optional[str] = None,
     max_size: Optional[int] = None,
     geo_bounds_path: Optional[Path] = None,
+    user_id: Optional[int] = None,
 ) -> dict:
     from ..detection_engine import run_detection
 
-    user = get_or_create_guest_user(db)
+    if user_id:
+        from ..auth import get_user_by_id
+        user = get_user_by_id(db, user_id)
+        if not user:
+            user = get_or_create_guest_user(db)
+    else:
+        user = get_or_create_guest_user(db)
     detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))
