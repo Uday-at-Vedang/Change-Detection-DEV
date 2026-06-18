@@ -1,10 +1,41 @@
 ---
-title: AI Change Detection
+title: DDA Change Detection (Dev)
 emoji: 🛰️
 colorFrom: gray
 colorTo: green
 sdk: docker
 app_port: 7860
+---
+
+# DDA Change Detection — Development
+
+Satellite / drone **change detection** web app for the DDA Scope of Work. This repository tracks **dev-only** features (`APP_MODE=dda`): image library, GeoTIFF comparison, async jobs, geo-referenced regions, reports, and PDF export.
+
+> **New to the project?** Start with **[DEV_SETUP.md](DEV_SETUP.md)** — step-by-step install and run instructions for your machine.
+
+| Environment | URL |
+|-------------|-----|
+| **Dev Space (HF)** | https://coderuday21-satdetect-dev.hf.space |
+| **Local** | http://127.0.0.1:8000 after `python run.py` |
+
+## Quick start
+
+```bash
+git clone https://github.com/Uday-at-Vedang/Change-Detection-DEV.git
+cd Change-Detection-DEV
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS/Linux
+pip install -r requirements.txt
+python run.py
+```
+
+1. Add GeoTIFFs to `library_sources/2025/` (or other year folders).
+2. Open **Image Library → Refresh**.
+3. Use **Change Detection** to compare T1 vs T2.
+
+Full details: **[DEV_SETUP.md](DEV_SETUP.md)** · SOW plan: **`docs/IMPLEMENTATION_PLAN_DDA.md`** · HF deploy: **`DEPLOYMENT.md`**
+
 ---
 
 # Satellite Change Detection — Standalone Web App
@@ -13,16 +44,17 @@ Standalone web application for satellite image change detection with **database 
 
 ## Features
 
+- **DDA dev UI** — Library, comparison, jobs, reports, PDF (when `APP_MODE=dda`)
 - **Direct access** — upload and run detection immediately (no login)
 - **Database** — SQLite (or set `DATABASE_URL` for PostgreSQL); stores detection runs
-- **Change detection** — Same model as the original app: AI-based, image difference, feature-based, hybrid
-- **Detection menu** — Choose between General Change Detection and Landslide Detection (Uttarakhand starter)
-- **Pothole detection** — Separate detection type for road damage (starter pipeline + future model hook)
-- **Object classification** — Changed regions labeled as Water, Vegetation/Tree, Building, Road, Bare Ground/Soil
-- **History** — List of past runs with overlay images and stats
-- **UI** — Single-page app with a dark, “control room” style and teal accents
+- **Change detection** — AdaptFormer deep learning + hybrid / difference methods
+- **GeoTIFF library** — Year-folder library, 5 GB upload limit, lat/lng on regions
+- **Object classification** — Changed regions labeled (Water, Vegetation, Building, Road, etc.)
+- **History & reports** — Past runs, PDF export, email notifications
 
-## Setup
+## Setup (legacy summary)
+
+See **[DEV_SETUP.md](DEV_SETUP.md)** for the complete guide. Minimal steps:
 
 1. **Create a virtual environment (recommended)**
 
@@ -41,7 +73,8 @@ Standalone web application for satellite image change detection with **database 
 3. **Run the app**
 
    ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   python run.py
+   # or: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
 4. Open **http://localhost:8000** in your browser.
@@ -49,55 +82,43 @@ Standalone web application for satellite image change detection with **database 
 ## First run
 
 - The SQLite DB and `data/` (overlay images) are created automatically on first use.
-- Upload **Before** and **After** images, choose a method, and click **Run detection**.
-- Results appear below; runs are saved in **History**.
+- **DDA mode:** place images in `library_sources/YYYY/` and use the Library tab.
+- **Legacy mode:** upload Before/After PNGs on the detection page.
+- AdaptFormer model downloads from Hugging Face on first detection (~500 MB).
 
 ## Configuration
 
+- **DDA mode:** `APP_MODE=dda` (default when using `run.py`). Copy `.env.example` → `.env` for optional overrides.
 - **Database**: set `DATABASE_URL` (e.g. `postgresql://user:pass@host/db`) to use another DB; otherwise SQLite under `data/satellite_app.db` is used.
-- **JWT**: set `SECRET_KEY` in `app/auth.py` (or via env) in production.
-- **Email**: By default, notifications are sent via the manager's email API (`https://emailservice.managemybusinessess.com/api/email/send`). Override with `EMAIL_API_URL` if needed. To use SMTP (e.g. Gmail) instead, set `EMAIL_API_URL` to empty and set `SMTP_USER` and `SMTP_PASS`.
-
-- **Landslide module**:
-  - Integrated at runtime through the same `/api/detect` endpoint using `detection_type=landslide_detection`.
-  - Engine code: `app/landslide_engine.py`
-  - Dataset preprocessing starter: `app/landslide_preprocessing.py`
-  - Planning/research brief: `Landslide_Detection_Uttarakhand_Integration_Plan.md`
-
-- **Pothole module**:
-  - Integrated at runtime through the same `/api/detect` endpoint using `detection_type=pothole_detection`.
-  - Engine code: `app/pothole_engine.py`
-  - Planning/research brief: `Pothole_Detection_Integration_Plan.md`
+- **JWT**: set `SECRET_KEY` via env in production.
+- **Email**: `EMAIL_API_URL` or `SMTP_USER` / `SMTP_PASS` — see `.env.example`.
 
 ## Project layout
 
 ```
 change_detection_webapp/
 ├── app/
-│   ├── main.py           # FastAPI app, routes
-│   ├── database.py       # SQLAlchemy, session
-│   ├── models.py         # User, DetectionRun
-│   ├── auth.py           # JWT, password hashing
-│   └── detection_engine.py  # Change detection (no Streamlit)
-├── static/
-│   ├── css/style.css     # Styles
-│   └── js/app.js         # Frontend logic
-├── templates/
-│   └── index.html        # Single-page UI
-├── data/                 # Created at runtime (DB + overlays)
+│   ├── main.py              # FastAPI app, routes
+│   ├── dda/                 # DDA dev modules (library, jobs, reports)
+│   └── detection_engine.py  # Change detection pipeline
+├── static/js/dda/           # DDA frontend
+├── templates/index_dda.html # DDA dev UI
+├── library_sources/         # Local GeoTIFF library (year folders)
+├── docs/IMPLEMENTATION_PLAN_DDA.md
+├── DEV_SETUP.md             # Colleague setup guide
 ├── requirements.txt
-└── README.md
+└── run.py                   # Local launcher (APP_MODE=dda)
 ```
 
-## API (for integration)
+## API (DDA highlights)
 
-- `POST /api/auth/register` — body: `{ "email", "password", "full_name" }`
-- `POST /api/auth/login` — body: `{ "email", "password" }` → returns `access_token`
-- `GET /api/me` — header: `Authorization: Bearer <token>`
-- `POST /api/detect` — form: `before`, `after` (files), `method`, `title`, etc. → returns stats, regions, overlay base64
-- `GET /api/history` — list of current user’s runs
-- `GET /api/overlay/<path>` — serve saved overlay image
-- `GET /health` — lightweight health check (no DB)
+- `GET /health` — app mode and version
+- `GET /api/dda/local/images` — library image list
+- `POST /api/dda/jobs` — queue async detection
+- `GET /api/dda/reports/{id}/pdf` — PDF download
+- `GET /dda/reports/{id}` — browser report page
+- `POST /api/detect` — legacy multipart upload detect
+- `GET /api/history` — detection run history
 
 ## Hugging Face: Space stuck on “Restarting”
 

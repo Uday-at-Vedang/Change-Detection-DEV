@@ -4,6 +4,7 @@ __pycache__/
 data/satellite_app.db
 data/overlays/*
 !data/overlays/.gitkeep
+data/library_cache/
 # Local library images (too large for git — keep on disk only)
 library_sources/**/*.tif
 library_sources/**/*.tiff
