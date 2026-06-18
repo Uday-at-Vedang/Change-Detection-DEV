@@ -38,6 +38,7 @@ def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False, r
         "beforeFullUrl": f"/api/overlay/{run.before_full_path}" if run.before_full_path else None,
         "beforeThumbUrl": f"/api/overlay/{run.before_thumb_path}" if run.before_thumb_path else None,
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if run.after_thumb_path else None,
+        "afterFullUrl": f"/api/overlay/{run.after_full_path}" if getattr(run, "after_full_path", None) else None,
         "createdAt": _isoformat_ist(run.created_at),
         "pdfUrl": f"/api/dda/reports/{run.id}/pdf",
     }
@@ -49,7 +50,7 @@ def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False, r
     return payload
 
 
-def generate_report_pdf(run: DetectionRun) -> tuple[bytes, str]:
+def generate_report_pdf(run: DetectionRun, *, regions: Optional[List[dict]] = None) -> tuple[bytes, str]:
     """Build PDF bytes and suggested download filename."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -58,7 +59,10 @@ def generate_report_pdf(run: DetectionRun) -> tuple[bytes, str]:
     from reportlab.platypus import Image as RLImage
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    regions: List[dict] = json.loads(run.regions_json or "[]")
+    from .geo_regions import region_lat_lng
+
+    if regions is None:
+        regions = json.loads(run.regions_json or "[]")
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm)
     styles = getSampleStyleSheet()
@@ -102,10 +106,9 @@ def generate_report_pdf(run: DetectionRun) -> tuple[bytes, str]:
 
     story.append(Paragraph("Detected regions", styles["Heading3"]))
     if regions:
-        table_data = [["#", "DDA type", "Internal type", "Conf.", "Area (px)", "Lat", "Lng"]]
+        table_data = [["#", "DDA type", "Internal type", "Conf.", "Area (px)", "Lat", "Lng", "Review"]]
         for r in regions[:50]:
-            lat = r.get("latitude") or r.get("lat")
-            lng = r.get("longitude") or r.get("lng")
+            lat, lng = region_lat_lng(r)
             table_data.append([
                 str(r.get("id", "")),
                 r.get("ddaChangeType") or r.get("objectType") or "—",
@@ -114,6 +117,7 @@ def generate_report_pdf(run: DetectionRun) -> tuple[bytes, str]:
                 f'{r.get("area", 0):,}',
                 f"{lat:.5f}" if lat is not None else "—",
                 f"{lng:.5f}" if lng is not None else "—",
+                r.get("reviewStatus") or "pending",
             ])
         tbl = Table(table_data, repeatRows=1, colWidths=[22, 72, 72, 36, 52, 48, 48])
         tbl.setStyle(TableStyle([

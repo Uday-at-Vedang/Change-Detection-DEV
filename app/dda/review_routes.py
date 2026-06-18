@@ -124,10 +124,7 @@ def submit_confirmed(run_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=result.message)
 
     submitted_ids = [int(r["id"]) for r in confirmed if r.get("id") is not None]
-    if result.mode == "api":
-        mark_confirmed_submitted(db, run.id, submitted_ids)
-        for r in confirmed:
-            r["reviewStatus"] = "submitted"
+    mark_confirmed_submitted(db, run.id, submitted_ids)
 
     return {
         "ok": True,

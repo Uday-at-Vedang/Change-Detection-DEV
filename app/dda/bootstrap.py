@@ -23,18 +23,32 @@ def init_dda_database():
     ensure_local_year_folders()
     try:
         with engine.connect() as conn:
+            for stmt in (
+                "ALTER TABLE users ADD COLUMN role VARCHAR(32) DEFAULT 'analyst'",
+                "ALTER TABLE detection_runs ADD COLUMN after_full_path VARCHAR(512) DEFAULT ''",
+            ):
+                try:
+                    conn.execute(sa_text(stmt))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
             try:
-                conn.execute(sa_text("ALTER TABLE users ADD COLUMN role VARCHAR(32) DEFAULT 'analyst'"))
+                conn.execute(sa_text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_dda_region_reviews_run_region "
+                    "ON dda_region_reviews (run_id, region_id)"
+                ))
                 conn.commit()
             except Exception:
                 conn.rollback()
     except Exception as exc:
-        logger.warning("DDA user role migration skipped: %s", exc)
+        logger.warning("DDA schema migration skipped: %s", exc)
 
     from ..database import SessionLocal
     db = SessionLocal()
     try:
         seed_delhi_hierarchy(db)
+        from .job_runner import reconcile_stale_jobs
+        reconcile_stale_jobs(db)
     finally:
         db.close()
 

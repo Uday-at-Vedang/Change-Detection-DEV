@@ -112,3 +112,17 @@ def enrich_regions_geo(
             enriched["latLng"] = None
         out.append(enriched)
     return out
+
+
+def region_lat_lng(region: dict) -> tuple[Optional[float], Optional[float]]:
+    """Read lat/lng from region dict (supports latLng object or flat keys)."""
+    ll = region.get("latLng") or {}
+    lat = region.get("latitude", ll.get("lat") if isinstance(ll, dict) else None)
+    lng = region.get("longitude", ll.get("lng") if isinstance(ll, dict) else None)
+    if lat is None or lng is None:
+        return None, None
+    try:
+        return float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None, None
+

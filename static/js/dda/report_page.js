@@ -18,6 +18,13 @@ function formatCoord(v) {
   return Number.isFinite(n) ? n.toFixed(5) : '—';
 }
 
+function regionLatLng(r) {
+  const ll = r.latLng || {};
+  const lat = r.latitude ?? ll.lat;
+  const lng = r.longitude ?? ll.lng;
+  return { lat, lng };
+}
+
 async function loadReportPage() {
   const runId = parseReportRunId();
   const loading = document.getElementById('report-loading');
@@ -58,16 +65,19 @@ async function loadReportPage() {
     const regions = data.regions || [];
     if (tbody) {
       tbody.innerHTML = regions.length
-        ? regions.map((r) => `
+        ? regions.map((r) => {
+            const { lat, lng } = regionLatLng(r);
+            return `
             <tr>
               <td>${r.id ?? ''}</td>
               <td>${r.ddaChangeType || r.objectType || '—'}</td>
               <td>${r.internalObjectType || r.objectType || '—'}</td>
               <td>${((r.confidence ?? 0) * 100).toFixed(0)}%</td>
               <td>${(r.area ?? 0).toLocaleString()}</td>
-              <td>${formatCoord(r.latitude ?? r.lat)}</td>
-              <td>${formatCoord(r.longitude ?? r.lng)}</td>
-            </tr>`).join('')
+              <td>${formatCoord(lat)}</td>
+              <td>${formatCoord(lng)}</td>
+            </tr>`;
+          }).join('')
         : '<tr><td colspan="7" class="dim">No regions detected.</td></tr>';
     }
 
@@ -81,8 +91,8 @@ async function loadReportPage() {
     if (viewBtn) {
       viewBtn.disabled = false;
       viewBtn.onclick = () => {
-        window.location.href = '/?tab=reports';
         try { sessionStorage.setItem('dda_open_run', String(runId)); } catch (_) {}
+        window.location.href = '/?tab=reports';
       };
     }
 

@@ -36,6 +36,7 @@ class DetectionRun(Base):
     before_full_path = Column(String(512), default="")
     before_thumb_path = Column(String(512), default="")
     after_thumb_path = Column(String(512), default="")
+    after_full_path = Column(String(512), default="")
     zone = Column(String(128), default="")
     village = Column(String(128), default="")
     regions_json = Column(Text, default="[]")

@@ -55,8 +55,9 @@ def download_report_pdf(run_id: int, db: Session = Depends(get_db)):
     _require_dda()
     user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
+    regions = merge_reviews(db, run.id, load_regions(run))
     try:
-        pdf_bytes, filename = generate_report_pdf(run)
+        pdf_bytes, filename = generate_report_pdf(run, regions=regions)
     except ImportError as exc:
         raise HTTPException(status_code=503, detail="PDF export is not available (reportlab missing)") from exc
     except Exception as exc:
@@ -79,8 +80,7 @@ def notify_report(run_id: int, body: ReportNotifyBody, db: Session = Depends(get
     _require_dda()
     user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
-    import json
-    regions = json.loads(run.regions_json or "[]")
+    regions = merge_reviews(db, run.id, load_regions(run))
     report_url = f"{get_public_base_url()}/dda/reports/{run.id}"
     sent, error = send_notification(
         recipient=body.email.strip(),

@@ -120,6 +120,7 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
             raise
         except Exception as exc:
             logger.warning("Could not load full run for job %s: %s", job_id, exc)
+            data["resultError"] = str(exc)[:500]
     return data
 
 
@@ -140,6 +141,7 @@ def _run_detail(db: Session, run: DetectionRun, user_id: int) -> dict:
         if overlay_file.exists():
             overlay_b64 = base64.b64encode(overlay_file.read_bytes()).decode("utf-8")
 
+    from .config import get_detection_max_side
     from .detect_service import _isoformat_ist
 
     return {
@@ -160,7 +162,9 @@ def _run_detail(db: Session, run: DetectionRun, user_id: int) -> dict:
         "beforeFullUrl": f"/api/overlay/{run.before_full_path}" if run.before_full_path else None,
         "beforeThumbUrl": f"/api/overlay/{run.before_thumb_path}" if run.before_thumb_path else None,
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if run.after_thumb_path else None,
+        "afterFullUrl": f"/api/overlay/{run.after_full_path}" if getattr(run, "after_full_path", None) else None,
         "createdAt": _isoformat_ist(run.created_at),
+        "detectionMaxSide": get_detection_max_side(),
     }
 
 
@@ -172,6 +176,8 @@ def list_jobs(
 ):
     """Recent detection jobs for in-app notifications / reports feed (FR-05 partial)."""
     _require_dda()
+    from .job_runner import reconcile_stale_jobs
+    reconcile_stale_jobs(db)
     user = get_or_create_guest_user(db)
     q = db.query(DetectionJob).filter(DetectionJob.created_by == user.id)
     if status:

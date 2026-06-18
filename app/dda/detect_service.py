@@ -115,10 +115,17 @@ def run_detection_and_save(
     relative_before_full = ""
     relative_before_thumb = ""
     relative_after_thumb = ""
+    relative_after_full = ""
     try:
+        after_for_slider = Image.fromarray(
+            preprocess_image(after_pil, max_size=max_size or get_detection_max_size())
+        )
         before_full_file = OVERLAYS_DIR / f"{base_name}_before.png"
         before_for_slider.save(before_full_file)
         relative_before_full = f"overlays/{base_name}_before.png"
+        after_full_file = OVERLAYS_DIR / f"{base_name}_after.png"
+        after_for_slider.save(after_full_file)
+        relative_after_full = f"overlays/{base_name}_after.png"
         before_thumb_pil = before_pil.copy()
         before_thumb_pil.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), Image.Resampling.LANCZOS)
         before_thumb_pil.save(OVERLAYS_DIR / f"{base_name}_before_thumb.png")
@@ -157,6 +164,7 @@ def run_detection_and_save(
         before_full_path=relative_before_full,
         before_thumb_path=relative_before_thumb,
         after_thumb_path=relative_after_thumb,
+        after_full_path=relative_after_full,
         regions_json=json.dumps(regions_serializable),
     )
     db.add(run)
@@ -204,6 +212,7 @@ def run_detection_and_save(
         "beforeFullUrl": f"/api/overlay/{relative_before_full}" if relative_before_full else None,
         "beforeThumbUrl": f"/api/overlay/{relative_before_thumb}" if relative_before_thumb else None,
         "afterThumbUrl": f"/api/overlay/{relative_after_thumb}" if relative_after_thumb else None,
+        "afterFullUrl": f"/api/overlay/{relative_after_full}" if relative_after_full else None,
         "notificationSent": notification_sent,
         "notificationError": notification_error,
         "createdAt": _isoformat_ist(run.created_at),

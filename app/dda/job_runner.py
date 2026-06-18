@@ -138,6 +138,33 @@ def is_job_runner_busy() -> bool:
         return _active_job_id is not None
 
 
+def reconcile_stale_jobs(db: Session) -> int:
+    """Mark orphaned running jobs failed after server restart; re-queue oldest queued job."""
+    if is_job_runner_busy():
+        return 0
+    fixed = 0
+    running = db.query(DetectionJob).filter(DetectionJob.status == "running").all()
+    for job in running:
+        job.status = "failed"
+        job.error_message = "Job interrupted (server restarted). Please run detection again."
+        job.completed_at = _utcnow()
+        fixed += 1
+    if fixed:
+        db.commit()
+        logger.info("Reconciled %d stale running job(s)", fixed)
+
+    if not is_job_runner_busy():
+        next_queued = (
+            db.query(DetectionJob)
+            .filter(DetectionJob.status == "queued")
+            .order_by(DetectionJob.created_at.asc())
+            .first()
+        )
+        if next_queued:
+            enqueue_detection_job(next_queued.id)
+    return fixed
+
+
 def create_local_folder_job(
     db: Session,
     *,

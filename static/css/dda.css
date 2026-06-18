@@ -478,3 +478,17 @@
   0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
   50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
 }
+
+.regions-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.regions-table-wrap .regions-table {
+  min-width: 960px;
+}
+
+@media (max-width: 768px) {
+  .dda-compare-slots {
+    grid-template-columns: 1fr;
+  }
+}

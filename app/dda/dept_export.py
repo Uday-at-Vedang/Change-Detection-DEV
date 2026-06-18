@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import logging
 import os
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from ..models import DetectionRun
+from .geo_regions import region_lat_lng
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +39,7 @@ def regions_to_csv_rows(run: DetectionRun, regions: List[dict]) -> str:
         "latitude", "longitude", "area_sq_m", "review_status", "notes",
     ])
     for r in regions:
-        lat = r.get("latitude") or (r.get("latLng") or {}).get("lat")
-        lng = r.get("longitude") or (r.get("latLng") or {}).get("lng")
+        lat, lng = region_lat_lng(r)
         writer.writerow([
             run.id,
             run.title,

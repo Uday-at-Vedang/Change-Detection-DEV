@@ -75,7 +75,7 @@ async function loadReportsList() {
           ${rows.map((r) => `
             <tr>
               <td>${formatReportDate(r.createdAt)}</td>
-              <td>${r.title}</td>
+              <td>${escapeHtml(r.title)}</td>
               <td><span class="dda-status dda-status-${r.status}">${r.status}</span></td>
               <td>${r.changePct != null ? r.changePct.toFixed(2) + '%' : '—'}</td>
               <td>${r.regions ?? '—'}</td>

@@ -306,7 +306,9 @@ async function runDetectionWithFallback(form, loadingEl) {
       return await pollJobUntilDone(queued.jobId, loadingEl);
     } catch (err) {
       const msg = String(err.message || '');
-      if (!msg.includes('Not Found') && !msg.includes('404')) throw err;
+      const useSync = msg.includes('Not Found') || msg.includes('404')
+        || msg.includes('503') || msg.includes('409') || msg.includes('busy');
+      if (!useSync) throw err;
       loadingEl.textContent = 'Running detection (sync fallback)…';
     }
   }
@@ -321,9 +323,17 @@ async function pollJobUntilDone(jobId, loadingEl) {
     if (loadingEl) {
       loadingEl.textContent = `Detection job #${jobId} — ${status}… (${i + 1})`;
     }
-    if (status === 'completed' && job.result) {
-      if (typeof window.refreshDdaNotifications === 'function') window.refreshDdaNotifications();
-      return { result: job.result, jobId };
+    if (status === 'completed') {
+      if (job.result) {
+        if (typeof window.refreshDdaNotifications === 'function') window.refreshDdaNotifications();
+        return { result: job.result, jobId };
+      }
+      if (job.runId) {
+        const data = await ddaApi('GET', `/api/history/${job.runId}`);
+        if (typeof window.refreshDdaNotifications === 'function') window.refreshDdaNotifications();
+        return { result: data, jobId };
+      }
+      if (job.resultError) throw new Error(job.resultError);
     }
     if (status === 'failed') throw new Error(job.errorMessage || 'Detection job failed');
     await new Promise((r) => setTimeout(r, 2000));

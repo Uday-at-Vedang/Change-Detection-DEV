@@ -1,5 +1,23 @@
 const API = '';
 
+function escapeHtml(text) {
+  if (text == null) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatApiError(detail) {
+  if (!detail) return null;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => (d && d.msg) || JSON.stringify(d)).join('; ');
+  }
+  return String(detail);
+}
+
 async function ddaApi(method, path, options = {}) {
   const headers = { ...options.headers };
   if (options.body && !(options.body instanceof FormData)) {
@@ -9,7 +27,7 @@ async function ddaApi(method, path, options = {}) {
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch (_) {}
-  if (!res.ok) throw new Error(data?.detail || res.statusText || 'Request failed');
+  if (!res.ok) throw new Error(formatApiError(data?.detail) || res.statusText || 'Request failed');
   return data;
 }
 
@@ -113,8 +131,14 @@ async function initDda() {
       uploadLimit.textContent = `Files on your computer are not on the server. Upload .tif images here (up to ${localCfg.maxUploadGb} GB each).`;
     }
 
-    if (!localCfg.isHosted && ddaConfig.appMode !== 'dda') {
+    const appMode = ddaConfig.appMode || ddaConfig.mode || localCfg.appMode || 'dda';
+    if (!localCfg.isHosted && appMode !== 'dda') {
       showDdaError('DDA mode is off. Run locally with: python run.py');
+    }
+
+    const urlTab = new URLSearchParams(window.location.search).get('tab');
+    if (urlTab) {
+      document.querySelector(`.dda-tab[data-tab="${urlTab}"]`)?.click();
     }
 
     const yearsData = await ddaApi('GET', '/api/dda/local/years');
@@ -137,7 +161,8 @@ async function loadHierarchyTree() {
       el.innerHTML = '<p class="dim">No zones seeded.</p>';
       return;
     }
-    el.innerHTML = zones.map((z) => {
+    el.innerHTML = `<p class="dim" style="margin-bottom:0.5rem">DB hierarchy (upload API). Local library uses year folders.</p>` +
+      zones.map((z) => {
       const villages = z.villages || [];
       const zoneCount = villages.reduce((s, v) => s + (v.imageCount || 0), 0);
       const villageItems = villages.map((v) =>
@@ -180,11 +205,11 @@ async function loadLibraryImages() {
     grid.innerHTML = items.map((img) => {
       const thumb = img.thumbUrl ? img.thumbUrl.replace(/path=[^&]+/, 'path=' + encodeURIComponent(img.path)) : '';
       return `
-      <div class="dda-card-img" draggable="true" data-image-path="${img.path.replace(/"/g, '&quot;')}" title="${img.filename}">
+      <div class="dda-card-img" draggable="true" data-image-path="${img.path.replace(/"/g, '&quot;')}" title="${escapeHtml(img.filename)}">
         ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
         <div class="meta">
-          <strong>${img.year}</strong><br/>
-          ${img.filename}<br/>
+          <strong>${escapeHtml(String(img.year))}</strong><br/>
+          ${escapeHtml(img.filename)}<br/>
           <span class="dim">${formatBytes(img.fileSizeBytes)}</span>
         </div>
       </div>`;

@@ -69,6 +69,7 @@ def dda_config():
     max_gb = MAX_GEOTIFF_BYTES / (1024 ** 3)
     return {
         "mode": "dda",
+        "appMode": "dda",
         "maxUploadMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
         "maxUploadGb": round(max_gb, 2),
         "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),

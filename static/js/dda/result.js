@@ -74,7 +74,7 @@ function updateDdaReviewSummary(regions) {
     const s = r.reviewStatus || 'pending';
     counts[s] = (counts[s] || 0) + 1;
   });
-  el.textContent = `Review: ${counts.confirmed} confirmed · ${counts.false_positive} false positive · ${counts.pending} pending`;
+  el.textContent = `Review: ${counts.confirmed} confirmed · ${counts.false_positive} false positive · ${counts.submitted || 0} submitted · ${counts.pending} pending`;
 }
 
 function setupDdaReviewBar(runId, regions) {
@@ -156,7 +156,7 @@ function showDdaResult(data) {
     ? 'data:image/png;base64,' + data.overlayBase64Png
     : (data.overlayUrl || '');
   const beforeSrc = data.beforeFullUrl || data.beforeThumbUrl || '';
-  const afterSrc = data.afterThumbUrl || data.afterFullUrl || beforeSrc;
+  const afterSrc = data.afterFullUrl || data.afterThumbUrl || beforeSrc;
 
   ddaViewUrls = { before: beforeSrc, after: afterSrc, overlay: overlaySrc };
   setDdaViewMode('slider');
@@ -176,7 +176,7 @@ function showDdaResult(data) {
   beforeImg.onload = onReady;
   setTimeout(() => { resetDdaCompareSlider(); resetDdaZoom(); }, 500);
 
-  const regions = (data.regions || []).slice(0, 60);
+  const regions = data.regions || [];
   ddaRegionList = regions;
   ddaRegionRows = regions.map((r) => {
     const tr = document.createElement('tr');

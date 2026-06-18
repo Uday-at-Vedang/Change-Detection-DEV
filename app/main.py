@@ -485,7 +485,11 @@ def get_run(
     regions = _load_regions_json(run.regions_json)
     if IS_DDA_MODE:
         from .dda.review_service import merge_reviews
+        from .dda.config import get_detection_max_side
         regions = merge_reviews(db, run.id, regions)
+        detection_max_side = get_detection_max_side()
+    else:
+        detection_max_side = None
     return {
         "id": run.id,
         "title": run.title,
@@ -503,7 +507,9 @@ def get_run(
         "beforeFullUrl": f"/api/overlay/{run.before_full_path}" if (getattr(run, "before_full_path", None) or "").strip() else None,
         "beforeThumbUrl": f"/api/overlay/{run.before_thumb_path}" if (getattr(run, "before_thumb_path", None) or "").strip() else None,
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if (getattr(run, "after_thumb_path", None) or "").strip() else None,
+        "afterFullUrl": f"/api/overlay/{run.after_full_path}" if (getattr(run, "after_full_path", None) or "").strip() else None,
         "createdAt": _isoformat_ist(run.created_at),
+        "detectionMaxSide": detection_max_side,
     }
 
 
@@ -546,12 +552,17 @@ def delete_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     # Delete overlay and thumbnail files if they exist
-    for path_attr in ("overlay_path", "before_full_path", "before_thumb_path", "after_thumb_path"):
+    for path_attr in ("overlay_path", "before_full_path", "before_thumb_path", "after_thumb_path", "after_full_path"):
         path_val = getattr(run, path_attr, None)
         if path_val:
             f = OVERLAYS_DIR.parent / path_val
             if f.exists():
                 f.unlink(missing_ok=True)
+    if IS_DDA_MODE:
+        from .dda.models import DetectionJob, RegionReview
+        db.query(RegionReview).filter(RegionReview.run_id == run_id).delete()
+        for job in db.query(DetectionJob).filter(DetectionJob.run_id == run_id).all():
+            job.run_id = None
     db.delete(run)
     db.commit()
     return {"ok": True, "deleted_id": run_id}
