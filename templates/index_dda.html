@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=11" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=12" />
 </head>
 <body>
   <div class="app dda-app">
@@ -32,53 +32,60 @@
     <div id="dda-error" class="alert alert-error hidden"></div>
     <div id="dda-success" class="alert alert-success hidden"></div>
 
-    <!-- Tab: Image Library — reads from library_sources/ year folders -->
+    <!-- Tab: Image Library — zone/folder/year hierarchy under library_sources/ -->
     <section id="tab-library" class="dda-panel active" role="tabpanel">
       <div class="dda-layout">
         <aside class="dda-sidebar card">
           <div class="card-header">
-            <h3>Years</h3>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" title="Rescan folder">Refresh</button>
+            <h3>Library</h3>
+            <div class="dda-sidebar-actions">
+              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library" title="Manage zones and folders">Manage</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" title="Rescan folder">Refresh</button>
+            </div>
           </div>
           <div id="lib-folder-path" class="dda-folder-path dim"></div>
-          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter years…" />
+          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter zones, folders, years…" />
           <div id="lib-tree" class="dda-tree"><p class="dim">Loading…</p></div>
-          <div class="dda-hierarchy-wrap">
-            <h4 class="dda-hierarchy-title">DDA zones</h4>
-            <div id="lib-hierarchy" class="dda-hierarchy"><p class="dim">Loading…</p></div>
-          </div>
         </aside>
         <main class="dda-main">
           <div class="card dda-instructions">
             <div class="card-header">
-              <h3>Local folder library</h3>
+              <h3>Folder library</h3>
               <span class="dim" id="lib-config-hint"></span>
             </div>
             <p class="sub" id="lib-instructions">
-              Copy <code>.tif</code> images into <code>library_sources/YEAR/</code> in your project folder, then click <strong>Refresh</strong>.
+              Organize images as <code>library_sources/{zone}/{folder}/{year}/</code>, then click <strong>Refresh</strong>.
             </p>
             <pre id="lib-path-display" class="dda-path-code"></pre>
           </div>
-          <div class="card hidden" id="hf-upload-card">
+          <div class="card" id="upload-card">
             <div class="card-header">
-              <h3>Upload to Space storage</h3>
-              <span class="dim">Required on Hugging Face</span>
+              <h3 id="upload-card-title">Upload to library</h3>
+              <span class="dim" id="upload-card-hint"></span>
             </div>
-            <p class="sub" id="hf-upload-limit">Files on your computer are not on the server. Upload .tif images here (up to 5 GB each).</p>
+            <p class="sub" id="hf-upload-limit">Select zone, folder, and year before uploading.</p>
             <form id="form-hf-upload" class="dda-upload-form">
               <div class="location-row">
                 <div class="form-group">
-                  <label for="hf-year">Year folder</label>
-                  <input type="number" id="hf-year" required min="2000" max="2100" value="2025" />
+                  <label for="upload-zone">Zone</label>
+                  <select id="upload-zone" required><option value="">— Select zone —</option></select>
+                </div>
+                <div class="form-group">
+                  <label for="upload-folder">Folder</label>
+                  <select id="upload-folder" required><option value="">— Select folder —</option></select>
+                </div>
+                <div class="form-group">
+                  <label for="upload-year">Year</label>
+                  <input type="number" id="upload-year" required min="1990" max="2100" value="2025" />
                 </div>
                 <div class="form-group">
                   <label for="hf-file">GeoTIFF file</label>
-                  <input type="file" id="hf-file" accept=".tif,.tiff" required />
+                  <input type="file" id="hf-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
                 </div>
               </div>
-              <div id="hf-upload-progress" class="dda-upload-progress hidden">
-                <div class="dda-progress-bar"><div id="hf-upload-progress-fill" class="dda-progress-fill"></div></div>
-                <span id="hf-upload-progress-label" class="dim">Uploading…</span>
+              <div id="upload-progress" class="dda-upload-progress hidden">
+                <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
+                <span id="upload-progress-label" class="dim">Uploading…</span>
               </div>
               <button type="submit" class="btn btn-primary" id="btn-hf-upload">Upload to library</button>
             </form>
@@ -88,7 +95,7 @@
               <h3 id="lib-grid-title">Images</h3>
               <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
             </div>
-            <div id="lib-grid" class="dda-grid"><p class="dim">Select a year or add images to library_sources/.</p></div>
+            <div id="lib-grid" class="dda-grid"><p class="dim">Select a zone, folder, or year in the sidebar.</p></div>
           </div>
         </main>
       </div>
@@ -259,8 +266,76 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/app.js?v=12"></script>
-  <script src="/static/js/dda/library.js?v=6"></script>
+  <div id="dda-manage-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card dda-manage-panel">
+      <div class="card-header">
+        <h3>Manage library structure</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-manage-close">Close</button>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Zones</h4>
+        <div class="location-row">
+          <input type="text" id="manage-zone-name" placeholder="New zone name" />
+          <button type="button" class="btn btn-primary btn-sm" id="btn-add-zone">Add zone</button>
+        </div>
+        <div class="location-row">
+          <select id="manage-zone-select"></select>
+          <input type="text" id="manage-zone-rename" placeholder="Rename selected zone" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-zone">Rename</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-zone">Delete</button>
+        </div>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Folders</h4>
+        <div class="location-row">
+          <input type="text" id="manage-folder-name" placeholder="New folder name" />
+          <button type="button" class="btn btn-primary btn-sm" id="btn-add-folder">Add folder</button>
+        </div>
+        <div class="location-row">
+          <select id="manage-folder-select"></select>
+          <input type="text" id="manage-folder-rename" placeholder="Rename selected folder" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-folder">Rename</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-folder">Delete</button>
+        </div>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Year folder</h4>
+        <div class="location-row">
+          <input type="number" id="manage-year" min="1990" max="2100" value="2025" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-create-year">Create year folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dda-reassign-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card">
+      <div class="card-header">
+        <h3>Assign location</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-reassign-close">Close</button>
+      </div>
+      <p class="sub">Move <strong id="reassign-filename"></strong> to:</p>
+      <div class="location-row">
+        <div class="form-group">
+          <label for="reassign-zone">Zone</label>
+          <select id="reassign-zone"></select>
+        </div>
+        <div class="form-group">
+          <label for="reassign-folder">Folder</label>
+          <select id="reassign-folder"></select>
+        </div>
+        <div class="form-group">
+          <label for="reassign-year">Year</label>
+          <input type="number" id="reassign-year" min="1990" max="2100" value="2025" />
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary" id="btn-reassign-submit">Move image</button>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/app.js?v=13"></script>
+  <script src="/static/js/dda/hierarchy.js?v=1"></script>
+  <script src="/static/js/dda/library.js?v=7"></script>
   <script src="/static/js/dda/result.js?v=6"></script>
   <script src="/static/js/dda/compare.js?v=9"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>

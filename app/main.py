@@ -28,7 +28,7 @@ from .auth import (
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
-from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview  # noqa: F401
+from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview, DdaLocalFileIndex  # noqa: F401
 from .dda.config import IS_DDA_MODE
 from .dda.bootstrap import init_dda_database, setup_dda
 from .notifier import send_notification, send_test_email
