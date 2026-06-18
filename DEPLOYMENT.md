@@ -133,7 +133,7 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 | Variable | Purpose |
 |----------|---------|
 | `APP_MODE` | Set to `dda` on **satdetect-dev** only (enables DDA library UI) |
-| `LOCAL_LIBRARY_ROOT` | Path to library root (default: `library_sources/` or `data/library_sources/` on HF) |
+| `LOCAL_LIBRARY_ROOT` | Path to year folders (default: `library_sources/` in project) |
 | `MAX_GEOTIFF_MB` | Library GeoTIFF upload cap (default **5120** = 5 GB on dev) |
 | `MAX_IMAGE_MB` | PNG/JPEG library cap (default 50 MB) |
 | `SECRET_KEY` | Optional legacy JWT setting (login disabled) |
@@ -148,44 +148,20 @@ Dev Space can omit `SECRET_KEY` (login is disabled on both Spaces).
 
 ---
 
-## Library folder layout (zone-aware)
-
-Images are stored under a **zone → folder → year** hierarchy:
-
-```text
-library_sources/
-  central_delhi/
-    site_a/
-      2025/
-        image.tif
-  _unassigned/
-    legacy/
-      2025/
-        old_image.tif
-```
-
-- **Zones** and **folders** are managed in the UI (admin: **Manage** in the library sidebar).
-- **Upload** requires selecting zone, folder, and year (HF dev and local upload form).
-- On first startup after upgrade, flat `library_sources/YEAR/` files are moved to `_unassigned/legacy/YEAR/`.
-- Slugs on disk (e.g. `central_delhi`) are stable; renaming a zone/folder in the UI changes the display label only.
-
----
-
 ## UAT checklist (satdetect-dev)
 
 Run before promoting any DDA feature to production:
 
 1. **Health** — `GET /health` returns `status: ok`, `appMode: dda`, `dda.libraryImages` ≥ 0
-2. **Library** — Create zone + folder (admin); upload GeoTIFF with zone/folder/year; tree and grid show breadcrumb; Refresh works
-3. **Legacy** — Old flat year files appear under Unassigned; Assign location moves file to chosen zone/folder/year
-4. **Compare** — Select T1/T2; Run Detection completes (async job or sync fallback)
-5. **Viewer** — Slider / T1 / T2 / Overlay modes; click region to locate
-6. **Review** — Confirm and False Positive; Export confirmed CSV; Submit confirmed
-7. **Reports** — PDF download; `/dda/reports/{id}` page; email link (if SMTP configured)
-8. **Session isolation** — Two browsers see separate history (per-session cookie)
-9. **Admin** — `GET /api/dda/admin/status` (analyst+); stale job reconcile after restart
-10. **Training export** — Mark false positives → `GET /api/dda/training/export` (admin or export key)
-11. **Security** — Path traversal blocked (`../` in library path); upload size limit enforced
+2. **Library** — Upload GeoTIFF to year folder; Refresh shows image; thumb loads
+3. **Compare** — Select T1/T2; Run Detection completes (async job or sync fallback)
+4. **Viewer** — Slider / T1 / T2 / Overlay modes; click region to locate
+5. **Review** — Confirm and False Positive; Export confirmed CSV; Submit confirmed
+6. **Reports** — PDF download; `/dda/reports/{id}` page; email link (if SMTP configured)
+7. **Session isolation** — Two browsers see separate history (per-session cookie)
+8. **Admin** — `GET /api/dda/admin/status` (analyst+); stale job reconcile after restart
+9. **Training export** — Mark false positives → `GET /api/dda/training/export` (admin or export key)
+10. **Security** — Path traversal blocked (`../` in library path); upload size limit enforced
 
 Sign-off: DDA stakeholder approves sample runs on dev Space before any push to `satdetect` production.
 

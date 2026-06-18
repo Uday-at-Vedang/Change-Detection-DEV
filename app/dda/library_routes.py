@@ -86,8 +86,34 @@ def dda_config():
 @router.get("/hierarchy")
 def get_hierarchy(db: Session = Depends(get_db)):
     _require_dda()
-    from .local_library import scan_tree
-    return scan_tree(db)
+    zones = db.query(DdaZone).order_by(DdaZone.name).all()
+    tree = []
+    for zone in zones:
+        villages = (
+            db.query(DdaVillage)
+            .filter(DdaVillage.zone_id == zone.id)
+            .order_by(DdaVillage.name)
+            .all()
+        )
+        image_counts = {}
+        for v in villages:
+            cnt = db.query(ImageAsset).filter(ImageAsset.village_id == v.id).count()
+            if cnt:
+                image_counts[v.id] = cnt
+        tree.append({
+            "id": zone.id,
+            "name": zone.name,
+            "mode": zone.mode,
+            "villages": [
+                {
+                    "id": v.id,
+                    "name": v.name,
+                    "imageCount": image_counts.get(v.id, 0),
+                }
+                for v in villages
+            ],
+        })
+    return {"zones": tree}
 
 
 @router.get("/images")

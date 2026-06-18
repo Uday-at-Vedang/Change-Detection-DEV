@@ -1,13 +1,11 @@
-"""API for reading images from local library_sources/ zone/folder/year hierarchy."""
+"""API for reading images from local library_sources/ year folders."""
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
-from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -27,16 +25,13 @@ from .config import (
     max_upload_bytes_for_extension,
 )
 from .local_library import (
-    build_upload_dest,
     entry_to_dict,
     get_or_build_thumb,
     library_debug_info,
     safe_resolve,
     scan_images,
-    scan_tree,
     scan_years,
 )
-from .models import DdaLocalFileIndex, DdaVillage, DdaZone
 from .upload_io import stream_upload_to_file
 
 logger = logging.getLogger(__name__)
@@ -58,31 +53,6 @@ def _safe_basename(filename: str) -> str:
     return name
 
 
-def _upsert_file_index(db: Session, rel_path: str, zone_id: int, folder_id: int, year: int, user_id: int):
-    idx = db.query(DdaLocalFileIndex).filter(DdaLocalFileIndex.relative_path == rel_path).first()
-    if idx:
-        idx.zone_id = zone_id
-        idx.folder_id = folder_id
-        idx.year = year
-        idx.uploaded_by = user_id
-    else:
-        db.add(DdaLocalFileIndex(
-            relative_path=rel_path,
-            zone_id=zone_id,
-            folder_id=folder_id,
-            year=year,
-            uploaded_by=user_id,
-        ))
-    db.commit()
-
-
-class ReassignBody(BaseModel):
-    path: str
-    zone_id: int
-    folder_id: int
-    year: int = Field(..., ge=1990, le=2100)
-
-
 @router.get("/local/config")
 def local_library_config():
     _require_dda()
@@ -91,13 +61,13 @@ def local_library_config():
     hosted = is_hf_hosted()
     if hosted:
         instructions = (
-            "Upload images below with zone, folder, and year. Files are saved under "
-            "library_sources/{zone}/{folder}/{year}/ on persistent Space storage."
+            "On Hugging Face, images must be uploaded below (saved to persistent storage) "
+            "or copied into the writable folder shown. Files on your PC are not visible here."
         )
     else:
         instructions = (
-            "Copy .tif images into library_sources/{zone}/{folder}/{year}/, or use Upload "
-            "with zone and folder selected. Click Refresh after adding files manually."
+            "Copy .tif images into library_sources/YEAR/ in your project folder, then Refresh. "
+            "Or use Upload to save into data/library_sources/."
         )
     return {
         "source": "local_folder",
@@ -117,49 +87,36 @@ def local_library_config():
 
 
 @router.get("/local/debug")
-def local_debug(db: Session = Depends(get_db)):
+def local_debug():
     _require_dda()
-    return library_debug_info(db=db)
+    return library_debug_info()
 
 
 @router.get("/local/years")
-def local_years(db: Session = Depends(get_db)):
+def local_years():
     _require_dda()
-    return {"years": scan_years(db=db), "rootPaths": [str(r) for r in get_library_roots()]}
-
-
-@router.get("/local/tree")
-def local_tree(db: Session = Depends(get_db)):
-    _require_dda()
-    return scan_tree(db)
+    return {"years": scan_years(), "rootPaths": [str(r) for r in get_library_roots()]}
 
 
 @router.get("/local/images")
 def local_images(
     year: Optional[int] = Query(None),
-    zone_id: Optional[int] = Query(None),
-    folder_id: Optional[int] = Query(None),
-    legacy_only: Optional[bool] = Query(None),
     q: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
 ):
     _require_dda()
-    entries = scan_images(
-        db=db, year=year, zone_id=zone_id, folder_id=folder_id,
-        query=q, legacy_only=legacy_only,
-    )
+    entries = scan_images(year=year, query=q)
     return [entry_to_dict(e) for e in entries]
 
 
 @router.get("/local/images/detail")
-def local_image_detail(path: str = Query(..., description="Relative path e.g. zone/folder/2025/aerial.tif"), db: Session = Depends(get_db)):
+def local_image_detail(path: str = Query(..., description="Relative path e.g. 2025/aerial.tif")):
     _require_dda()
-    entries = scan_images(db=db)
+    entries = scan_images()
     norm = path.replace("\\", "/")
     match = next((e for e in entries if e.path == norm), None)
     if not match:
         safe_resolve(path)
-        match = next((e for e in scan_images(db=db) if e.path == norm), None)
+        match = next((e for e in scan_images() if e.path == norm), None)
     if not match:
         raise HTTPException(status_code=404, detail="Image not found in library scan")
     return entry_to_dict(match, include_meta=True)
@@ -187,24 +144,15 @@ def local_thumb(path: str = Query(...)):
 async def local_upload(
     request: Request,
     file: UploadFile = File(...),
-    zone_id: int = Form(...),
-    folder_id: int = Form(...),
     year: int = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
-    """Upload GeoTIFF into library_sources/{zone}/{folder}/{year}/."""
+    """Upload GeoTIFF into persistent library_sources/YEAR/ (required on HF)."""
     _require_dda()
     require_min_role(user, db, "uploader")
     if year < 1990 or year > 2100:
         raise HTTPException(status_code=400, detail="year must be between 1990 and 2100")
-
-    zone = db.query(DdaZone).filter(DdaZone.id == zone_id).first()
-    folder = db.query(DdaVillage).filter(
-        DdaVillage.id == folder_id, DdaVillage.zone_id == zone_id
-    ).first()
-    if not zone or not folder or not zone.slug or not folder.slug:
-        raise HTTPException(status_code=400, detail="Invalid zone or folder")
 
     original = _safe_basename(file.filename or "upload")
     ext = Path(original).suffix.lower()
@@ -213,79 +161,40 @@ async def local_upload(
         raise HTTPException(status_code=400, detail=f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
 
     root = get_writable_library_root()
-    dest = build_upload_dest(root, zone.slug, folder.slug, year, original)
+    dest = root / str(year) / original
+    if dest.exists():
+        stem = Path(original).stem
+        suffix = Path(original).suffix
+        n = 1
+        while dest.exists():
+            dest = root / str(year) / f"{stem}_{n}{suffix}"
+            n += 1
+
     size = await stream_upload_to_file(file, dest, max_upload_bytes_for_extension(ext))
     rel = dest.relative_to(root).as_posix()
     logger.info("Library upload: %s (%d bytes) -> %s", original, size, dest)
 
-    _upsert_file_index(db, rel, zone.id, folder.id, year, user.id)
-
-    entries = scan_images(db=db, year=year, zone_id=zone_id, folder_id=folder_id)
+    entries = scan_images(year=year)
     match = next((e for e in entries if e.path == rel or e.filename == dest.name), None)
     if match:
         return {"status": "success", "path": match.path, "image": entry_to_dict(match)}
     return {
         "status": "success",
-        "path": rel,
+        "path": f"{year}/{dest.name}",
         "fileSizeBytes": size,
         "writablePath": str(dest),
     }
 
 
-@router.post("/local/reassign")
-def local_reassign(
-    body: ReassignBody,
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    """Move a library file to zone/folder/year and update index."""
-    _require_dda()
-    require_min_role(user, db, "uploader")
-
-    zone = db.query(DdaZone).filter(DdaZone.id == body.zone_id).first()
-    folder = db.query(DdaVillage).filter(
-        DdaVillage.id == body.folder_id, DdaVillage.zone_id == body.zone_id
-    ).first()
-    if not zone or not folder or not zone.slug or not folder.slug:
-        raise HTTPException(status_code=400, detail="Invalid zone or folder")
-
-    src_rel = body.path.replace("\\", "/").strip()
-    src = safe_resolve(src_rel)
-    root = get_writable_library_root()
-    try:
-        src.relative_to(root.resolve())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Only files in writable library can be reassigned")
-
-    dest = build_upload_dest(root, zone.slug, folder.slug, body.year, src.name)
-    if dest.resolve() != src.resolve():
-        shutil.move(str(src), str(dest))
-    new_rel = dest.relative_to(root).as_posix()
-
-    old_idx = db.query(DdaLocalFileIndex).filter(DdaLocalFileIndex.relative_path == src_rel).first()
-    if old_idx:
-        db.delete(old_idx)
-        db.commit()
-    _upsert_file_index(db, new_rel, zone.id, folder.id, body.year, user.id)
-
-    entries = scan_images(db=db)
-    match = next((e for e in entries if e.path == new_rel), None)
-    if not match:
-        raise HTTPException(status_code=500, detail="File moved but not found in scan")
-    return {"status": "success", "path": new_rel, "image": entry_to_dict(match)}
-
-
 @router.post("/local/rescan")
-def local_rescan(db: Session = Depends(get_db)):
+def local_rescan():
     _require_dda()
-    tree = scan_tree(db)
-    total = len(scan_images(db=db))
-    years = scan_years(db=db)
-    info = library_debug_info(db=db)
+    years = scan_years()
+    total = sum(y["imageCount"] for y in years)
+    info = library_debug_info()
     logger.info("Library rescan: %d images, roots=%s", total, info.get("roots"))
     return {
         "ok": True,
-        "tree": tree,
         "years": years,
         "totalImages": total,
         "rootPaths": [str(r) for r in get_library_roots()],
@@ -311,7 +220,7 @@ async def detect_from_library(
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
-    """Run change detection on two library images by relative path."""
+    """Run change detection on two library images by relative path (e.g. 2025/aerial.tif)."""
     _require_dda()
     base_norm = base_path.replace("\\", "/").strip()
     comp_norm = comparison_path.replace("\\", "/").strip()
@@ -336,6 +245,7 @@ async def detect_from_library(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not load images: {exc}") from exc
 
+    # Match dimensions so registration and overlay align with the before image
     if before_pil.size != after_pil.size:
         after_pil = after_pil.resize(before_pil.size, Image.Resampling.LANCZOS)
 

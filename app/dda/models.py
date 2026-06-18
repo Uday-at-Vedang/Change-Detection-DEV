@@ -16,7 +16,6 @@ class DdaZone(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(128), unique=True, nullable=False, index=True)
-    slug = Column(String(64), unique=True, nullable=True, index=True)
     mode = Column(String(32), default="admin")  # admin | grid_parent
     created_at = Column(DateTime, default=_utcnow)
 
@@ -24,33 +23,15 @@ class DdaZone(Base):
 
 
 class DdaVillage(Base):
-    """Folder under a zone (exposed as folder in API/UI)."""
     __tablename__ = "dda_villages"
 
     id = Column(Integer, primary_key=True, index=True)
     zone_id = Column(Integer, ForeignKey("dda_zones.id"), nullable=False, index=True)
     name = Column(String(128), nullable=False, index=True)
-    slug = Column(String(64), nullable=True, index=True)
     created_at = Column(DateTime, default=_utcnow)
 
     zone = relationship("DdaZone", back_populates="villages")
     images = relationship("ImageAsset", back_populates="village")
-
-
-class DdaLocalFileIndex(Base):
-    """Maps library-relative paths to zone/folder/year for traceability."""
-    __tablename__ = "dda_local_file_index"
-
-    id = Column(Integer, primary_key=True, index=True)
-    relative_path = Column(String(512), unique=True, nullable=False, index=True)
-    zone_id = Column(Integer, ForeignKey("dda_zones.id"), nullable=True, index=True)
-    folder_id = Column(Integer, ForeignKey("dda_villages.id"), nullable=True, index=True)
-    year = Column(Integer, nullable=True, index=True)
-    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-
-    zone = relationship("DdaZone")
-    folder = relationship("DdaVillage")
 
 
 class ImageAsset(Base):
