@@ -9,6 +9,7 @@ from .jobs_routes import router as jobs_router
 from .library_routes import router as library_router
 from .local_routes import router as local_router
 from .reports_routes import router as reports_router
+from .review_routes import router as review_router
 from .seed import seed_delhi_hierarchy
 
 logger = logging.getLogger(__name__)
@@ -57,5 +58,6 @@ def setup_dda(app: FastAPI) -> None:
     app.include_router(library_router, prefix="/api/dda", tags=["dda"])
     app.include_router(jobs_router, prefix="/api/dda", tags=["dda-jobs"])
     app.include_router(reports_router, prefix="/api/dda", tags=["dda-reports"])
+    app.include_router(review_router, prefix="/api/dda", tags=["dda-review"])
     app.include_router(local_router, prefix="/api/dda", tags=["dda-local"])
-    logger.info("APP_MODE=dda — DDA routes enabled (library, jobs, reports, local folder)")
+    logger.info("APP_MODE=dda — DDA routes enabled (library, jobs, reports, review, local folder)")

@@ -17,8 +17,9 @@ def _safe_filename(title: str, run_id: int) -> str:
     return f"DDA_Report_{run_id}_{base}.pdf"
 
 
-def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False) -> Dict[str, Any]:
-    regions: List[dict] = json.loads(run.regions_json or "[]")
+def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False, regions: Optional[List[dict]] = None) -> Dict[str, Any]:
+    if regions is None:
+        regions = json.loads(run.regions_json or "[]")
     payload: Dict[str, Any] = {
         "id": run.id,
         "title": run.title,

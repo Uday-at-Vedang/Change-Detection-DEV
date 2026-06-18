@@ -28,7 +28,7 @@ from .auth import (
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
-from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob  # noqa: F401
+from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview  # noqa: F401
 from .dda.config import IS_DDA_MODE
 from .dda.bootstrap import init_dda_database, setup_dda
 from .notifier import send_notification, send_test_email
@@ -483,6 +483,9 @@ def get_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     regions = _load_regions_json(run.regions_json)
+    if IS_DDA_MODE:
+        from .dda.review_service import merge_reviews
+        regions = merge_reviews(db, run.id, regions)
     return {
         "id": run.id,
         "title": run.title,

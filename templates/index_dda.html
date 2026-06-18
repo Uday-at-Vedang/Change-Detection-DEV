@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=9" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=10" />
 </head>
 <body>
   <div class="app dda-app">
@@ -189,6 +189,14 @@
         </button>
       </div>
       <div class="result-stats" id="result-stats"></div>
+      <div class="dda-view-toolbar">
+        <span class="dda-view-label">View:</span>
+        <button type="button" class="dda-view-btn active" data-view="slider">Slider</button>
+        <button type="button" class="dda-view-btn" data-view="t1">Base (T1)</button>
+        <button type="button" class="dda-view-btn" data-view="t2">Comparison (T2)</button>
+        <button type="button" class="dda-view-btn" data-view="overlay">Overlay</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-locate-btn" title="Locate selected region" disabled>Locate</button>
+      </div>
       <div class="zoom-slider-section">
         <div class="zoom-controls">
           <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
@@ -216,6 +224,14 @@
           </div>
         </div>
       </div>
+      <div class="dda-review-bar" id="dda-review-bar">
+        <span class="dda-review-summary dim" id="dda-review-summary"></span>
+        <div class="dda-review-actions">
+          <a class="btn btn-secondary btn-sm" id="dda-export-csv" href="#" download>Export CSV</a>
+          <a class="btn btn-secondary btn-sm" id="dda-export-confirmed" href="#" download>Export confirmed</a>
+          <button type="button" class="btn btn-primary btn-sm" id="dda-submit-dept">Submit confirmed</button>
+        </div>
+      </div>
       <div class="regions-table-wrap">
         <table class="regions-table" id="regions-table">
           <thead>
@@ -232,6 +248,8 @@
               <th>Stories</th>
               <th>Height</th>
               <th>Stage</th>
+              <th>Review</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="regions-tbody"></tbody>
@@ -243,7 +261,7 @@
 
   <script src="/static/js/dda/app.js?v=11"></script>
   <script src="/static/js/dda/library.js?v=6"></script>
-  <script src="/static/js/dda/result.js?v=4"></script>
+  <script src="/static/js/dda/result.js?v=5"></script>
   <script src="/static/js/dda/compare.js?v=8"></script>
   <script src="/static/js/dda/reports.js?v=3"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>

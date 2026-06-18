@@ -132,6 +132,8 @@ def _run_detail(db: Session, run: DetectionRun, user_id: int) -> dict:
         raise HTTPException(status_code=403, detail="Not allowed")
 
     regions = json.loads(run.regions_json or "[]")
+    from .review_service import merge_reviews
+    regions = merge_reviews(db, run.id, regions)
     overlay_b64 = ""
     if run.overlay_path:
         overlay_file = DATA_DIR / run.overlay_path

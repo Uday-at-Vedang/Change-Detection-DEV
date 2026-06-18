@@ -15,6 +15,7 @@ from ..models import DetectionRun
 from ..notifier import send_notification
 from .config import get_public_base_url
 from .report_pdf import build_report_dict, generate_report_pdf
+from .review_service import load_regions, merge_reviews
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,7 +43,8 @@ def get_report(run_id: int, db: Session = Depends(get_db)):
     _require_dda()
     user = get_or_create_guest_user(db)
     run = _get_user_run(db, run_id, user.id)
-    data = build_report_dict(run, include_overlay_b64=True)
+    regions = merge_reviews(db, run.id, load_regions(run))
+    data = build_report_dict(run, include_overlay_b64=True, regions=regions)
     data["reportUrl"] = f"{get_public_base_url()}/dda/reports/{run.id}"
     return data
 

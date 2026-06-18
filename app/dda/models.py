@@ -88,3 +88,18 @@ class DetectionJob(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class RegionReview(Base):
+    """Per-region human review state (FR-08)."""
+    __tablename__ = "dda_region_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, ForeignKey("detection_runs.id"), nullable=False, index=True)
+    region_id = Column(Integer, nullable=False, index=True)
+    status = Column(String(32), default="pending")  # pending|confirmed|false_positive|submitted
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    notes = Column(Text, default="")
+    reviewed_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)

@@ -157,6 +157,7 @@ Expected: `"appMode": "dda"`, `"status": "ok"`.
 2. **Change Detection** — pick Base (T1) and Comparison (T2), run detection (async jobs on HF; sync locally).
 3. **Reports** — history, PDF download, browser report at `/dda/reports/{id}`.
 4. **Bell icon** — in-app notifications for completed jobs.
+5. **Review (FR-08)** — Confirm / False Positive per region, export confirmed CSV, submit to dept API (`DEPT_API_URL`).
 
 ---
 
