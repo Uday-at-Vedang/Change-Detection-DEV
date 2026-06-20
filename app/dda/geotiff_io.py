@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from PIL import Image
 
@@ -163,6 +163,76 @@ def raster_to_preview_png(src_path: Path, dest_path: Path, max_side: int = 512) 
     except Exception as exc:
         logger.warning("Preview failed for %s: %s", src_path.name, exc)
         write_placeholder_png(dest_path, src_path.name, max_side)
+
+
+@dataclass
+class GeorefInfo:
+    transform: Any
+    crs: Any
+    width: int
+    height: int
+    bounds_wgs84: Optional[Tuple[float, float, float, float]]
+
+
+def read_georef(path: Path) -> Optional[GeorefInfo]:
+    """Read raster affine transform and WGS84 bounds when rasterio is available."""
+    ext = path.suffix.lower()
+    if ext not in (".tif", ".tiff"):
+        return None
+    try:
+        import rasterio
+        from rasterio.warp import transform_bounds
+
+        with rasterio.open(path) as src:
+            if src.crs is None:
+                return None
+            bounds = None
+            try:
+                w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+                bounds = (float(w), float(s), float(e), float(n))
+            except Exception as exc:
+                logger.warning("Could not transform bounds to WGS84 for %s: %s", path.name, exc)
+            return GeorefInfo(
+                transform=src.transform,
+                crs=src.crs,
+                width=int(src.width),
+                height=int(src.height),
+                bounds_wgs84=bounds,
+            )
+    except ImportError:
+        return None
+    except Exception as exc:
+        logger.warning("read_georef failed for %s: %s", path.name, exc)
+        return None
+
+
+def pixel_to_geo_wgs84(
+    x: float,
+    y: float,
+    georef: GeorefInfo,
+    *,
+    detection_width: int,
+    detection_height: int,
+) -> Optional[Tuple[float, float]]:
+    """Map detection pixel (x=col, y=row) to WGS84 (lng, lat)."""
+    if detection_width <= 0 or detection_height <= 0:
+        return None
+    try:
+        from rasterio.transform import xy as transform_xy
+        from rasterio.warp import transform as warp_transform
+
+        scale_x = georef.width / float(detection_width)
+        scale_y = georef.height / float(detection_height)
+        col = float(x) * scale_x
+        row = float(y) * scale_y
+        geo_x, geo_y = transform_xy(georef.transform, row, col, offset="center")
+        if georef.crs and str(georef.crs) != "EPSG:4326":
+            lngs, lats = warp_transform(georef.crs, "EPSG:4326", [geo_x], [geo_y])
+            return float(lngs[0]), float(lats[0])
+        return float(geo_x), float(geo_y)
+    except Exception as exc:
+        logger.warning("pixel_to_geo_wgs84 failed: %s", exc)
+        return None
 
 
 def bounds_to_json(bounds: Optional[Tuple[float, float, float, float]]) -> str:

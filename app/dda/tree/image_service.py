@@ -132,6 +132,13 @@ def list_images_for_node(db: Session, node_id: int) -> List[dict]:
     return [image_to_dict(r, node) for r in rows]
 
 
+def get_image_by_file_path(db: Session, relative_path: str) -> Optional[ImageLibrary]:
+    rel = (relative_path or "").replace("\\", "/").strip().lstrip("/")
+    if not rel:
+        return None
+    return db.query(ImageLibrary).filter(ImageLibrary.file_path == rel).first()
+
+
 def list_all_images(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None) -> List[dict]:
     q = db.query(ImageLibrary, TreeNode).join(TreeNode, ImageLibrary.node_id == TreeNode.id).filter(TreeNode.is_active == True)  # noqa: E712
     if node_id:

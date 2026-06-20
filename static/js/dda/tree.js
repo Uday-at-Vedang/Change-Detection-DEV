@@ -3,14 +3,39 @@
 let treeData = null;
 let imageTypes = [];
 
+const librarySidebar = {
+  containerId: 'lib-tree',
+  searchId: 'lib-tree-search',
+  allBtnId: 'btn-tree-all',
+  getSelectedNode: () => window.ddaState?.selectedNode,
+  onNodeSelect: (node) => {
+    window.ddaState.setNode(node);
+    window.ddaState.refreshImages();
+    syncUploadNodeSelect();
+  },
+  onClearNode: () => {
+    window.ddaState.clearNode();
+    window.ddaState.refreshImages();
+    syncUploadNodeSelect();
+  },
+};
+
+let compareSidebar = null;
+
 function isAdmin() {
   return window.ddaState?.userRole === 'admin';
 }
 
-function renderTreeNodes(nodes, depth = 0) {
+function getSidebars() {
+  const list = [librarySidebar];
+  if (compareSidebar) list.push(compareSidebar);
+  return list;
+}
+
+function renderTreeNodes(nodes, sidebar, depth = 0) {
   if (!nodes || !nodes.length) return '';
-  const filter = (document.getElementById('lib-tree-search')?.value || '').toLowerCase();
-  const sel = window.ddaState?.selectedNode;
+  const filter = (document.getElementById(sidebar.searchId)?.value || '').toLowerCase();
+  const sel = sidebar.getSelectedNode?.();
 
   return nodes.map((node) => {
     const name = node.name || node.nodeName;
@@ -29,12 +54,12 @@ function renderTreeNodes(nodes, depth = 0) {
 
     if (hasKids) {
       return `
-        <details class="dda-tree-node-wrap" open${indent ? '' : ''}>
+        <details class="dda-tree-node-wrap" open>
           <summary class="dda-tree-node-summary ${active ? 'active' : ''}" data-node-id="${node.id}">
             <button type="button" class="dda-tree-node-btn ${active ? 'active' : ''}" data-node-id="${node.id}"
               data-node-path="${escapeHtml(node.nodePath || name)}">${escapeHtml(name)}${count}</button>
           </summary>
-          <div class="dda-tree-children">${renderTreeNodes(children, depth + 1)}</div>
+          <div class="dda-tree-children">${renderTreeNodes(children, sidebar, depth + 1)}</div>
         </details>`;
     }
     return `
@@ -43,49 +68,64 @@ function renderTreeNodes(nodes, depth = 0) {
   }).join('');
 }
 
-function renderTree(tree, types) {
-  const el = document.getElementById('lib-tree');
+function renderTreeSidebar(sidebar, tree, types) {
+  const el = document.getElementById(sidebar.containerId);
   if (!el) return;
-  treeData = tree;
   if (types) imageTypes = types;
 
   const nodes = tree?.tree || tree || [];
-  const allActive = !window.ddaState?.selectedNode?.id;
-  let html = `<button type="button" class="dda-tree-all ${allActive ? 'active' : ''}" id="btn-tree-all">All images</button>`;
-  html += renderTreeNodes(nodes);
+  const sel = sidebar.getSelectedNode?.();
+  const allActive = !sel?.id;
+  const allBtnId = sidebar.allBtnId || `btn-tree-all-${sidebar.containerId}`;
+  let html = `<button type="button" class="dda-tree-all ${allActive ? 'active' : ''}" id="${allBtnId}">All images</button>`;
+  html += renderTreeNodes(nodes, sidebar);
   if (!nodes.length) {
-    html += '<p class="dim">No nodes yet. Admins can use Manage to add zones.</p>';
+    html += '<p class="dim">No nodes yet. Create folders on disk or use Manage to add zones.</p>';
   }
   el.innerHTML = html;
 
-  document.getElementById('btn-tree-all')?.addEventListener('click', () => {
-    window.ddaState.clearNode();
-    window.ddaState.refreshImages();
-    renderTree(treeData, imageTypes);
-    syncUploadNodeSelect();
+  document.getElementById(allBtnId)?.addEventListener('click', () => {
+    sidebar.onClearNode?.();
+    renderAllTrees(treeData, imageTypes);
   });
 
   el.querySelectorAll('.dda-tree-node-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.ddaState.setNode({
+      sidebar.onNodeSelect?.({
         id: parseInt(btn.dataset.nodeId, 10),
         path: btn.dataset.nodePath,
       });
-      window.ddaState.refreshImages();
-      renderTree(treeData, imageTypes);
-      syncUploadNodeSelect();
+      renderAllTrees(treeData, imageTypes);
     });
   });
 }
 
+function renderAllTrees(tree, types) {
+  if (tree) treeData = tree;
+  getSidebars().forEach((sidebar) => renderTreeSidebar(sidebar, treeData, types));
+}
+
+function renderTree(tree, types) {
+  renderAllTrees(tree, types);
+}
+
+function registerCompareTreeSidebar(config) {
+  compareSidebar = config;
+  if (treeData) renderAllTrees(treeData, imageTypes);
+}
+
 document.getElementById('lib-tree-search')?.addEventListener('input', () => {
-  if (treeData) renderTree(treeData, imageTypes);
+  if (treeData) renderAllTrees(treeData, imageTypes);
+});
+
+document.getElementById('compare-tree-search')?.addEventListener('input', () => {
+  if (treeData) renderAllTrees(treeData, imageTypes);
 });
 
 async function loadTree() {
   const data = await ddaApi('GET', '/api/dda/tree');
-  renderTree(data, data.imageTypes);
+  renderAllTrees(data, data.imageTypes);
   populateNodeSelects(data.tree);
   if (typeof populateManageNodeSelect === 'function') populateManageNodeSelect();
   return data;
@@ -93,6 +133,8 @@ async function loadTree() {
 
 window.loadTree = loadTree;
 window.renderTree = renderTree;
+window.renderAllTrees = renderAllTrees;
+window.registerCompareTreeSidebar = registerCompareTreeSidebar;
 
 function flattenNodes(nodes, out = []) {
   (nodes || []).forEach((n) => {

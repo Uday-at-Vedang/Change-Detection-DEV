@@ -84,9 +84,11 @@ document.querySelectorAll('.dda-tab').forEach((btn) => {
 
 async function rescanLibrary() {
   const data = await ddaApi('POST', '/api/dda/local/rescan');
-  if (typeof renderTree === 'function') renderTree({ tree: data.tree }, []);
+  if (typeof renderAllTrees === 'function') renderAllTrees({ tree: data.tree }, []);
+  else if (typeof renderTree === 'function') renderTree({ tree: data.tree }, []);
   if (typeof populateManageNodeSelect === 'function') populateManageNodeSelect();
   await loadLibraryImages();
+  if (typeof loadCompareLibraryGrid === 'function') await loadCompareLibraryGrid();
   return data;
 }
 
@@ -203,7 +205,11 @@ document.getElementById('btn-refresh-lib')?.addEventListener('click', async () =
   btn.disabled = true;
   try {
     const data = await rescanLibrary();
-    showDdaSuccess(`Library refreshed — ${data.totalImages || 0} image(s).`);
+    const sync = data.sync || {};
+    const parts = [`${data.totalImages || 0} image(s)`];
+    if (sync.nodesCreated) parts.push(`${sync.nodesCreated} folder(s) imported`);
+    if (sync.imagesIndexed) parts.push(`${sync.imagesIndexed} image(s) indexed`);
+    showDdaSuccess(`Library synced — ${parts.join(', ')}.`);
   } catch (err) {
     showDdaError(err.message);
   } finally {

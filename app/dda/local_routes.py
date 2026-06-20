@@ -106,6 +106,9 @@ def local_thumb(path: str = Query(...)):
 @router.post("/local/rescan")
 def local_rescan(db: Session = Depends(get_db)):
     _require_dda()
+    from .tree.sync_service import sync_from_filesystem
+
+    sync_stats = sync_from_filesystem(db)
     tree = build_tree(db)
     images = list_all_images(db)
     return {
@@ -113,6 +116,7 @@ def local_rescan(db: Session = Depends(get_db)):
         "tree": tree,
         "totalImages": len(images),
         "storageRoot": str(get_storage_root()),
+        "sync": sync_stats,
     }
 
 
@@ -180,6 +184,7 @@ async def detect_from_library(
             notify_email=notify_email,
             max_size=get_detection_max_side(),
             geo_bounds_path=base_file,
+            base_path=base_norm,
             user_id=user.id,
         )
     except Exception as exc:

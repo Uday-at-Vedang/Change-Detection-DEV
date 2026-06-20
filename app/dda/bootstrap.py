@@ -63,6 +63,9 @@ def init_dda_database():
         from .tree.migration import run_tree_migration
         mig = run_tree_migration(db)
         logger.info("Tree migration: %s", mig)
+        from .tree.sync_service import sync_from_filesystem
+        sync_stats = sync_from_filesystem(db)
+        logger.info("Filesystem sync at startup: %s", sync_stats)
         from .job_runner import reconcile_stale_jobs
         reconcile_stale_jobs(db)
     finally:

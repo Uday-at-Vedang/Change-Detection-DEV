@@ -163,8 +163,9 @@ library_sources/
 ```
 
 - **API:** `GET /api/dda/tree`, `POST /api/dda/tree/nodes`, upload via `POST /api/dda/tree/nodes/{id}/images/upload`
-- **UI:** Recursive tree sidebar, **Manage** (admin) for create/rename/move/delete
+- **UI:** Recursive tree sidebar on Library and Change Detection tabs; **Manage** (admin) for create/rename/move/delete
 - **Storage:** Slug-based disk paths; display names in `node_path`
+- **Local folders:** Create folders under `library_sources/{zone}/{area}/…/` and drop files into `Images/`; click **Refresh** (or restart app) to sync disk → DB via `POST /api/dda/local/rescan`
 - **Legacy:** Flat `library_sources/YEAR/` files auto-migrate to `Unassigned/Legacy/{year}/Images/` on startup
 
 ---
@@ -175,7 +176,7 @@ Run before promoting any DDA feature to production:
 
 1. **Health** — `GET /health` returns `status: ok`, `appMode: dda`, `dda.libraryImages` ≥ 0
 2. **Tree library** — Create zone → area → year nodes (admin); upload GeoTIFF to node; tree + grid show breadcrumb
-3. **Compare** — Select T1/T2 from tree library; Run Detection completes
+3. **Compare** — Tree sidebar filters image grid; T1/T2 dropdowns list all images; Run Detection completes with plausible lat/lng on georeferenced TIFFs
 4. **Viewer** — Slider / T1 / T2 / Overlay modes; click region to locate
 5. **Review** — Confirm and False Positive; Export confirmed CSV; Submit confirmed
 6. **Reports** — PDF download; `/dda/reports/{id}` page; email link (if SMTP configured)

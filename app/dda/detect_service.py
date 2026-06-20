@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_or_create_guest_user
 from ..database import DATA_DIR
 from ..models import DetectionRun
-from .geo_regions import bounds_from_image_path, enrich_regions_geo
+from .geo_regions import enrich_regions_geo, resolve_geo_context
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _serialize_regions(change_regions) -> list:
         {
             "id": int(r["id"]),
             "area": int(r["area"]),
-            "center": {"x": int(r["center"][0]), "y": int(r["center"][1])},
+            "center": {"x": round(float(r["center"][0])), "y": round(float(r["center"][1]))},
             "bbox": {
                 "x": int(r["bbox"][0]),
                 "y": int(r["bbox"][1]),
@@ -79,6 +79,7 @@ def run_detection_and_save(
     notify_email: Optional[str] = None,
     max_size: Optional[int] = None,
     geo_bounds_path: Optional[Path] = None,
+    base_path: str = "",
     user_id: Optional[int] = None,
     job_id: Optional[int] = None,
 ) -> dict:
@@ -158,13 +159,30 @@ def run_detection_and_save(
         logger.warning("Failed to save thumbnails: %s", exc)
 
     regions_serializable = _serialize_regions(change_regions)
-    img_w, img_h = before_for_slider.size
-    bounds = bounds_from_image_path(geo_bounds_path) if geo_bounds_path else None
+    det_w = int(stats.get("image_width") or 0)
+    det_h = int(stats.get("image_height") or 0)
+    if det_w <= 0 or det_h <= 0:
+        det_w, det_h = before_for_slider.size
+
+    geo_ctx = None
+    bounds = None
+    if geo_bounds_path:
+        rel_path = (base_path or "").replace("\\", "/").strip().lstrip("/")
+        if not rel_path:
+            try:
+                from .config import get_storage_root
+                rel_path = geo_bounds_path.resolve().relative_to(get_storage_root().resolve()).as_posix()
+            except Exception:
+                rel_path = geo_bounds_path.name
+        geo_ctx = resolve_geo_context(db, rel_path, geo_bounds_path)
+        bounds = geo_ctx.bounds
+
     regions_serializable = enrich_regions_geo(
         regions_serializable,
-        img_width=img_w,
-        img_height=img_h,
+        img_width=det_w,
+        img_height=det_h,
         bounds=bounds,
+        geo=geo_ctx,
     )
     total_px = int(stats["total_pixels"])
     changed_px = int(stats["changed_pixels"])

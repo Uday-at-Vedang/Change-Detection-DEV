@@ -1,6 +1,6 @@
 /** Change Detection tab — pick library images and run comparison. */
 
-const compareState = { t1: null, t2: null, pickingSlot: null };
+const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [] };
 
 function compareFormatBytes(n) {
   if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
@@ -92,6 +92,9 @@ function setSlot(slotKey, img) {
 
 function findLibraryItem(path) {
   const norm = decodePath(path);
+  const all = compareState.allLibraryItems || [];
+  const fromAll = all.find((i) => i.path === norm);
+  if (fromAll) return fromAll;
   const items = ensureDdaState().libraryItems || [];
   return items.find((i) => i.path === norm) || {
     path: norm,
@@ -99,6 +102,55 @@ function findLibraryItem(path) {
     filename: norm.split('/').pop(),
     thumbUrl: thumbUrlFor(norm),
   };
+}
+
+function compareSelectionTitle() {
+  return compareState.selectedNode?.path || 'All images';
+}
+
+function updateCompareFolderPath() {
+  const el = document.getElementById('compare-folder-path');
+  if (el) el.textContent = compareSelectionTitle();
+}
+
+function renderCompareGrid(items) {
+  const grid = document.getElementById('compare-lib-grid');
+  if (!grid) return;
+
+  if (!items.length) {
+    grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(compareSelectionTitle())}</strong>. Select another folder or click Refresh to sync from disk.</p>`;
+    return;
+  }
+
+  grid.innerHTML = items.map((img) => {
+    const thumb = img.thumbUrl || thumbUrlFor(img.path);
+    const enc = encodePath(img.path);
+    const t1Sel = compareState.t1?.path === img.path ? ' selected-t1' : '';
+    const t2Sel = compareState.t2?.path === img.path ? ' selected-t2' : '';
+    const safeName = img.filename.replace(/</g, '&lt;');
+    return `
+      <div class="dda-compare-card dda-card-img${t1Sel}${t2Sel}" data-image-path="${enc}" draggable="true">
+        ${thumb ? `<img src="${thumb}" alt="" loading="lazy" draggable="false" />` : '<div class="meta">No preview</div>'}
+        <div class="meta">
+          <span class="dim">${escapeHtml(img.breadcrumb || img.nodePath || '')}</span><br/>
+          ${safeName}<br/>
+          <span class="dim">${compareFormatBytes(img.fileSizeBytes)}</span>
+        </div>
+        <div class="dda-compare-assign">
+          <button type="button" class="btn btn-secondary btn-sm" data-assign="t1" data-path="${enc}">T1</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-assign="t2" data-path="${enc}">T2</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.dda-compare-card').forEach((card) => {
+    card.addEventListener('dragstart', (e) => {
+      const path = decodePath(card.dataset.imagePath);
+      e.dataTransfer.setData('application/x-dda-image-path', path);
+      e.dataTransfer.setData('text/plain', path);
+    });
+  });
+  refreshCompareLibrarySelection();
 }
 
 function refreshCompareLibrarySelection() {
@@ -113,47 +165,26 @@ function refreshCompareLibrarySelection() {
 
 async function loadCompareLibraryGrid() {
   const grid = document.getElementById('compare-lib-grid');
+  const title = document.getElementById('compare-grid-title');
   if (!grid) return;
 
   grid.innerHTML = '<p class="dim">Loading library images…</p>';
+  if (title) title.textContent = `Pick from library — ${compareSelectionTitle()}`;
+  updateCompareFolderPath();
+
   try {
-    const items = await ddaApi('GET', '/api/dda/local/images');
-    ensureDdaState().libraryItems = items;
-    populateSelects(items);
+    const allItems = await ddaApi('GET', '/api/dda/local/images');
+    compareState.allLibraryItems = allItems;
+    populateSelects(allItems);
 
-    if (!items.length) {
-      grid.innerHTML = '<p class="dim">No images found. Copy .tif files into <code>library_sources/YEAR/</code> in your project folder, then click <strong>Refresh list</strong>.</p>';
-      return;
-    }
+    const params = new URLSearchParams();
+    if (compareState.selectedNode?.id) params.set('node_id', String(compareState.selectedNode.id));
+    const gridItems = compareState.selectedNode?.id
+      ? await ddaApi('GET', '/api/dda/local/images?' + params.toString())
+      : allItems;
 
-    grid.innerHTML = items.map((img) => {
-      const thumb = img.thumbUrl || thumbUrlFor(img.path);
-      const enc = encodePath(img.path);
-      const t1Sel = compareState.t1?.path === img.path ? ' selected-t1' : '';
-      const t2Sel = compareState.t2?.path === img.path ? ' selected-t2' : '';
-      const safeName = img.filename.replace(/</g, '&lt;');
-      return `
-        <div class="dda-compare-card dda-card-img${t1Sel}${t2Sel}" data-image-path="${enc}" draggable="true">
-          ${thumb ? `<img src="${thumb}" alt="" loading="lazy" draggable="false" />` : '<div class="meta">No preview</div>'}
-          <div class="meta">
-            <span class="dim">${escapeHtml(img.breadcrumb || img.nodePath || '')}</span><br/>
-            ${safeName}<br/>
-            <span class="dim">${compareFormatBytes(img.fileSizeBytes)}</span>
-          </div>
-          <div class="dda-compare-assign">
-            <button type="button" class="btn btn-secondary btn-sm" data-assign="t1" data-path="${enc}">T1</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-assign="t2" data-path="${enc}">T2</button>
-          </div>
-        </div>`;
-    }).join('');
-
-    grid.querySelectorAll('.dda-compare-card').forEach((card) => {
-      card.addEventListener('dragstart', (e) => {
-        const path = decodePath(card.dataset.imagePath);
-        e.dataTransfer.setData('application/x-dda-image-path', path);
-        e.dataTransfer.setData('text/plain', path);
-      });
-    });
+    ensureDdaState().libraryItems = gridItems;
+    renderCompareGrid(gridItems);
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
     if (typeof showDdaError === 'function') showDdaError(err.message);
@@ -175,9 +206,19 @@ async function openPicker(slotKey) {
 
   let items = ensureDdaState().libraryItems || [];
   try {
-    items = await ddaApi('GET', '/api/dda/local/images');
-    ensureDdaState().libraryItems = items;
-    populateSelects(items);
+    if (compareState.selectedNode?.id) {
+      const params = new URLSearchParams();
+      params.set('node_id', String(compareState.selectedNode.id));
+      items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
+    } else {
+      items = compareState.allLibraryItems.length
+        ? compareState.allLibraryItems
+        : await ddaApi('GET', '/api/dda/local/images');
+      compareState.allLibraryItems = items;
+    }
+    populateSelects(compareState.allLibraryItems.length
+      ? compareState.allLibraryItems
+      : items);
   } catch (err) {
     list.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
     return;
@@ -272,7 +313,23 @@ function setupCompareInteractions() {
     });
   });
 
-  document.getElementById('btn-compare-refresh')?.addEventListener('click', () => loadCompareLibraryGrid());
+  document.getElementById('btn-compare-refresh')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-compare-refresh');
+    btn.disabled = true;
+    try {
+      const data = await window.ddaState.rescan();
+      const sync = data.sync || {};
+      const parts = [`${data.totalImages || 0} image(s)`];
+      if (sync.nodesCreated) parts.push(`${sync.nodesCreated} folder(s) imported`);
+      if (sync.imagesIndexed) parts.push(`${sync.imagesIndexed} image(s) indexed`);
+      if (typeof showDdaSuccess === 'function') showDdaSuccess(`Library synced — ${parts.join(', ')}.`);
+      await loadCompareLibraryGrid();
+    } catch (err) {
+      if (typeof showDdaError === 'function') showDdaError(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   document.getElementById('dda-picker-close')?.addEventListener('click', closePicker);
   document.getElementById('dda-picker-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'dda-picker-modal') closePicker();
@@ -423,11 +480,31 @@ let compareInitialized = false;
 
 function initCompareTab() {
   if (!compareInitialized) {
+    if (typeof registerCompareTreeSidebar === 'function') {
+      registerCompareTreeSidebar({
+        containerId: 'compare-tree',
+        searchId: 'compare-tree-search',
+        allBtnId: 'btn-compare-tree-all',
+        getSelectedNode: () => compareState.selectedNode,
+        onNodeSelect: (node) => {
+          compareState.selectedNode = node;
+          loadCompareLibraryGrid();
+        },
+        onClearNode: () => {
+          compareState.selectedNode = null;
+          loadCompareLibraryGrid();
+        },
+      });
+    }
     setupCompareInteractions();
     compareInitialized = true;
   }
   updateRunButton();
-  loadCompareLibraryGrid();
+  if (typeof loadTree === 'function') {
+    loadTree().then(() => loadCompareLibraryGrid()).catch(() => loadCompareLibraryGrid());
+  } else {
+    loadCompareLibraryGrid();
+  }
 }
 
 window.loadCompareLibraryGrid = loadCompareLibraryGrid;
