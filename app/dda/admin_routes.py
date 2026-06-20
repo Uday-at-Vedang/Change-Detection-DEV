@@ -12,7 +12,7 @@ from ..database import DATA_DIR, get_db
 from ..models import DetectionRun, User
 from .dda_auth import current_dda_user, get_user_role, require_min_role
 from .job_runner import is_job_runner_busy, reconcile_stale_jobs
-from .local_library import scan_images
+from .tree.image_service import list_all_images
 from .models import DetectionJob, RegionReview
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def admin_status(
     disk = shutil.disk_usage(DATA_DIR)
     return {
         "role": get_user_role(db, user),
-        "libraryImages": len(scan_images()),
+        "libraryImages": len(list_all_images(db)),
         "detectionRuns": runs,
         "jobsQueued": jobs_queued,
         "jobsRunning": jobs_running,

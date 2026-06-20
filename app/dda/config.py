@@ -44,12 +44,26 @@ def get_writable_library_root() -> Path:
     return (DATA_DIR / "library_sources").resolve()
 
 
-def get_library_roots() -> List[Path]:
-    """Folders scanned for year-based images."""
-    roots: List[Path] = []
+def get_storage_root() -> Path:
+    """Tree library root (doc: root_directory / STORAGE_ROOT)."""
+    explicit = os.environ.get("STORAGE_ROOT", "").strip()
+    if explicit:
+        return Path(explicit).resolve()
     if os.environ.get("LOCAL_LIBRARY_ROOT"):
-        roots.append(Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve())
-    # Writable data dir first on Hugging Face (where uploads land)
+        return Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve()
+    return get_writable_library_root()
+
+
+def get_library_roots() -> List[Path]:
+    """Folders scanned for library images (tree storage root)."""
+    roots: List[Path] = []
+    sr = get_storage_root()
+    if sr not in roots:
+        roots.append(sr)
+    if os.environ.get("LOCAL_LIBRARY_ROOT"):
+        p = Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve()
+        if p not in roots:
+            roots.append(p)
     if is_hf_hosted():
         wr = get_writable_library_root()
         if wr not in roots:

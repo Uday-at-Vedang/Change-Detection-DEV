@@ -17,7 +17,7 @@ from .job_runner import (
     is_job_runner_busy,
     job_to_dict,
 )
-from .local_library import safe_resolve
+from .local_routes import safe_resolve
 from .models import DetectionJob
 
 logger = logging.getLogger(__name__)

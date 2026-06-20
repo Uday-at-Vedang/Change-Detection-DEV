@@ -49,7 +49,7 @@ function renderSlotPreview(slotKey, selection) {
   const thumb = selection.thumbUrl || thumbUrlFor(selection.path);
   wrap.innerHTML = `
     <img class="dda-slot-preview" src="${thumb}" alt="" />
-    <div class="dda-slot-meta"><strong>${selection.year}</strong> — ${selection.filename}</div>`;
+    <div class="dda-slot-meta">${escapeHtml(selection.label || selection.filename)}</div>`;
 }
 
 function populateSelects(items) {
@@ -59,7 +59,7 @@ function populateSelects(items) {
     const current = sel.value;
     const label = id === 'select-t1' ? '— Choose base image —' : '— Choose comparison image —';
     sel.innerHTML = `<option value="">${label}</option>` +
-      items.map((img) => `<option value="${encodePath(img.path)}">${img.year} — ${img.filename}</option>`).join('');
+      items.map((img) => `<option value="${encodePath(img.path)}">${escapeHtml(img.breadcrumb || img.nodePath || img.filename)}</option>`).join('');
     if (current) sel.value = current;
   });
 }
@@ -68,7 +68,7 @@ function setSlot(slotKey, img) {
   if (!img || !img.path) return;
   const item = {
     path: img.path,
-    year: img.year,
+    label: img.breadcrumb || img.nodePath || img.filename,
     filename: img.filename,
     thumbUrl: img.thumbUrl || thumbUrlFor(img.path),
   };
@@ -95,7 +95,7 @@ function findLibraryItem(path) {
   const items = ensureDdaState().libraryItems || [];
   return items.find((i) => i.path === norm) || {
     path: norm,
-    year: parseInt(norm.split('/')[0], 10) || '',
+    label: norm.split('/').pop(),
     filename: norm.split('/').pop(),
     thumbUrl: thumbUrlFor(norm),
   };
@@ -136,7 +136,7 @@ async function loadCompareLibraryGrid() {
         <div class="dda-compare-card dda-card-img${t1Sel}${t2Sel}" data-image-path="${enc}" draggable="true">
           ${thumb ? `<img src="${thumb}" alt="" loading="lazy" draggable="false" />` : '<div class="meta">No preview</div>'}
           <div class="meta">
-            <strong>${img.year}</strong><br/>
+            <span class="dim">${escapeHtml(img.breadcrumb || img.nodePath || '')}</span><br/>
             ${safeName}<br/>
             <span class="dim">${compareFormatBytes(img.fileSizeBytes)}</span>
           </div>
@@ -191,7 +191,7 @@ async function openPicker(slotKey) {
       return `
       <button type="button" class="dda-picker-item" data-path="${enc}">
         <img src="${img.thumbUrl || thumbUrlFor(img.path)}" alt="" loading="lazy" />
-        <span><strong>${img.year}</strong><br/>${img.filename}</span>
+        <span>${escapeHtml(img.breadcrumb || img.filename)}</span>
       </button>`;
     }).join('');
     list.querySelectorAll('.dda-picker-item').forEach((btn) => {

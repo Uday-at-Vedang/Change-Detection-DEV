@@ -1,16 +1,16 @@
-"""API for reading images from local library_sources/ year folders."""
+"""Slim local helpers: thumb, resolve, detect — backed by tree library."""
 import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from PIL import Image
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from .dda_auth import current_dda_user, require_min_role
+from .dda_auth import current_dda_user
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
 
@@ -20,19 +20,12 @@ from .config import (
     geotiff_io_available,
     get_detection_max_side,
     get_library_roots,
-    get_writable_library_root,
+    get_storage_root,
     is_hf_hosted,
-    max_upload_bytes_for_extension,
 )
-from .local_library import (
-    entry_to_dict,
-    get_or_build_thumb,
-    library_debug_info,
-    safe_resolve,
-    scan_images,
-    scan_years,
-)
-from .upload_io import stream_upload_to_file
+from .tree.image_service import get_or_build_thumb, list_all_images
+from .tree.path_service import resolve_file
+from .tree.tree_service import build_tree
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -46,37 +39,35 @@ def _require_dda():
         )
 
 
-def _safe_basename(filename: str) -> str:
-    name = Path(filename or "upload").name
-    if not name or name in (".", ".."):
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    return name
+def safe_resolve(relative_path: str) -> Path:
+    try:
+        return resolve_file(relative_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image file not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/local/config")
 def local_library_config():
     _require_dda()
-    roots = [str(r) for r in get_library_roots()]
-    writable = str(get_writable_library_root())
+    storage = str(get_storage_root())
     hosted = is_hf_hosted()
-    if hosted:
-        instructions = (
-            "On Hugging Face, images must be uploaded below (saved to persistent storage) "
-            "or copied into the writable folder shown. Files on your PC are not visible here."
-        )
-    else:
-        instructions = (
-            "Copy .tif images into library_sources/YEAR/ in your project folder, then Refresh. "
-            "Or use Upload to save into data/library_sources/."
-        )
+    instructions = (
+        "Select a node in the tree, choose image type, and upload. "
+        "Files are stored under {zone}/{area}/…/Images/ in persistent storage."
+        if hosted
+        else "Use the tree library to organize images by zone/area/year, or upload via the form."
+    )
     return {
-        "source": "local_folder",
+        "source": "tree_library",
         "isHosted": hosted,
         "spaceId": __import__("os").environ.get("SPACE_ID", ""),
         "appMode": "dda" if IS_DDA_MODE else "legacy",
-        "rootPath": roots[0] if roots else "",
-        "rootPaths": roots,
-        "writablePath": writable,
+        "rootPath": storage,
+        "rootPaths": [str(r) for r in get_library_roots()],
+        "writablePath": storage,
+        "storageRoot": storage,
         "instructions": instructions,
         "geotiffEnabled": geotiff_io_available(),
         "detectionMaxSide": get_detection_max_side(),
@@ -86,40 +77,14 @@ def local_library_config():
     }
 
 
-@router.get("/local/debug")
-def local_debug():
-    _require_dda()
-    return library_debug_info()
-
-
-@router.get("/local/years")
-def local_years():
-    _require_dda()
-    return {"years": scan_years(), "rootPaths": [str(r) for r in get_library_roots()]}
-
-
 @router.get("/local/images")
 def local_images(
-    year: Optional[int] = Query(None),
+    node_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
 ):
     _require_dda()
-    entries = scan_images(year=year, query=q)
-    return [entry_to_dict(e) for e in entries]
-
-
-@router.get("/local/images/detail")
-def local_image_detail(path: str = Query(..., description="Relative path e.g. 2025/aerial.tif")):
-    _require_dda()
-    entries = scan_images()
-    norm = path.replace("\\", "/")
-    match = next((e for e in entries if e.path == norm), None)
-    if not match:
-        safe_resolve(path)
-        match = next((e for e in scan_images() if e.path == norm), None)
-    if not match:
-        raise HTTPException(status_code=404, detail="Image not found in library scan")
-    return entry_to_dict(match, include_meta=True)
+    return list_all_images(db, node_id=node_id, query=q)
 
 
 @router.get("/local/thumb")
@@ -128,8 +93,6 @@ def local_thumb(path: str = Query(...)):
     try:
         thumb = get_or_build_thumb(path)
         return FileResponse(thumb, media_type="image/png")
-    except HTTPException:
-        raise
     except Exception as exc:
         logger.warning("Thumb endpoint fallback for %s: %s", path, exc)
         from .config import LOCAL_THUMB_CACHE
@@ -140,66 +103,16 @@ def local_thumb(path: str = Query(...)):
         return FileResponse(cache, media_type="image/png")
 
 
-@router.post("/local/upload")
-async def local_upload(
-    request: Request,
-    file: UploadFile = File(...),
-    year: int = Form(...),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    """Upload GeoTIFF into persistent library_sources/YEAR/ (required on HF)."""
-    _require_dda()
-    require_min_role(user, db, "uploader")
-    if year < 1990 or year > 2100:
-        raise HTTPException(status_code=400, detail="year must be between 1990 and 2100")
-
-    original = _safe_basename(file.filename or "upload")
-    ext = Path(original).suffix.lower()
-    from .config import ALLOWED_EXTENSIONS
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
-
-    root = get_writable_library_root()
-    dest = root / str(year) / original
-    if dest.exists():
-        stem = Path(original).stem
-        suffix = Path(original).suffix
-        n = 1
-        while dest.exists():
-            dest = root / str(year) / f"{stem}_{n}{suffix}"
-            n += 1
-
-    size = await stream_upload_to_file(file, dest, max_upload_bytes_for_extension(ext))
-    rel = dest.relative_to(root).as_posix()
-    logger.info("Library upload: %s (%d bytes) -> %s", original, size, dest)
-
-    entries = scan_images(year=year)
-    match = next((e for e in entries if e.path == rel or e.filename == dest.name), None)
-    if match:
-        return {"status": "success", "path": match.path, "image": entry_to_dict(match)}
-    return {
-        "status": "success",
-        "path": f"{year}/{dest.name}",
-        "fileSizeBytes": size,
-        "writablePath": str(dest),
-    }
-
-
 @router.post("/local/rescan")
-def local_rescan():
+def local_rescan(db: Session = Depends(get_db)):
     _require_dda()
-    years = scan_years()
-    total = sum(y["imageCount"] for y in years)
-    info = library_debug_info()
-    logger.info("Library rescan: %d images, roots=%s", total, info.get("roots"))
+    tree = build_tree(db)
+    images = list_all_images(db)
     return {
         "ok": True,
-        "years": years,
-        "totalImages": total,
-        "rootPaths": [str(r) for r in get_library_roots()],
-        "writablePath": str(get_writable_library_root()),
-        "debug": info,
+        "tree": tree,
+        "totalImages": len(images),
+        "storageRoot": str(get_storage_root()),
     }
 
 
@@ -220,7 +133,7 @@ async def detect_from_library(
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
-    """Run change detection on two library images by relative path (e.g. 2025/aerial.tif)."""
+    """Run change detection on two library images by relative path."""
     _require_dda()
     base_norm = base_path.replace("\\", "/").strip()
     comp_norm = comparison_path.replace("\\", "/").strip()
@@ -245,11 +158,8 @@ async def detect_from_library(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not load images: {exc}") from exc
 
-    # Match dimensions so registration and overlay align with the before image
     if before_pil.size != after_pil.size:
         after_pil = after_pil.resize(before_pil.size, Image.Resampling.LANCZOS)
-
-    max_side = get_detection_max_side()
 
     if title == "Untitled run":
         title = f"{Path(base_norm).name} vs {Path(comp_norm).name}"
@@ -268,7 +178,7 @@ async def detect_from_library(
             detection_sensitivity=detection_sensitivity,
             min_region_area=min_region_area,
             notify_email=notify_email,
-            max_size=max_side,
+            max_size=get_detection_max_side(),
             geo_bounds_path=base_file,
             user_id=user.id,
         )

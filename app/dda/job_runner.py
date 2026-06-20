@@ -17,7 +17,7 @@ from ..models import DetectionRun
 from .config import get_detection_max_side
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
-from .local_library import safe_resolve
+from .local_routes import safe_resolve
 from .models import DetectionJob
 
 logger = logging.getLogger(__name__)

@@ -133,7 +133,8 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 | Variable | Purpose |
 |----------|---------|
 | `APP_MODE` | Set to `dda` on **satdetect-dev** only (enables DDA library UI) |
-| `LOCAL_LIBRARY_ROOT` | Path to year folders (default: `library_sources/` in project) |
+| `STORAGE_ROOT` | Tree library root directory (default: `data/library_sources/`) |
+| `LOCAL_LIBRARY_ROOT` | Alias for storage root override |
 | `MAX_GEOTIFF_MB` | Library GeoTIFF upload cap (default **5120** = 5 GB on dev) |
 | `MAX_IMAGE_MB` | PNG/JPEG library cap (default 50 MB) |
 | `SECRET_KEY` | Optional legacy JWT setting (login disabled) |
@@ -148,13 +149,33 @@ Dev Space can omit `SECRET_KEY` (login is disabled on both Spaces).
 
 ---
 
+## Tree library layout (unlimited depth)
+
+Images are organized in a **configurable tree** (zone → area → year → image type, or any depth):
+
+```text
+library_sources/
+  central_delhi/
+    karol_bagh/
+      2025/
+        Images/
+          satellite.tif
+```
+
+- **API:** `GET /api/dda/tree`, `POST /api/dda/tree/nodes`, upload via `POST /api/dda/tree/nodes/{id}/images/upload`
+- **UI:** Recursive tree sidebar, **Manage** (admin) for create/rename/move/delete
+- **Storage:** Slug-based disk paths; display names in `node_path`
+- **Legacy:** Flat `library_sources/YEAR/` files auto-migrate to `Unassigned/Legacy/{year}/Images/` on startup
+
+---
+
 ## UAT checklist (satdetect-dev)
 
 Run before promoting any DDA feature to production:
 
 1. **Health** — `GET /health` returns `status: ok`, `appMode: dda`, `dda.libraryImages` ≥ 0
-2. **Library** — Upload GeoTIFF to year folder; Refresh shows image; thumb loads
-3. **Compare** — Select T1/T2; Run Detection completes (async job or sync fallback)
+2. **Tree library** — Create zone → area → year nodes (admin); upload GeoTIFF to node; tree + grid show breadcrumb
+3. **Compare** — Select T1/T2 from tree library; Run Detection completes
 4. **Viewer** — Slider / T1 / T2 / Overlay modes; click region to locate
 5. **Review** — Confirm and False Positive; Export confirmed CSV; Submit confirmed
 6. **Reports** — PDF download; `/dda/reports/{id}` page; email link (if SMTP configured)
