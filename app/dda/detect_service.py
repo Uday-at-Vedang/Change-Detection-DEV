@@ -80,8 +80,14 @@ def run_detection_and_save(
     max_size: Optional[int] = None,
     geo_bounds_path: Optional[Path] = None,
     user_id: Optional[int] = None,
+    job_id: Optional[int] = None,
 ) -> dict:
     from ..detection_engine import run_detection
+    from .job_progress import update_job_progress
+
+    def _report(pct: int, stage: str) -> None:
+        if job_id is not None:
+            update_job_progress(job_id, pct, stage)
 
     if user_id:
         from ..auth import get_user_by_id
@@ -94,6 +100,12 @@ def run_detection_and_save(
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))
 
+    def _on_engine_progress(engine_pct: int, stage: str) -> None:
+        # Map engine 0–100% into job 15–78%
+        job_pct = 15 + int(engine_pct * 0.63)
+        _report(job_pct, stage)
+
+    _report(15, "Running detection")
     change_mask, result_image, stats, change_regions = run_detection(
         before_pil,
         after_pil,
@@ -103,9 +115,10 @@ def run_detection_and_save(
         detection_sensitivity=detection_sensitivity,
         min_region_area=min_region_area,
         max_size=max_size,
+        on_progress=_on_engine_progress,
     )
 
-    # Save before image at detection resolution (matches overlay coordinates for slider)
+    _report(80, "Saving results")
     from ..detection_engine import preprocess_image, get_detection_max_size
 
     before_for_slider = Image.fromarray(
@@ -178,10 +191,12 @@ def run_detection_and_save(
     db.commit()
     db.refresh(run)
 
+    _report(90, "Preparing report")
     overlay_b64 = base64.b64encode(overlay_path.read_bytes()).decode("utf-8")
     notification_sent = False
     notification_error = None
     if notify_email and notify_email.strip():
+        _report(95, "Sending notification")
         from .config import IS_DDA_MODE, get_public_base_url
         report_url = f"{get_public_base_url()}/dda/reports/{run.id}" if IS_DDA_MODE else ""
         notification_sent, notification_error = send_notification(
@@ -196,6 +211,8 @@ def run_detection_and_save(
             regions=regions_serializable,
             report_url=report_url,
         )
+
+    _report(100, "Complete")
 
     return {
         "id": run.id,

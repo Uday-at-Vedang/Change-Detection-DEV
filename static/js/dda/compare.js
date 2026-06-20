@@ -297,33 +297,67 @@ function showDetectResult(data) {
   else if (typeof showDdaError === 'function') showDdaError('Result viewer failed to load.');
 }
 
-async function runDetectionWithFallback(form, loadingEl) {
-  const hosted = window.ddaState?.localCfg?.isHosted;
-  if (hosted) {
-    loadingEl.textContent = 'Queuing detection job…';
-    try {
-      const queued = await ddaApi('POST', '/api/dda/jobs', { body: form });
-      return await pollJobUntilDone(queued.jobId, loadingEl);
-    } catch (err) {
-      const msg = String(err.message || '');
-      const useSync = msg.includes('Not Found') || msg.includes('404')
-        || msg.includes('503') || msg.includes('409') || msg.includes('busy');
-      if (!useSync) throw err;
-      loadingEl.textContent = 'Running detection (sync fallback)…';
-    }
-  }
-  return ddaApi('POST', '/api/dda/detect/from-library', { body: form }).then((result) => ({ result, jobId: null }));
+function setDetectProgress(pct, stage) {
+  const fill = document.getElementById('detect-progress-fill');
+  const label = document.getElementById('detect-progress-label');
+  const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (fill) fill.style.width = `${clamped}%`;
+  const text = stage ? `${stage} — ${clamped}%` : `${clamped}%`;
+  if (label) label.textContent = text;
 }
 
-async function pollJobUntilDone(jobId, loadingEl) {
+function showDetectProgress() {
+  const wrap = document.getElementById('detect-progress');
+  wrap?.classList.remove('hidden');
+  setDetectProgress(0, 'Starting detection');
+}
+
+function hideDetectProgress(delayMs = 0) {
+  const hide = () => document.getElementById('detect-progress')?.classList.add('hidden');
+  if (delayMs > 0) setTimeout(hide, delayMs);
+  else hide();
+}
+
+async function runDetectionWithFallback(form) {
+  setDetectProgress(2, 'Queuing detection job');
+  try {
+    const queued = await ddaApi('POST', '/api/dda/jobs', { body: form });
+    return await pollJobUntilDone(queued.jobId);
+  } catch (err) {
+    const msg = String(err.message || '');
+    const useSync = msg.includes('Not Found') || msg.includes('404')
+      || msg.includes('503') || msg.includes('409') || msg.includes('busy');
+    if (!useSync) throw err;
+    return runSyncDetectionWithProgress(form);
+  }
+}
+
+async function runSyncDetectionWithProgress(form) {
+  let pct = 5;
+  setDetectProgress(pct, 'Running detection (sync)');
+  const timer = setInterval(() => {
+    pct = Math.min(92, pct + (pct < 50 ? 4 : 2));
+    setDetectProgress(pct, 'Running detection (sync)');
+  }, 1500);
+  try {
+    const result = await ddaApi('POST', '/api/dda/detect/from-library', { body: form });
+    setDetectProgress(100, 'Complete');
+    return { result, jobId: null };
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+async function pollJobUntilDone(jobId) {
   const maxAttempts = 600;
   for (let i = 0; i < maxAttempts; i++) {
     const job = await ddaApi('GET', `/api/dda/jobs/${jobId}`);
     const status = job.status;
-    if (loadingEl) {
-      loadingEl.textContent = `Detection job #${jobId} — ${status}… (${i + 1})`;
-    }
+    const pct = job.progressPct ?? (status === 'queued' ? 0 : 10);
+    const stage = job.progressStage || (status === 'queued' ? 'Queued' : 'Running');
+    setDetectProgress(pct, stage);
     if (status === 'completed') {
+      setDetectProgress(100, 'Complete');
       if (job.result) {
         if (typeof window.refreshDdaNotifications === 'function') window.refreshDdaNotifications();
         return { result: job.result, jobId };
@@ -347,11 +381,9 @@ async function runLibraryDetection() {
     return;
   }
   const btn = document.getElementById('btn-run-job');
-  const loading = document.getElementById('dda-detect-loading');
   if (typeof hideDdaError === 'function') hideDdaError();
   btn.disabled = true;
-  loading?.classList.remove('hidden');
-  loading.textContent = 'Running detection…';
+  showDetectProgress();
 
   const form = new FormData();
   form.append('base_path', compareState.t1.path);
@@ -370,7 +402,7 @@ async function runLibraryDetection() {
   }
 
   try {
-    const { result: data, jobId } = await runDetectionWithFallback(form, loading);
+    const { result: data, jobId } = await runDetectionWithFallback(form);
     if (jobId && typeof window.markDdaJobSeen === 'function') window.markDdaJobSeen(jobId);
     showDetectResult(data);
     if (typeof showDdaSuccess === 'function') {
@@ -383,7 +415,7 @@ async function runLibraryDetection() {
     if (typeof showDdaError === 'function') showDdaError(err.message || 'Detection failed');
   } finally {
     btn.disabled = !(compareState.t1 && compareState.t2);
-    loading?.classList.add('hidden');
+    hideDetectProgress(2000);
   }
 }
 

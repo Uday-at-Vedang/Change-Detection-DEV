@@ -2596,24 +2596,32 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
                   enable_registration=True, enable_normalization=True,
                   detection_sensitivity=0.5, min_region_area=None,
-                  max_size=None):
+                  max_size=None, on_progress=None):
     """Run full detection pipeline; returns change_mask, result_image, stats, regions."""
+    def _prog(pct, stage):
+        if on_progress:
+            on_progress(int(pct), stage)
+
     ms = max_size or get_detection_max_size()
+    _prog(5, "Preprocessing images")
     before_array = preprocess_image(before_pil, max_size=ms)
     after_array = preprocess_image(after_pil, max_size=ms)
 
     registration_ok = False
     reg_meta = {}
     if enable_registration:
+        _prog(20, "Registering images")
         before_array, after_array, registration_ok, reg_meta = register_images(
             before_array, after_array)
     if enable_normalization:
+        _prog(35, "Normalizing radiometry")
         before_array, after_array = normalize_radiometry(before_array, after_array)
 
     alignment_warning = None
     if enable_registration and not registration_ok:
         alignment_warning = ALIGNMENT_WARNING_MSG
 
+    _prog(50, f"Running {method}")
     if method == "AI-Based Deep Learning":
         change_mask, threshold_debug = ai_deep_learning_method(
             before_array, after_array,
@@ -2650,6 +2658,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
     )
 
+    _prog(65, "Analyzing change regions")
     change_regions = analyze_change_regions(
         change_mask,
         after_array,
@@ -2681,12 +2690,14 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             }
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
+    _prog(85, "Building visualization")
     result_image = visualize_changes(
         before_array, after_array, change_mask,
         regions=change_regions, total_pixels=total_pixels,
     )
     changed_pixels = int(np.sum(change_mask > 127))
     change_pct = (changed_pixels / total_pixels * 100.0) if total_pixels else 0.0
+    _prog(95, "Finalizing results")
 
     stats = {
         "total_pixels": total_pixels,

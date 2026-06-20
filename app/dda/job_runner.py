@@ -17,6 +17,7 @@ from ..models import DetectionRun
 from .config import get_detection_max_side
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
+from .job_progress import update_job_progress
 from .local_routes import safe_resolve
 from .models import DetectionJob
 
@@ -60,6 +61,7 @@ def _run_job_sync(job_id: int) -> None:
         job.started_at = _utcnow()
         job.error_message = ""
         db.commit()
+        update_job_progress(job_id, 5, "Starting job")
 
         params = _parse_params(job)
         base_path = params.get("base_path", "")
@@ -67,7 +69,9 @@ def _run_job_sync(job_id: int) -> None:
         if not base_path or not comparison_path:
             raise ValueError("Job missing base_path or comparison_path in params_json")
 
+        update_job_progress(job_id, 8, "Loading images")
         before_pil, after_pil, base_file = _load_pair(base_path, comparison_path)
+        update_job_progress(job_id, 12, "Images loaded")
         title = params.get("title") or f"{Path(base_path).name} vs {Path(comparison_path).name}"
         result = run_detection_and_save(
             db,
@@ -85,7 +89,10 @@ def _run_job_sync(job_id: int) -> None:
             max_size=get_detection_max_side(),
             geo_bounds_path=base_file,
             user_id=job.created_by,
+            job_id=job_id,
         )
+
+        update_job_progress(job_id, 100, "Complete")
 
         job.status = "completed"
         job.run_id = result["id"]
@@ -212,7 +219,10 @@ def create_local_folder_job(
 
 
 def job_to_dict(job: DetectionJob, run: Optional[DetectionRun] = None) -> dict:
+    from .job_progress import get_job_progress
+
     params = _parse_params(job)
+    progress_pct, progress_stage = get_job_progress(params, job.status)
     out = {
         "id": job.id,
         "status": job.status,
@@ -223,6 +233,8 @@ def job_to_dict(job: DetectionJob, run: Optional[DetectionRun] = None) -> dict:
         "runId": job.run_id,
         "errorMessage": job.error_message or "",
         "notifyEmail": job.notify_email or "",
+        "progressPct": progress_pct,
+        "progressStage": progress_stage,
         "createdAt": job.created_at.isoformat() if job.created_at else None,
         "startedAt": job.started_at.isoformat() if job.started_at else None,
         "completedAt": job.completed_at.isoformat() if job.completed_at else None,

@@ -159,7 +159,10 @@
         </div>
         <p class="dim" id="dda-detect-res-hint"></p>
         <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection</button>
-        <p id="dda-detect-loading" class="dim hidden" style="margin-top:0.75rem">Detection runs as a background job — large GeoTIFFs may take several minutes…</p>
+        <div id="detect-progress" class="dda-upload-progress hidden" style="margin-top:0.75rem">
+          <div class="dda-progress-bar"><div id="detect-progress-fill" class="dda-progress-fill"></div></div>
+          <span id="detect-progress-label" class="dim">Starting detection…</span>
+        </div>
       </div>
     </section>
 
@@ -306,7 +309,7 @@
   <script src="/static/js/dda/tree.js?v=1"></script>
   <script src="/static/js/dda/library.js?v=8"></script>
   <script src="/static/js/dda/result.js?v=6"></script>
-  <script src="/static/js/dda/compare.js?v=9"></script>
+  <script src="/static/js/dda/compare.js?v=10"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>
 </body>
