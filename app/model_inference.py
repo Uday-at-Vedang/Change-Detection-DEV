@@ -112,22 +112,67 @@ def get_model_status() -> dict:
         "available": available,
         "detectionMode": mode,
         "device": str(_DEVICE) if _DEVICE is not None else None,
+        "tta": [op or "identity" for op in _resolve_tta_ops()],
         "error": _LOAD_ERROR,
     }
 
 
-def predict_change_mask(img1, img2, threshold=0.5):
+def _logits_to_change_prob(logits, torch):
+    """Robustly convert model logits to a single-channel change probability tile.
+
+    Handles 1-channel (sigmoid), 2+-channel (softmax, change=last channel) and
+    already-2D outputs so a change in the upstream model head does not silently
+    break inference.
     """
-    Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
-    Returns (uint8 mask [0 or 255], float32 score map [0-1]).
-    Use threshold > 1.0 to obtain score map only (empty mask).
-    """
+    t = logits
+    if t.dim() == 4:  # (N, C, H, W)
+        c = t.shape[1]
+        if c == 1:
+            return torch.sigmoid(t)[0, 0]
+        return torch.softmax(t, dim=1)[0, -1]
+    if t.dim() == 3:  # (C, H, W) or (N, H, W)
+        if t.shape[0] == 1:
+            return torch.sigmoid(t)[0]
+        # ambiguous: treat as (N,H,W) single map
+        return torch.sigmoid(t[0])
+    return torch.sigmoid(t)
+
+
+def _resolve_tta_ops():
+    """Choose test-time augmentation flips. Env DETECTION_TTA: off|0 | hflip | full | auto."""
+    mode = os.environ.get("DETECTION_TTA", "auto").strip().lower()
+    if mode in ("0", "off", "none", "false"):
+        return [None]
+    if mode in ("h", "hflip"):
+        return [None, "h"]
+    if mode in ("full", "all"):
+        return [None, "h", "v"]
+    # auto: lighter on CPU (hflip only), fuller on GPU
+    on_cuda = _DEVICE is not None and str(_DEVICE).startswith("cuda")
+    return [None, "h", "v"] if on_cuda else [None, "h"]
+
+
+def _apply_flip(arr, op):
+    if op == "h":
+        return arr[:, ::-1]
+    if op == "v":
+        return arr[::-1, :]
+    return arr
+
+
+def _unflip_map(score, op):
+    if op == "h":
+        return score[:, ::-1]
+    if op == "v":
+        return score[::-1, :]
+    return score
+
+
+def _infer_score_map(img1, img2):
+    """Single-pass tiled inference returning a float32 change-probability map at (h, w)."""
     torch, _, _ = _try_import()
     model, processor = _load_model()
     from PIL import Image as PILImage
-
-    if img1.shape != img2.shape:
-        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
     h, w = img1.shape[:2]
     tile = _TILE_SIZE
@@ -152,8 +197,8 @@ def predict_change_mask(img1, img2, threshold=0.5):
     with torch.no_grad():
         for y0 in range(0, ph - tile + 1, stride):
             for x0 in range(0, pw - tile + 1, stride):
-                t1 = img1[y0:y0+tile, x0:x0+tile]
-                t2 = img2[y0:y0+tile, x0:x0+tile]
+                t1 = np.ascontiguousarray(img1[y0:y0+tile, x0:x0+tile])
+                t2 = np.ascontiguousarray(img2[y0:y0+tile, x0:x0+tile])
 
                 pil1 = PILImage.fromarray(t1)
                 pil2 = PILImage.fromarray(t2)
@@ -163,9 +208,7 @@ def predict_change_mask(img1, img2, threshold=0.5):
 
                 outputs = model(**inputs)
                 logits = outputs.logits
-                probs = torch.softmax(logits, dim=1)
-
-                prob_map = probs[0, 1].cpu().numpy()
+                prob_map = _logits_to_change_prob(logits, torch).cpu().numpy()
 
                 out_h, out_w = prob_map.shape
                 if out_h != tile or out_w != tile:
@@ -177,7 +220,41 @@ def predict_change_mask(img1, img2, threshold=0.5):
 
     count = np.maximum(count, 1e-6)
     avg_score = score_sum / count
-    avg_score = avg_score[:h, :w]
+    return avg_score[:h, :w]
+
+
+def predict_change_mask(img1, img2, threshold=0.5):
+    """
+    Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
+    Averages predictions over test-time augmentation flips (DETECTION_TTA) for
+    higher-accuracy, less boundary-sensitive change maps.
+    Returns (uint8 mask [0 or 255], float32 score map [0-1]).
+    Use threshold > 1.0 to obtain score map only (empty mask).
+    """
+    _load_model()
+
+    if img1.shape != img2.shape:
+        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+
+    h, w = img1.shape[:2]
+    ops = _resolve_tta_ops()
+
+    acc = np.zeros((h, w), dtype=np.float32)
+    n = 0
+    for op in ops:
+        a1 = np.ascontiguousarray(_apply_flip(img1, op))
+        a2 = np.ascontiguousarray(_apply_flip(img2, op))
+        try:
+            s = _infer_score_map(a1, a2)
+        except Exception as exc:
+            logger.warning("TTA pass %s failed: %s", op, exc)
+            continue
+        acc += _unflip_map(s, op)
+        n += 1
+
+    if n == 0:
+        raise RuntimeError("AdaptFormer inference produced no predictions")
+    avg_score = acc / float(n)
 
     mask = (avg_score >= threshold).astype(np.uint8) * 255
     return mask, avg_score

@@ -506,16 +506,46 @@ def compute_ssim_change_map(img1, img2, win_size=11):
 # ---------------------------------------------------------------------------
 
 def compute_lbp(gray, radius=1, n_points=8):
-    """Compute simplified Local Binary Pattern texture descriptor."""
-    h, w = gray.shape
+    """Compute simplified Local Binary Pattern texture descriptor.
+
+    Uses reflect-padded shifts (not np.roll) so opposite image borders do not
+    wrap into each other and create spurious texture-change along the frame.
+    """
+    pad = max(1, int(radius))
+    padded = cv2.copyMakeBorder(gray, pad, pad, pad, pad, cv2.BORDER_REFLECT)
     lbp = np.zeros_like(gray, dtype=np.float32)
+    h, w = gray.shape
     for i in range(n_points):
         angle = 2 * np.pi * i / n_points
         dx = int(round(radius * np.cos(angle)))
         dy = int(round(-radius * np.sin(angle)))
-        shifted = np.roll(np.roll(gray, dy, axis=0), dx, axis=1)
+        shifted = padded[pad + dy:pad + dy + h, pad + dx:pad + dx + w]
         lbp += (shifted >= gray).astype(np.float32)
     return lbp / n_points
+
+
+def _hysteresis_threshold(score, high_thr, low_thr):
+    """Two-level (hysteresis) thresholding on a [0,1] score map.
+
+    Keeps every low-threshold connected component that contains at least one
+    high-threshold "seed" pixel, and drops the rest. This recovers complete
+    change blobs (less fragmentation) while removing isolated weak speckle that
+    a single hard threshold would either cut or admit.
+    """
+    score = score.astype(np.float32)
+    high = (score >= high_thr).astype(np.uint8)
+    if int(high.sum()) == 0:
+        return (high * 255).astype(np.uint8)
+    low = (score >= min(low_thr, high_thr)).astype(np.uint8)
+    num, labels = cv2.connectedComponents(low, connectivity=8)
+    if num <= 1:
+        return (high * 255).astype(np.uint8)
+    seed_labels = np.unique(labels[high > 0])
+    seed_labels = seed_labels[seed_labels != 0]
+    if seed_labels.size == 0:
+        return (high * 255).astype(np.uint8)
+    keep = np.isin(labels, seed_labels)
+    return np.where(keep, 255, 0).astype(np.uint8)
 
 
 def compute_texture_change(img1, img2):
@@ -768,7 +798,9 @@ def fuse_dl_and_classical(dl_score, classical_score, img1, img2, sensitivity=0.5
     final_score = np.where(veg_boost, np.maximum(final_score, classical_score), final_score)
 
     fused_thr = 0.45 + (1.0 - sens) * 0.15
-    change_mask = (final_score >= fused_thr).astype(np.uint8) * 255
+    # Hysteresis grow keeps complete blobs while pruning isolated weak responses
+    fused_low = max(0.25, fused_thr - 0.12)
+    change_mask = _hysteresis_threshold(final_score, fused_thr, fused_low)
     change_mask = _clean_mask(change_mask, sensitivity=sens)
 
     debug = {
@@ -777,6 +809,7 @@ def fuse_dl_and_classical(dl_score, classical_score, img1, img2, sensitivity=0.5
         "T_cl_percentile_q": q,
         "T_cl_score": T_cl,
         "fused_threshold": fused_thr,
+        "fused_low_threshold": fused_low,
         "dl_changed_px": int(np.sum(dl_score >= med_dl)),
         "classical_changed_px": int(np.sum(classical_score >= T_cl)),
         "fused_changed_px": int(np.sum(change_mask > 127)),
@@ -793,7 +826,10 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5, registration_ok=True):
     # Looser percentile than gated fusion — keeps recall for multi-region detection
     q = float(np.clip(0.93 - (sens - 0.5) * 0.06, 0.85, 0.96))
     thr_score = float(np.quantile(classical_score, q))
-    change_mask = (classical_score >= thr_score).astype(np.uint8) * 255
+    # Hysteresis: grow seeds down to a lower percentile to recover full change blobs
+    q_low = float(np.clip(q - 0.06, 0.78, q))
+    low_score = float(np.quantile(classical_score, q_low))
+    change_mask = _hysteresis_threshold(classical_score, thr_score, low_score)
     change_mask = _clean_mask(change_mask, sensitivity=sens)
 
     debug = {
@@ -801,6 +837,8 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5, registration_ok=True):
         "threshold_used": int(thr_score * 255),
         "threshold_percentile_q": q,
         "threshold_score": thr_score,
+        "hysteresis_low_q": q_low,
+        "hysteresis_low_score": low_score,
         "sensitivity": float(sensitivity),
         "channel_weights": {
             "color": round(weights[0], 4),
