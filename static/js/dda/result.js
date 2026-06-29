@@ -183,7 +183,12 @@ function showDdaResult(data) {
     tr.dataset.regionId = r.id;
     const subType = r.subType || '—';
     const ddaType = r.ddaChangeType || '—';
-    const latLng = r.latLng ? `${r.latLng.lat}, ${r.latLng.lng}` : '—';
+    const mapsUrl = r.latLng
+      ? `https://www.google.com/maps/search/?api=1&query=${r.latLng.lat},${r.latLng.lng}`
+      : null;
+    const latLng = r.latLng
+      ? `<a href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">${r.latLng.lat}, ${r.latLng.lng}</a>`
+      : '—';
     const severity = (r.severity || 'minor').toLowerCase();
     const stories = r.estimatedStories != null ? r.estimatedStories : '—';
     const height = r.estimatedHeightM != null ? r.estimatedHeightM + ' m' : '—';
@@ -208,6 +213,7 @@ function showDdaResult(data) {
         <button type="button" class="btn btn-secondary btn-sm btn-review-ok" data-action="confirmed" ${locked ? 'disabled' : ''} title="Confirm">✓</button>
         <button type="button" class="btn btn-secondary btn-sm btn-review-fp" data-action="false_positive" ${locked ? 'disabled' : ''} title="False positive">✗</button>
         <button type="button" class="btn btn-secondary btn-sm btn-review-locate" title="Locate">◎</button>
+        ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">Map</a>` : ''}
       </td>
     `;
     return tr;

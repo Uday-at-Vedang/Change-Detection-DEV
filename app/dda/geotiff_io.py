@@ -7,11 +7,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .config import get_detection_max_side
 
 logger = logging.getLogger(__name__)
+
+# World-file extensions per image type (ESRI convention + generic .wld)
+_WORLD_FILE_EXTS = {
+    ".tif": (".tfw", ".tifw", ".wld"),
+    ".tiff": (".tfw", ".tifw", ".wld"),
+    ".jpg": (".jgw", ".jpgw", ".wld"),
+    ".jpeg": (".jgw", ".jpgw", ".wld"),
+    ".png": (".pgw", ".pngw", ".wld"),
+}
 
 
 @dataclass
@@ -22,6 +31,66 @@ class IngestResult:
     crs: str
     bounds_wgs84: Optional[Tuple[float, float, float, float]]  # west, south, east, north
     format: str
+    georef_source: str = "none"  # embedded | worldfile | none
+
+
+def _find_world_file(path: Path) -> Optional[Path]:
+    """Locate an ESRI world file or generic .wld sidecar next to an image."""
+    ext = path.suffix.lower()
+    candidates = []
+    for wext in _WORLD_FILE_EXTS.get(ext, (".wld",)):
+        candidates.append(path.with_suffix(wext))
+    # e.g. photo.jpg.wld
+    candidates.append(Path(str(path) + ".wld"))
+    for cand in candidates:
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _read_prj_crs(path: Path):
+    """Read a .prj sidecar (WKT) and return a rasterio CRS, or default EPSG:4326."""
+    try:
+        from rasterio.crs import CRS
+    except Exception:
+        return None
+    prj = path.with_suffix(".prj")
+    if prj.is_file():
+        try:
+            return CRS.from_wkt(prj.read_text(encoding="utf-8", errors="ignore").strip())
+        except Exception as exc:
+            logger.warning("Could not parse .prj for %s: %s", path.name, exc)
+    try:
+        return CRS.from_epsg(4326)
+    except Exception:
+        return None
+
+
+def _world_file_georef(path: Path, width: int, height: int):
+    """Build (transform, crs, bounds_wgs84) from a world file sidecar, or None."""
+    wf = _find_world_file(path)
+    if wf is None:
+        return None
+    try:
+        from rasterio.transform import Affine, array_bounds
+        from rasterio.warp import transform_bounds
+
+        nums = [float(x.strip()) for x in wf.read_text().split() if x.strip()]
+        if len(nums) < 6:
+            return None
+        a, d, b, e, c, f = nums[:6]
+        # World file stores center of top-left pixel; shift to corner for GDAL/affine
+        gt_c = c - a / 2.0 - b / 2.0
+        gt_f = f - d / 2.0 - e / 2.0
+        transform = Affine(a, b, gt_c, d, e, gt_f)
+        crs = _read_prj_crs(path)
+        west, south, east, north = array_bounds(height, width, transform)
+        if crs is not None and str(crs) not in ("EPSG:4326", "OGC:CRS84"):
+            west, south, east, north = transform_bounds(crs, "EPSG:4326", west, south, east, north)
+        return transform, crs, (float(west), float(south), float(east), float(north))
+    except Exception as exc:
+        logger.warning("World-file georef failed for %s: %s", path.name, exc)
+        return None
 
 
 def _read_with_rasterio(path: Path) -> IngestResult:
@@ -38,13 +107,15 @@ def _read_with_rasterio(path: Path) -> IngestResult:
                 bounds = (float(w), float(s), float(e), float(n))
             except Exception as exc:
                 logger.warning("Could not transform bounds to WGS84: %s", exc)
+        ext = path.suffix.lower()
         return IngestResult(
             width=int(src.width),
             height=int(src.height),
             has_georef=has_georef,
             crs=crs,
             bounds_wgs84=bounds,
-            format="geotiff",
+            format="geotiff" if ext in (".tif", ".tiff") else "image",
+            georef_source="embedded" if has_georef else "none",
         )
 
 
@@ -53,6 +124,15 @@ def _read_with_pillow(path: Path) -> IngestResult:
         w, h = img.size
     ext = path.suffix.lower()
     fmt = "geotiff" if ext in (".tif", ".tiff") else "image"
+    # Try a world-file sidecar for plain images / non-georeferenced TIFFs
+    wf = _world_file_georef(path, w, h)
+    if wf is not None:
+        _, crs, bounds = wf
+        return IngestResult(
+            width=w, height=h, has_georef=bounds is not None,
+            crs=str(crs) if crs else "", bounds_wgs84=bounds,
+            format=fmt, georef_source="worldfile" if bounds else "none",
+        )
     return IngestResult(
         width=w,
         height=h,
@@ -60,18 +140,32 @@ def _read_with_pillow(path: Path) -> IngestResult:
         crs="",
         bounds_wgs84=None,
         format=fmt,
+        georef_source="none",
     )
 
 
 def inspect_image(path: Path) -> IngestResult:
-    ext = path.suffix.lower()
-    if ext in (".tif", ".tiff"):
-        try:
-            return _read_with_rasterio(path)
-        except ImportError:
-            logger.warning("rasterio not installed — GeoTIFF metadata limited")
-        except Exception as exc:
-            logger.warning("rasterio read failed (%s), falling back to Pillow", exc)
+    """Read dimensions + georeferencing for any raster (TIFF/PNG/JPEG).
+
+    Tries rasterio first (honors embedded CRS, world files and GDAL .aux.xml for
+    all formats), then falls back to Pillow + explicit world-file parsing.
+    """
+    try:
+        res = _read_with_rasterio(path)
+        # rasterio opened but found no embedded georef: try explicit world file
+        if not res.has_georef:
+            wf = _world_file_georef(path, res.width, res.height)
+            if wf is not None and wf[2] is not None:
+                _, crs, bounds = wf
+                res.has_georef = True
+                res.crs = str(crs) if crs else ""
+                res.bounds_wgs84 = bounds
+                res.georef_source = "worldfile"
+        return res
+    except ImportError:
+        logger.warning("rasterio not installed — georef metadata limited")
+    except Exception as exc:
+        logger.warning("rasterio read failed (%s), falling back to Pillow", exc)
     return _read_with_pillow(path)
 
 
@@ -132,6 +226,7 @@ def load_rgb_pil(path: Path, max_side: Optional[int] = None) -> Image.Image:
         except Exception as exc:
             raise RuntimeError(f"Could not read GeoTIFF: {exc}") from exc
     with Image.open(path) as img:
+        img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         if max(img.size) > max_side:
             img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
@@ -156,6 +251,7 @@ def raster_to_preview_png(src_path: Path, dest_path: Path, max_side: int = 512) 
 
     try:
         with Image.open(src_path) as img:
+            img = ImageOps.exif_transpose(img)
             img = img.convert("RGB")
             img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
             dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,38 +268,53 @@ class GeorefInfo:
     width: int
     height: int
     bounds_wgs84: Optional[Tuple[float, float, float, float]]
+    source: str = "embedded"  # embedded | worldfile
 
 
 def read_georef(path: Path) -> Optional[GeorefInfo]:
-    """Read raster affine transform and WGS84 bounds when rasterio is available."""
-    ext = path.suffix.lower()
-    if ext not in (".tif", ".tiff"):
-        return None
+    """Read raster affine transform + WGS84 bounds for any raster format.
+
+    Honors embedded CRS (GeoTIFF), GDAL .aux.xml sidecars, and ESRI world files
+    for TIFF/PNG/JPEG. Returns None when no georeferencing can be resolved.
+    """
+    width = height = 0
     try:
         import rasterio
         from rasterio.warp import transform_bounds
 
         with rasterio.open(path) as src:
-            if src.crs is None:
-                return None
-            bounds = None
-            try:
-                w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
-                bounds = (float(w), float(s), float(e), float(n))
-            except Exception as exc:
-                logger.warning("Could not transform bounds to WGS84 for %s: %s", path.name, exc)
-            return GeorefInfo(
-                transform=src.transform,
-                crs=src.crs,
-                width=int(src.width),
-                height=int(src.height),
-                bounds_wgs84=bounds,
-            )
+            width, height = int(src.width), int(src.height)
+            if src.crs is not None:
+                bounds = None
+                try:
+                    w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+                    bounds = (float(w), float(s), float(e), float(n))
+                except Exception as exc:
+                    logger.warning("Could not transform bounds for %s: %s", path.name, exc)
+                return GeorefInfo(
+                    transform=src.transform, crs=src.crs,
+                    width=width, height=height, bounds_wgs84=bounds, source="embedded",
+                )
     except ImportError:
         return None
     except Exception as exc:
-        logger.warning("read_georef failed for %s: %s", path.name, exc)
-        return None
+        logger.warning("read_georef rasterio open failed for %s: %s", path.name, exc)
+
+    # No embedded CRS — try an explicit world-file sidecar
+    if width <= 0 or height <= 0:
+        try:
+            with Image.open(path) as img:
+                width, height = img.size
+        except Exception:
+            return None
+    wf = _world_file_georef(path, width, height)
+    if wf is not None and wf[2] is not None:
+        transform, crs, bounds = wf
+        return GeorefInfo(
+            transform=transform, crs=crs,
+            width=width, height=height, bounds_wgs84=bounds, source="worldfile",
+        )
+    return None
 
 
 def pixel_to_geo_wgs84(

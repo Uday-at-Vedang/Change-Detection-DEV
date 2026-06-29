@@ -23,6 +23,14 @@ class GeoContext:
     georef: Optional[GeorefInfo]
     georef_width: int
     georef_height: int
+    source: str = "none"  # embedded | worldfile | manual | linear | none
+
+
+def _bounds_in_range(b: Optional[BoundsWGS84]) -> bool:
+    if not b:
+        return False
+    w, s, e, n = b
+    return abs(w) <= 180 and abs(e) <= 180 and abs(s) <= 90 and abs(n) <= 90
 
 
 def parse_bounds(bounds: Any) -> Optional[BoundsWGS84]:
@@ -65,11 +73,16 @@ def resolve_geo_context(
     base_path: str,
     base_file: Path,
 ) -> GeoContext:
-    """Resolve bounds and affine georef for detection geo enrichment."""
+    """Resolve bounds and affine georef for detection geo enrichment.
+
+    Priority: embedded/world-file affine georef → DB manual bounds → linear
+    bounds inferred from the image sidecars. Tracks which source was used.
+    """
     georef = read_georef(base_file)
     bounds = georef.bounds_wgs84 if georef else None
     georef_width = georef.width if georef else 0
     georef_height = georef.height if georef else 0
+    source = getattr(georef, "source", "embedded") if georef else "none"
 
     if not bounds:
         from .tree.image_service import get_image_by_file_path
@@ -77,12 +90,17 @@ def resolve_geo_context(
         rel = base_path.replace("\\", "/").strip().lstrip("/")
         img = get_image_by_file_path(db, rel)
         if img and img.bounds_json:
-            bounds = parse_bounds(img.bounds_json)
+            db_bounds = parse_bounds(img.bounds_json)
+            if db_bounds:
+                bounds = db_bounds
+                source = "manual"
 
     if not bounds:
         bounds = bounds_from_image_path(base_file)
+        if bounds:
+            source = "linear"
 
-    if georef is None and bounds:
+    if (georef_width <= 0 or georef_height <= 0) and bounds:
         meta = inspect_image(base_file)
         georef_width = meta.width or georef_width
         georef_height = meta.height or georef_height
@@ -92,6 +110,7 @@ def resolve_geo_context(
         georef=georef,
         georef_width=georef_width or 0,
         georef_height=georef_height or 0,
+        source=source if bounds else "none",
     )
 
 
@@ -115,7 +134,10 @@ def pixel_to_lat_lng(
         )
         if coords:
             lng, lat = coords
-            return {"lat": round(lat, 6), "lng": round(lng, 6)}
+            # Guard against bad transforms emitting impossible coordinates
+            if abs(lat) <= 90 and abs(lng) <= 180:
+                return {"lat": round(lat, 6), "lng": round(lng, 6)}
+            logger.warning("Affine produced out-of-range lat/lng (%.3f,%.3f); using linear", lat, lng)
 
     if not bounds:
         return None
@@ -177,7 +199,7 @@ def enrich_regions_geo(
         cy = center.get("y", 0)
         if effective_bounds or (geo and geo.georef):
             lat_lng = pixel_to_lat_lng(
-                cx, cy, img_width, img_height, effective_bounds or (0, 0, 0, 0),
+                cx, cy, img_width, img_height, effective_bounds,
                 geo=geo,
             )
             if lat_lng:

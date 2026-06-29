@@ -72,6 +72,7 @@
                   <select id="upload-image-type">
                     <option>GeoTIFF</option><option>Satellite</option><option>Drone</option>
                     <option>Orthomosaic</option><option>DEM</option><option>Raster</option>
+                    <option>PNG</option><option>JPEG</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -81,6 +82,10 @@
                 <div class="form-group">
                   <label for="upload-file">File</label>
                   <input type="file" id="upload-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
+                </div>
+                <div class="form-group">
+                  <label for="upload-manual-bounds">Geo bounds (W,S,E,N)</label>
+                  <input type="text" id="upload-manual-bounds" placeholder="optional, e.g. 77.5,12.9,77.6,13.0" />
                 </div>
               </div>
               <div id="upload-progress" class="dda-upload-progress hidden">
@@ -319,8 +324,8 @@
 
   <script src="/static/js/dda/app.js?v=15"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
-  <script src="/static/js/dda/library.js?v=8"></script>
-  <script src="/static/js/dda/result.js?v=6"></script>
+  <script src="/static/js/dda/library.js?v=9"></script>
+  <script src="/static/js/dda/result.js?v=7"></script>
   <script src="/static/js/dda/compare.js?v=11"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>

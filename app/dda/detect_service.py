@@ -184,6 +184,19 @@ def run_detection_and_save(
         bounds=bounds,
         geo=geo_ctx,
     )
+    regions_with_coords = sum(1 for r in regions_serializable if r.get("latLng"))
+    geo_debug = {
+        "source": geo_ctx.source if geo_ctx else "none",
+        "crs": str(geo_ctx.georef.crs) if (geo_ctx and geo_ctx.georef and geo_ctx.georef.crs) else "",
+        "bounds": list(bounds) if bounds else None,
+        "georefWidth": geo_ctx.georef_width if geo_ctx else 0,
+        "georefHeight": geo_ctx.georef_height if geo_ctx else 0,
+        "detectionWidth": det_w,
+        "detectionHeight": det_h,
+        "regionsWithCoords": regions_with_coords,
+        "regionsTotal": len(regions_serializable),
+    }
+    logger.info("Geo debug for run: %s", geo_debug)
     total_px = int(stats["total_pixels"])
     changed_px = int(stats["changed_pixels"])
     change_pct = float(stats["change_percentage"])
@@ -247,6 +260,7 @@ def run_detection_and_save(
             "params": stats.get("params", {}),
             "alignmentWarning": stats.get("alignment_warning"),
             "registrationOk": stats.get("params", {}).get("registration_ok"),
+            "geo": geo_debug,
         },
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,

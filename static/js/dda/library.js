@@ -37,6 +37,8 @@ document.getElementById('form-tree-upload')?.addEventListener('submit', async (e
   form.append('file', file);
   form.append('image_type', document.getElementById('upload-image-type')?.value || 'GeoTIFF');
   form.append('capture_date', document.getElementById('upload-capture-date')?.value || '');
+  const manualBounds = document.getElementById('upload-manual-bounds')?.value?.trim();
+  if (manualBounds) form.append('manual_bounds', manualBounds);
 
   const btn = document.getElementById('btn-tree-upload');
   const progWrap = document.getElementById('upload-progress');

@@ -60,6 +60,22 @@ def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
     }
 
 
+def _parse_manual_bounds(raw: Optional[str]) -> Optional[str]:
+    """Parse a 'west,south,east,north' WGS84 string into bounds_json, or None."""
+    if not raw or not raw.strip():
+        return None
+    try:
+        parts = [float(x.strip()) for x in raw.replace("[", "").replace("]", "").split(",")]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="manual_bounds must be 'west,south,east,north'")
+    if len(parts) != 4:
+        raise HTTPException(status_code=400, detail="manual_bounds must have 4 values: west,south,east,north")
+    west, south, east, north = parts
+    if abs(west) > 180 or abs(east) > 180 or abs(south) > 90 or abs(north) > 90:
+        raise HTTPException(status_code=400, detail="manual_bounds out of range (lng ±180, lat ±90)")
+    return bounds_to_json((west, south, east, north))
+
+
 async def upload_image(
     db: Session,
     node_id: int,
@@ -68,6 +84,7 @@ async def upload_image(
     image_type: str,
     capture_date: Optional[str],
     uploaded_by: str,
+    manual_bounds: Optional[str] = None,
 ) -> ImageLibrary:
     node = get_node_or_404(db, node_id)
     itype = image_type.strip() or "GeoTIFF"
@@ -103,6 +120,13 @@ async def upload_image(
                 raise HTTPException(status_code=400, detail="capture_date must be YYYY-MM-DD")
 
     meta = inspect_image(dest)
+    # Prefer embedded/world-file georef; fall back to user-supplied manual bounds
+    manual_json = _parse_manual_bounds(manual_bounds)
+    bounds_json = bounds_to_json(meta.bounds_wgs84) or ""
+    has_georef = meta.has_georef
+    if not bounds_json and manual_json:
+        bounds_json = manual_json
+        has_georef = True
     img = ImageLibrary(
         node_id=node.id,
         image_name=dest.name,
@@ -114,8 +138,8 @@ async def upload_image(
         thumb_cache_key=hashlib.sha256(rel.encode()).hexdigest()[:32],
         width=meta.width,
         height=meta.height,
-        has_georef=meta.has_georef,
-        bounds_json=bounds_to_json(meta.bounds_wgs84) or "",
+        has_georef=has_georef,
+        bounds_json=bounds_json,
         format=meta.format,
     )
     db.add(img)

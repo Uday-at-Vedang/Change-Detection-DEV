@@ -157,6 +157,7 @@ async def api_upload_image(
     file: UploadFile = File(...),
     image_type: str = Form("GeoTIFF"),
     capture_date: str = Form(""),
+    manual_bounds: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
@@ -167,6 +168,7 @@ async def api_upload_image(
         image_type=image_type,
         capture_date=capture_date or None,
         uploaded_by=user.email or str(user.id),
+        manual_bounds=manual_bounds or None,
     )
     node = get_node_or_404(db, node_id)
     return {"status": True, "message": "Image Uploaded Successfully", "image": image_to_dict(img, node)}

@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .auth import (
     COOKIE_NAME,
@@ -306,7 +306,9 @@ async def detect(
                 raise HTTPException(status_code=400, detail=f"{field_name} image is empty")
             if len(raw) > MAX_UPLOAD_BYTES:
                 raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
-            return Image.open(io.BytesIO(raw)).convert("RGB")
+            img = Image.open(io.BytesIO(raw))
+            img = ImageOps.exif_transpose(img)
+            return img.convert("RGB")
         except HTTPException:
             raise
         except Exception as e:

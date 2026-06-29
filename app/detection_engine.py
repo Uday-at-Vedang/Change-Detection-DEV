@@ -2533,6 +2533,11 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
     if min_area is None:
         min_area = int(max(250, min(1000, img_area * 0.00009)))
 
+    # Poor registration → residual misalignment shows up as many small false
+    # positives. Raise the size floor to keep only confident, larger changes.
+    if not registration_ok:
+        min_area = int(min_area * 1.4)
+
     for i in range(1, num_labels):
         raw_area = stats[i, cv2.CC_STAT_AREA]
         if raw_area < min_area:

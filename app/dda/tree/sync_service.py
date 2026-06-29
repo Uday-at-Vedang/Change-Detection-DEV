@@ -105,6 +105,17 @@ def ensure_node_from_disk(db: Session, physical_path: str, *, created_by: str = 
     return node
 
 
+def _image_type_for(file_path: Path) -> str:
+    ext = file_path.suffix.lower()
+    if ext in (".tif", ".tiff"):
+        return "GeoTIFF"
+    if ext in (".jpg", ".jpeg"):
+        return "JPEG"
+    if ext == ".png":
+        return "PNG"
+    return "Raster"
+
+
 def _index_image_file(db: Session, node: TreeNode, file_path: Path, rel_file: str) -> bool:
     existing = db.query(ImageLibrary).filter(ImageLibrary.file_path == rel_file).first()
     stat = file_path.stat()
@@ -129,7 +140,7 @@ def _index_image_file(db: Session, node: TreeNode, file_path: Path, rel_file: st
     img = ImageLibrary(
         node_id=node.id,
         image_name=file_path.name,
-        image_type="GeoTIFF" if file_path.suffix.lower() in (".tif", ".tiff") else "Raster",
+        image_type=_image_type_for(file_path),
         file_path=rel_file,
         uploaded_by="filesystem-sync",
         file_size_bytes=stat.st_size,
