@@ -75,6 +75,7 @@ def dda_config():
         "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
         "maxGeotiffBytes": MAX_GEOTIFF_BYTES,
         "maxImageMb": MAX_IMAGE_BYTES // (1024 * 1024),
+        "maxImageBytes": MAX_IMAGE_BYTES,
         "geotiffEnabled": geotiff_io_available(),
         "allowedExtensions": sorted(ALLOWED_EXTENSIONS),
         "hierarchyMode": "tree",

@@ -27,8 +27,12 @@ document.getElementById('form-tree-upload')?.addEventListener('submit', async (e
   if (!nodeId) return showDdaError?.('Select a tree node.');
   if (!file) return showDdaError?.('Select a file.');
 
-  const maxBytes = window.ddaState?.localCfg?.maxGeotiffBytes
-    || (window.ddaState?.localCfg?.maxGeotiffMb || 5120) * 1024 * 1024;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const isTiff = ext === 'tif' || ext === 'tiff';
+  const cfg = window.ddaState?.localCfg || {};
+  const maxBytes = isTiff
+    ? (cfg.maxGeotiffBytes || (cfg.maxGeotiffMb || 15360) * 1024 * 1024)
+    : (cfg.maxImageBytes || (cfg.maxImageMb || 15360) * 1024 * 1024);
   if (file.size > maxBytes) {
     return showDdaError?.(`File is ${formatBytes(file.size)} — max ${formatBytes(maxBytes)}.`);
   }

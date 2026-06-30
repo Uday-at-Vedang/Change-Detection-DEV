@@ -83,11 +83,12 @@ THUMBS_DIR = LIBRARY_DIR / "thumbs"
 PREVIEWS_DIR = LIBRARY_DIR / "previews"
 LOCAL_THUMB_CACHE = DATA_DIR / "library_cache" / "thumbs"
 
-# GeoTIFF library upload limit (default 5 GB; override with MAX_GEOTIFF_MB on HF dev Space)
-MAX_GEOTIFF_BYTES = int(os.environ.get("MAX_GEOTIFF_MB", "5120")) * 1024 * 1024
+# Library upload limit (default 15 GB; override with MAX_GEOTIFF_MB / MAX_IMAGE_MB)
+_MAX_UPLOAD_MB_DEFAULT = "15360"  # 15 * 1024
+MAX_GEOTIFF_BYTES = int(os.environ.get("MAX_GEOTIFF_MB", _MAX_UPLOAD_MB_DEFAULT)) * 1024 * 1024
 
-# Raster sidecar formats (PNG/JPEG) — smaller cap for library uploads
-MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_MB", "50")) * 1024 * 1024
+# PNG/JPEG use the same cap unless MAX_IMAGE_MB is set separately
+MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_MB", _MAX_UPLOAD_MB_DEFAULT)) * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 

@@ -17,6 +17,7 @@ from .geotiff_io import load_rgb_pil
 from .config import (
     IS_DDA_MODE,
     MAX_GEOTIFF_BYTES,
+    MAX_IMAGE_BYTES,
     geotiff_io_available,
     get_detection_max_side,
     get_library_roots,
@@ -73,6 +74,8 @@ def local_library_config():
         "detectionMaxSide": get_detection_max_side(),
         "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
         "maxGeotiffBytes": MAX_GEOTIFF_BYTES,
+        "maxImageMb": MAX_IMAGE_BYTES // (1024 * 1024),
+        "maxImageBytes": MAX_IMAGE_BYTES,
         "maxUploadGb": round(MAX_GEOTIFF_BYTES / (1024 ** 3), 2),
     }
 

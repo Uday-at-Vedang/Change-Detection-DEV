@@ -132,7 +132,7 @@ async function initDda() {
 
     const uploadLimit = document.getElementById('upload-limit-hint');
     if (uploadLimit && localCfg.maxUploadGb) {
-      uploadLimit.textContent = `Select a tree node and image type. Max ${localCfg.maxUploadGb} GB per GeoTIFF.`;
+      uploadLimit.textContent = `Select a tree node and image type. Max ${localCfg.maxUploadGb} GB per file.`;
     }
 
     const resHint = document.getElementById('dda-detect-res-hint');
