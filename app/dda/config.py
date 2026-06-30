@@ -134,9 +134,5 @@ def geotiff_io_available() -> bool:
 
 def get_detection_max_side() -> int:
     """Max pixel dimension for GeoTIFF load + detection pipeline (higher = sharper, more RAM)."""
-    default = "2048" if is_hf_hosted() else "4096"
-    try:
-        value = int(os.environ.get("DETECTION_MAX_SIDE", default))
-    except ValueError:
-        value = int(default)
-    return max(1024, min(8192, value))
+    from ..detection_config import get_detection_max_side as _central
+    return _central()

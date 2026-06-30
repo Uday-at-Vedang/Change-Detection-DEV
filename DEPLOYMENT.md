@@ -145,6 +145,26 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 | `DDA_ADMIN_EMAIL` / `DDA_ADMIN_PASSWORD` | Seed admin user on dev (role: admin) |
 | `DDA_TRAINING_EXPORT_KEY` | Header `X-DDA-Training-Key` for false-positive export |
 
+### Detection accuracy controls (optional, dev-first)
+
+All default to the previous behavior, so leaving them unset changes nothing.
+
+| Variable | Purpose |
+|----------|---------|
+| `DETECTION_MAX_SIDE` | Downscaled-path pixel cap (default 4096 local / 2048 hosted) |
+| `DETECTION_INFERENCE_MODE` | `downscaled` (default) or `fullres_tiled` (native detail) |
+| `DETECTION_FULLRES_MAX_SIDE` | Full-res cap in fullres mode; 0 = native (default 8192) |
+| `DETECTION_WINDOWED_THRESHOLD` | Native side above which GeoTIFFs stream from disk windows (default 8192) |
+| `DETECTION_TILE_MEMORY_MB` | RAM budget per array before switching to windowed streaming (default 1536) |
+| `DETECTION_TILE_SIZE` / `DETECTION_TILE_OVERLAP` | Full-res tile geometry (default 512 / 0.25) |
+| `DETECTION_MULTISCALE` | `off` or scale list e.g. `0.5,1.0,1.5` (max-fused for recall) |
+| `DETECTION_FUSION` | `smart_union` (default) or `hysteresis` |
+| `DETECTION_CLAHE` / `DETECTION_HIST_MATCH` | Preprocessing toggles (CLAHE on, hist-match off) |
+| `DETECTION_SKIP_PREBLUR` | Skip denoise (auto-on in fullres mode) |
+| `DETECTION_BORDER_MARGIN` | Mask border zeroing (auto: 4 fullres / 12 downscaled) |
+| `DETECTION_TILE_BATCH` | Tiles per GPU forward pass (default 1) |
+| `DETECTION_SAVE_PROB_MAP` | Save a per-run probability PNG for debugging (default off) |
+
 Dev Space can omit `SECRET_KEY` (login is disabled on both Spaces).
 
 ---

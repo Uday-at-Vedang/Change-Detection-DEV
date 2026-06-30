@@ -383,7 +383,8 @@ async function runDetectionWithFallback(form) {
   } catch (err) {
     const msg = String(err.message || '');
     const useSync = msg.includes('Not Found') || msg.includes('404')
-      || msg.includes('503') || msg.includes('409') || msg.includes('busy');
+      || msg.includes('503') || msg.includes('409') || msg.includes('busy')
+      || msg.includes('Internal Server Error') || msg.includes('NOT NULL');
     if (!useSync) throw err;
     return runSyncDetectionWithProgress(form);
   }

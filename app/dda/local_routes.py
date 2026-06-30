@@ -111,7 +111,11 @@ def local_rescan(db: Session = Depends(get_db)):
     _require_dda()
     from .tree.sync_service import sync_from_filesystem
 
-    sync_stats = sync_from_filesystem(db)
+    try:
+        sync_stats = sync_from_filesystem(db)
+    except Exception as exc:
+        logger.exception("Filesystem rescan failed")
+        raise HTTPException(status_code=500, detail=f"Rescan failed: {exc}") from exc
     tree = build_tree(db)
     images = list_all_images(db)
     return {
@@ -158,8 +162,10 @@ async def detect_from_library(
         raise HTTPException(status_code=400, detail=f"Invalid library path: {exc}") from exc
 
     try:
-        before_pil = load_rgb_pil(base_file, max_side=get_detection_max_side())
-        after_pil = load_rgb_pil(comp_file, max_side=get_detection_max_side())
+        from ..detection_config import get_load_max_side
+        load_side = get_load_max_side()
+        before_pil = load_rgb_pil(base_file, max_side=load_side)
+        after_pil = load_rgb_pil(comp_file, max_side=load_side)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -187,6 +193,7 @@ async def detect_from_library(
             notify_email=notify_email,
             max_size=get_detection_max_side(),
             geo_bounds_path=base_file,
+            comparison_file=comp_file,
             base_path=base_norm,
             user_id=user.id,
         )

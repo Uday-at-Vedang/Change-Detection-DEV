@@ -15,10 +15,13 @@ from .models import ImageLibrary, TreeNode
 from .path_service import ensure_node_directory, storage_root
 from .path_slugs import RESERVED
 
+from .path_slugs import RESERVED
+
 logger = logging.getLogger(__name__)
 
 _NODE_TYPES = ("Zone", "Area", "Year", "Folder")
 _SKIP_DIRS = frozenset({".git", ".thumbs", "__pycache__", "cache", "thumbs"})
+_RESERVED_DIR_NAMES = RESERVED
 
 
 def _infer_node_type(depth: int) -> str:
@@ -157,6 +160,16 @@ def _index_image_file(db: Session, node: TreeNode, file_path: Path, rel_file: st
     return True
 
 
+def _node_path_for_images_folder(rel_path: str) -> Optional[str]:
+    """Resolve which tree node should own an on-disk Images/ folder."""
+    rel = (rel_path or "").strip("/")
+    while rel:
+        if rel.split("/")[-1].lower() not in _RESERVED_DIR_NAMES:
+            return rel
+        rel = "/".join(rel.split("/")[:-1])
+    return None
+
+
 def _sync_directory(db: Session, abs_dir: Path, rel_path: str, stats: dict) -> None:
     """Recursively sync nodes and images under rel_path."""
     if not abs_dir.is_dir():
@@ -169,10 +182,16 @@ def _sync_directory(db: Session, abs_dir: Path, rel_path: str, stats: dict) -> N
         child_rel = f"{rel_path}/{child.name}".strip("/") if rel_path else child.name
 
         if child.name.lower() == "images":
-            if rel_path:
-                node = _find_node_by_physical_path(db, rel_path)
+            node_rel = _node_path_for_images_folder(rel_path)
+            if node_rel:
+                node = _find_node_by_physical_path(db, node_rel)
                 if not node:
-                    node = ensure_node_from_disk(db, rel_path)
+                    try:
+                        node = ensure_node_from_disk(db, node_rel)
+                    except ValueError as exc:
+                        logger.warning("Skipping images under %s: %s", rel_path, exc)
+                        stats["foldersSkipped"] = stats.get("foldersSkipped", 0) + 1
+                        continue
                 for f in sorted(child.iterdir()):
                     if not f.is_file() or f.suffix.lower() not in ALLOWED_EXTENSIONS:
                         continue
@@ -183,8 +202,20 @@ def _sync_directory(db: Session, abs_dir: Path, rel_path: str, stats: dict) -> N
                         stats["imagesUpdated"] += 1
             continue
 
+        if child.name.lower() in _RESERVED_DIR_NAMES:
+            logger.warning("Skipping reserved folder on disk: %s", child_rel)
+            stats["foldersSkipped"] = stats.get("foldersSkipped", 0) + 1
+            _sync_directory(db, child, child_rel, stats)
+            continue
+
         before = _find_node_by_physical_path(db, child_rel)
-        ensure_node_from_disk(db, child_rel)
+        try:
+            ensure_node_from_disk(db, child_rel)
+        except ValueError as exc:
+            logger.warning("Skipping folder %s: %s", child_rel, exc)
+            stats["foldersSkipped"] = stats.get("foldersSkipped", 0) + 1
+            _sync_directory(db, child, child_rel, stats)
+            continue
         if not before:
             stats["nodesCreated"] += 1
         _sync_directory(db, child, child_rel, stats)
@@ -198,6 +229,7 @@ def sync_from_filesystem(db: Session) -> dict:
         "imagesIndexed": 0,
         "imagesUpdated": 0,
         "orphansFlagged": 0,
+        "foldersSkipped": 0,
     }
     if not root.exists():
         return stats

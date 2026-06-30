@@ -169,76 +169,140 @@ def _unflip_map(score, op):
 
 
 def _infer_score_map(img1, img2):
-    """Single-pass tiled inference returning a float32 change-probability map at (h, w)."""
+    """Single-pass tiled inference returning a float32 change-probability map at (h, w).
+
+    The model always sees its native 256px patches; the shared tiler handles
+    padding, sliding windows and cosine blending so stitching stays consistent
+    across every deep model in the project.
+    """
     torch, _, _ = _try_import()
     model, processor = _load_model()
     from PIL import Image as PILImage
 
-    h, w = img1.shape[:2]
-    tile = _TILE_SIZE
-    overlap = tile // 4
-    stride = tile - overlap
+    from .cd_models.model_utils import tiled_score_map
+    from .detection_config import get_tile_batch
 
-    pad_h = (tile - h % tile) % tile
-    pad_w = (tile - w % tile) % tile
-    if pad_h or pad_w:
-        img1 = np.pad(img1, ((0, pad_h), (0, pad_w), (0, 0)), mode="reflect")
-        img2 = np.pad(img2, ((0, pad_h), (0, pad_w), (0, 0)), mode="reflect")
+    def _score_tile(t1, t2):
+        pil1 = PILImage.fromarray(t1)
+        pil2 = PILImage.fromarray(t2)
+        inputs = processor(images=(pil1, pil2), return_tensors="pt")
+        inputs = {k: v.to(_DEVICE) for k, v in inputs.items()}
+        outputs = model(**inputs)
+        logits = outputs.logits
+        return _logits_to_change_prob(logits, torch).cpu().numpy()
 
-    ph, pw = img1.shape[:2]
-    score_sum = np.zeros((ph, pw), dtype=np.float32)
-    count = np.zeros((ph, pw), dtype=np.float32)
+    def _score_batch(pairs):
+        # Stack each pair's processed tensors along the batch dim for one forward
+        # pass. Only used when the model's output batch dim matches the number of
+        # input pairs; otherwise fall back to correct per-tile scoring.
+        n = len(pairs)
+        try:
+            per_pair = [
+                processor(images=(PILImage.fromarray(t1), PILImage.fromarray(t2)),
+                          return_tensors="pt")
+                for t1, t2 in pairs
+            ]
+            keys = per_pair[0].keys()
+            per_pair_bs = per_pair[0][next(iter(keys))].shape[0]
+            stacked = {k: torch.cat([p[k] for p in per_pair], dim=0).to(_DEVICE)
+                       for k in keys}
+            outputs = model(**stacked)
+            logits = outputs.logits
+            if logits.shape[0] != n * per_pair_bs:
+                raise RuntimeError("unexpected batched logits layout")
+            group = per_pair_bs
+            return [
+                _logits_to_change_prob(logits[i * group:(i + 1) * group], torch).cpu().numpy()
+                for i in range(n)
+            ]
+        except Exception as exc:
+            logger.warning("Batched tile inference failed (%s); using per-tile", exc)
+            return [_score_tile(t1, t2) for t1, t2 in pairs]
 
-    ramp = np.linspace(0, 1, overlap)
-    flat = np.ones(tile - 2 * overlap)
-    profile = np.concatenate([ramp, flat, ramp[::-1]])
-    weight_2d = np.outer(profile, profile).astype(np.float32)
-
+    batch = get_tile_batch()
     with torch.no_grad():
-        for y0 in range(0, ph - tile + 1, stride):
-            for x0 in range(0, pw - tile + 1, stride):
-                t1 = np.ascontiguousarray(img1[y0:y0+tile, x0:x0+tile])
-                t2 = np.ascontiguousarray(img2[y0:y0+tile, x0:x0+tile])
-
-                pil1 = PILImage.fromarray(t1)
-                pil2 = PILImage.fromarray(t2)
-
-                inputs = processor(images=(pil1, pil2), return_tensors="pt")
-                inputs = {k: v.to(_DEVICE) for k, v in inputs.items()}
-
-                outputs = model(**inputs)
-                logits = outputs.logits
-                prob_map = _logits_to_change_prob(logits, torch).cpu().numpy()
-
-                out_h, out_w = prob_map.shape
-                if out_h != tile or out_w != tile:
-                    prob_map = cv2.resize(prob_map, (tile, tile),
-                                          interpolation=cv2.INTER_LINEAR)
-
-                score_sum[y0:y0+tile, x0:x0+tile] += prob_map * weight_2d
-                count[y0:y0+tile, x0:x0+tile] += weight_2d
-
-    count = np.maximum(count, 1e-6)
-    avg_score = score_sum / count
-    return avg_score[:h, :w]
+        return tiled_score_map(_score_tile, img1, img2,
+                               tile_size=_TILE_SIZE, overlap=_TILE_SIZE // 4,
+                               score_batch_fn=_score_batch if batch > 1 else None,
+                               batch=batch)
 
 
-def predict_change_mask(img1, img2, threshold=0.5):
+def _count_windows(full_h, full_w, tile_size, overlap):
+    step = max(1, int(round(tile_size * (1.0 - overlap))))
+    ny = len(range(0, max(1, full_h - tile_size + 1), step)) + (1 if full_h > tile_size else 0)
+    nx = len(range(0, max(1, full_w - tile_size + 1), step)) + (1 if full_w > tile_size else 0)
+    return max(1, ny) * max(1, nx)
+
+
+def predict_change_score_windowed(path_a, path_b, out_h, out_w,
+                                  tile_size=512, overlap=0.25, on_progress=None):
+    """Build a change-probability map from two large GeoTIFFs via disk windows.
+
+    Reads paired native-resolution windows (so the model sees full detail),
+    scores each with AdaptFormer, then accumulates into a bounded
+    ``(out_h, out_w)`` canvas with cosine blending. Peak memory stays at one
+    native window plus the small output canvas, so 10k+ rasters never OOM.
+    ``on_progress(frac)`` (0..1) is called as windows complete.
+    Returns a float32 score map in [0, 1] at (out_h, out_w).
     """
-    Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
-    Averages predictions over test-time augmentation flips (DETECTION_TTA) for
-    higher-accuracy, less boundary-sensitive change maps.
-    Returns (uint8 mask [0 or 255], float32 score map [0-1]).
-    Use threshold > 1.0 to obtain score map only (empty mask).
-    """
+    from .dda.geotiff_io import iter_geotiff_window_pairs, read_native_size
+
     _load_model()
 
-    if img1.shape != img2.shape:
-        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+    score_sum = np.zeros((out_h, out_w), dtype=np.float32)
+    count = np.zeros((out_h, out_w), dtype=np.float32)
+    scale_y = scale_x = None
 
+    total = None
+    native = read_native_size(__import__("pathlib").Path(path_a))
+    if native:
+        total = _count_windows(native[1], native[0], tile_size, overlap)
+    done = 0
+
+    for tile_a, tile_b, y0, x0, full_h, full_w in iter_geotiff_window_pairs(
+            path_a, path_b, tile_size=tile_size, overlap=overlap):
+        if scale_y is None:
+            scale_y = out_h / float(full_h)
+            scale_x = out_w / float(full_w)
+            if total is None:
+                total = _count_windows(full_h, full_w, tile_size, overlap)
+
+        wh, ww = tile_a.shape[:2]
+        score = _infer_score_map(tile_a, tile_b)
+
+        dy0 = int(round(y0 * scale_y))
+        dx0 = int(round(x0 * scale_x))
+        dh = max(1, int(round(wh * scale_y)))
+        dw = max(1, int(round(ww * scale_x)))
+        dy1 = min(out_h, dy0 + dh)
+        dx1 = min(out_w, dx0 + dw)
+        dh, dw = dy1 - dy0, dx1 - dx0
+        if dh <= 0 or dw <= 0:
+            continue
+
+        score_ds = cv2.resize(score, (dw, dh), interpolation=cv2.INTER_AREA)
+        wy = np.hanning(dh + 2)[1:-1] if dh > 2 else np.ones(dh)
+        wx = np.hanning(dw + 2)[1:-1] if dw > 2 else np.ones(dw)
+        weight = np.maximum(np.outer(wy, wx).astype(np.float32), 1e-3)
+
+        score_sum[dy0:dy1, dx0:dx1] += score_ds * weight
+        count[dy0:dy1, dx0:dx1] += weight
+
+        done += 1
+        if on_progress and total:
+            try:
+                on_progress(min(1.0, done / float(total)))
+            except Exception:
+                pass
+
+    count = np.maximum(count, 1e-6)
+    return score_sum / count
+
+
+def _predict_score_tta(img1, img2):
+    """TTA-averaged change score for one (already same-size) image pair."""
     h, w = img1.shape[:2]
     ops = _resolve_tta_ops()
-
     acc = np.zeros((h, w), dtype=np.float32)
     n = 0
     for op in ops:
@@ -251,10 +315,49 @@ def predict_change_mask(img1, img2, threshold=0.5):
             continue
         acc += _unflip_map(s, op)
         n += 1
-
     if n == 0:
         raise RuntimeError("AdaptFormer inference produced no predictions")
-    avg_score = acc / float(n)
+    return acc / float(n)
+
+
+def predict_change_mask(img1, img2, threshold=0.5):
+    """
+    Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
+    Averages predictions over test-time augmentation flips (DETECTION_TTA) and,
+    when DETECTION_MULTISCALE is set, fuses scores across scales (max) so both
+    small and large changes are captured.
+    Returns (uint8 mask [0 or 255], float32 score map [0-1]).
+    Use threshold > 1.0 to obtain score map only (empty mask).
+    """
+    _load_model()
+
+    if img1.shape != img2.shape:
+        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+
+    h, w = img1.shape[:2]
+
+    from .detection_config import get_multiscale_scales
+    scales = get_multiscale_scales()
+
+    if not scales:
+        avg_score = _predict_score_tta(img1, img2)
+    else:
+        fused = None
+        for scale in scales:
+            if scale == 1.0:
+                s1, s2 = img1, img2
+            else:
+                nh = max(64, int(round(h * scale)))
+                nw = max(64, int(round(w * scale)))
+                interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC
+                s1 = cv2.resize(img1, (nw, nh), interpolation=interp)
+                s2 = cv2.resize(img2, (nw, nh), interpolation=interp)
+            score = _predict_score_tta(s1, s2)
+            if score.shape != (h, w):
+                score = cv2.resize(score, (w, h), interpolation=cv2.INTER_LINEAR)
+            # Max fusion favors recall on small structures that only one scale sees
+            fused = score if fused is None else np.maximum(fused, score)
+        avg_score = fused
 
     mask = (avg_score >= threshold).astype(np.uint8) * 255
     return mask, avg_score

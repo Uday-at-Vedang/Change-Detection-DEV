@@ -210,6 +210,79 @@ def _rasterio_read_rgb(path: Path, max_side: int):
         return Image.fromarray(rgb.astype("uint8"), mode="RGB")
 
 
+def read_native_size(path: Path) -> Optional[Tuple[int, int]]:
+    """Return (width, height) of a GeoTIFF without decoding pixels, or None."""
+    ext = path.suffix.lower()
+    if ext not in (".tif", ".tiff"):
+        return None
+    try:
+        import rasterio
+        with rasterio.open(path) as src:
+            return int(src.width), int(src.height)
+    except Exception:
+        return None
+
+
+def _normalize_window_rgb(data):
+    """Convert a rasterio (bands, h, w) window read to RGB uint8 (h, w, 3)."""
+    import numpy as np
+    count = data.shape[0]
+    if count == 1:
+        rgb = np.stack([data[0], data[0], data[0]])
+    else:
+        rgb = data[:3]
+    rgb = np.transpose(rgb, (1, 2, 0)).astype("float32")
+    if rgb.max() > 255 or rgb.min() < 0:
+        lo, hi = np.percentile(rgb, (2, 98))
+        rgb = np.clip((rgb - lo) / max(hi - lo, 1e-6), 0, 1) * 255
+    return rgb.astype("uint8")
+
+
+def iter_geotiff_window_pairs(path_a: Path, path_b: Path,
+                              tile_size: int = 512, overlap: float = 0.25):
+    """Stream paired native-resolution RGB windows from two same-size GeoTIFFs.
+
+    Reads corresponding pixel windows from disk via rasterio so very large
+    rasters never load fully into RAM. Yields
+    ``(tile_a, tile_b, y0, x0, full_h, full_w)`` where tiles are RGB uint8.
+    Requires both rasters to share native pixel dimensions; raises ValueError
+    otherwise so the caller can fall back to the in-memory path.
+    """
+    import rasterio
+    from rasterio.windows import Window
+
+    tile_size = max(64, int(tile_size))
+    ov = min(0.5, max(0.0, float(overlap)))
+    step = max(1, int(round(tile_size * (1.0 - ov))))
+
+    with rasterio.open(path_a) as src_a, rasterio.open(path_b) as src_b:
+        if (src_a.width, src_a.height) != (src_b.width, src_b.height):
+            raise ValueError(
+                f"GeoTIFF dimensions differ: {src_a.width}x{src_a.height} "
+                f"vs {src_b.width}x{src_b.height}"
+            )
+        full_w, full_h = int(src_a.width), int(src_a.height)
+        bands_a = list(range(1, min(3, src_a.count) + 1))
+        bands_b = list(range(1, min(3, src_b.count) + 1))
+
+        ys = list(range(0, max(1, full_h - tile_size + 1), step))
+        xs = list(range(0, max(1, full_w - tile_size + 1), step))
+        if ys[-1] != full_h - tile_size and full_h > tile_size:
+            ys.append(full_h - tile_size)
+        if xs[-1] != full_w - tile_size and full_w > tile_size:
+            xs.append(full_w - tile_size)
+
+        for y0 in ys:
+            for x0 in xs:
+                wh = min(tile_size, full_h - y0)
+                ww = min(tile_size, full_w - x0)
+                win = Window(x0, y0, ww, wh)
+                da = src_a.read(indexes=bands_a, window=win)
+                db = src_b.read(indexes=bands_b, window=win)
+                yield (_normalize_window_rgb(da), _normalize_window_rgb(db),
+                       y0, x0, full_h, full_w)
+
+
 def load_rgb_pil(path: Path, max_side: Optional[int] = None) -> Image.Image:
     """Load image as RGB PIL, downscaling large GeoTIFFs via rasterio."""
     if max_side is None:

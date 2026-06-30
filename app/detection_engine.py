@@ -6,6 +6,8 @@ SIFT+FLANN registration, tile-based + multi-scale processing, Excess Green
 vegetation index, confidence maps, and improved object classification.
 """
 import logging
+from pathlib import Path
+
 import numpy as np
 import cv2
 from PIL import Image
@@ -22,14 +24,8 @@ _log = logging.getLogger(__name__)
 
 def get_detection_max_size() -> int:
     """Max pixel dimension for detection (override with DETECTION_MAX_SIDE env)."""
-    import os
-    hosted = bool(os.environ.get("SPACE_ID", "").strip())
-    default = "2048" if hosted else "4096"
-    try:
-        value = int(os.environ.get("DETECTION_MAX_SIDE", default))
-    except ValueError:
-        value = int(default)
-    return max(1024, min(8192, value))
+    from .detection_config import get_detection_max_side
+    return get_detection_max_side()
 
 
 def _ensure_rgb_uint8(img_array):
@@ -50,8 +46,13 @@ def _to_float32(img):
     return img.astype(np.float32) / 255.0
 
 
-def preprocess_image(image, max_size=None):
-    """Preprocess image: convert to RGB, limit size, light denoise."""
+def preprocess_image(image, max_size=None, skip_blur=False):
+    """Preprocess image: convert to RGB, limit size, light denoise.
+
+    ``skip_blur`` disables the Gaussian/bilateral denoise so fine change detail
+    is preserved — used by full-resolution tiled inference where the whole point
+    is to keep native sharpness.
+    """
     if max_size is None:
         max_size = get_detection_max_size()
     img_array = np.array(image)
@@ -62,6 +63,9 @@ def preprocess_image(image, max_size=None):
         scale = max_size / max(height, width)
         new_w, new_h = max(1, int(width * scale)), max(1, int(height * scale))
         img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    if skip_blur:
+        return img_array
 
     # Light denoise — smaller kernel preserves fine change detail at high resolution
     blur_ksize = 3 if max_size >= 3000 else 5
@@ -311,8 +315,27 @@ def _register_images_ecc_multiscale(img1, img2):
 # 3. Improved radiometric normalization
 # ---------------------------------------------------------------------------
 
+def _match_histogram(src, ref):
+    """Map ``src`` intensities so its histogram matches ``ref`` (single channel)."""
+    src_u = np.clip(src, 0, 255).astype(np.uint8)
+    ref_u = np.clip(ref, 0, 255).astype(np.uint8)
+    src_hist = np.bincount(src_u.ravel(), minlength=256).astype(np.float64)
+    ref_hist = np.bincount(ref_u.ravel(), minlength=256).astype(np.float64)
+    src_cdf = np.cumsum(src_hist) / max(src_u.size, 1)
+    ref_cdf = np.cumsum(ref_hist) / max(ref_u.size, 1)
+    lut = np.interp(src_cdf, ref_cdf, np.arange(256)).astype(np.float32)
+    return lut[src_u]
+
+
 def normalize_radiometry(img1, img2):
-    """Match after image radiometry to before; symmetric CLAHE on L channel."""
+    """Match after image radiometry to before; symmetric CLAHE on L channel.
+
+    CLAHE and histogram matching are env-toggleable (``DETECTION_CLAHE``,
+    ``DETECTION_HIST_MATCH``) so each technique can be A/B benchmarked before
+    being promoted to a default.
+    """
+    from .detection_config import get_enable_clahe, get_hist_match
+
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
 
@@ -323,11 +346,17 @@ def normalize_radiometry(img1, img2):
         if std2 > 1e-6:
             result[:, :, ch] = (lab2[:, :, ch] - mean2) * (std1 / std2) + mean1
 
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    if get_hist_match():
+        # Stronger than mean/std matching: align the full L-channel distribution
+        result[:, :, 0] = _match_histogram(result[:, :, 0], lab1[:, :, 0])
+
     lab1_u = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB)
     lab2_u = np.clip(result, 0, 255).astype(np.uint8)
-    lab1_u[:, :, 0] = clahe.apply(lab1_u[:, :, 0])
-    lab2_u[:, :, 0] = clahe.apply(lab2_u[:, :, 0])
+
+    if get_enable_clahe():
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        lab1_u[:, :, 0] = clahe.apply(lab1_u[:, :, 0])
+        lab2_u[:, :, 0] = clahe.apply(lab2_u[:, :, 0])
 
     return cv2.cvtColor(lab1_u, cv2.COLOR_LAB2RGB), cv2.cvtColor(lab2_u, cv2.COLOR_LAB2RGB)
 
@@ -522,6 +551,22 @@ def compute_lbp(gray, radius=1, n_points=8):
         shifted = padded[pad + dy:pad + dy + h, pad + dx:pad + dx + w]
         lbp += (shifted >= gray).astype(np.float32)
     return lbp / n_points
+
+
+def _prob_map_stats(score) -> dict:
+    """Summary stats of a [0,1] probability/score map for threshold tuning."""
+    if score is None or score.size == 0:
+        return {}
+    s = score.astype(np.float32)
+    return {
+        "min": round(float(s.min()), 4),
+        "max": round(float(s.max()), 4),
+        "mean": round(float(s.mean()), 4),
+        "std": round(float(s.std()), 4),
+        "p50": round(float(np.percentile(s, 50)), 4),
+        "p90": round(float(np.percentile(s, 90)), 4),
+        "p99": round(float(np.percentile(s, 99)), 4),
+    }
 
 
 def _hysteresis_threshold(score, high_thr, low_thr):
@@ -937,9 +982,14 @@ def _resolve_classification(scores, diff, feat_a):
     return best, conf
 
 
-def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
+def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
+                            dl_score_override=None):
     """
     Dual-engine: AdaptFormer + classical fusion with confidence-pruned union.
+
+    ``dl_score_override`` lets callers supply a precomputed deep score map (e.g.
+    full-resolution windowed inference) instead of running AdaptFormer on the
+    working-resolution arrays.
     """
     from .model_inference import is_model_available, predict_change_mask
 
@@ -948,7 +998,14 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
     model_ok = False
     threshold = 0.30 + (1.0 - float(np.clip(sensitivity, 0, 1))) * 0.22
 
-    if is_model_available():
+    if dl_score_override is not None:
+        dl_score = dl_score_override.astype(np.float32)
+        if dl_score.shape != img1.shape[:2]:
+            dl_score = cv2.resize(dl_score, (img1.shape[1], img1.shape[0]),
+                                  interpolation=cv2.INTER_LINEAR)
+        model_mask = (dl_score >= threshold).astype(np.uint8) * 255
+        model_ok = True
+    elif is_model_available():
         try:
             model_mask, dl_score = predict_change_mask(img1, img2, threshold=threshold)
             model_ok = dl_score is not None
@@ -961,18 +1018,33 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
     if model_ok and dl_score is not None:
         if model_mask is None:
             model_mask = (dl_score >= threshold).astype(np.uint8) * 255
-        combined = _smart_union_fusion(
-            model_mask, rule_mask, dl_score, classical_score, sensitivity=sensitivity)
-        combined = _clean_mask(combined, sensitivity=sensitivity)
+
+        from .detection_config import get_fusion_mode
+        fusion_mode = get_fusion_mode()
+        if fusion_mode == "hysteresis":
+            # Confidence-gated hysteresis fusion keeps complete change blobs
+            # while pruning isolated weak responses (better recall on big blobs).
+            combined, final_score, fuse_dbg = fuse_dl_and_classical(
+                dl_score, classical_score, img1, img2, sensitivity=sensitivity)
+        else:
+            combined = _smart_union_fusion(
+                model_mask, rule_mask, dl_score, classical_score, sensitivity=sensitivity)
+            combined = _clean_mask(combined, sensitivity=sensitivity)
+            final_score = np.maximum(dl_score, classical_score)
+            fuse_dbg = {}
         debug = {
             "method": "AI-Based Deep Learning (AdaptFormer + confidence union)",
             "model": "adaptformer-levir-cd",
-            "fusion": "smart_union",
+            "fusion": fusion_mode,
             "threshold_used": int(threshold * 255),
             "sensitivity": float(sensitivity),
             "model_changed_px": int(np.sum(model_mask > 127)),
             "rule_changed_px": int(np.sum(rule_mask > 127)),
             "combined_changed_px": int(np.sum(combined > 127)),
+            "fusion_debug": fuse_dbg,
+            "dl_score_source": "windowed_fullres" if dl_score_override is not None else "tiled",
+            "probabilityMapStats": _prob_map_stats(final_score),
+            "_score_map": final_score.astype(np.float32),
         }
         return combined, debug
 
@@ -1129,7 +1201,7 @@ ALIGNMENT_WARNING_MSG = (
 # 11. Robust post-processing
 # ---------------------------------------------------------------------------
 
-def _clean_mask(mask, sensitivity=0.5, border_margin=12):
+def _clean_mask(mask, sensitivity=0.5, border_margin=None):
     """
     Robust morphological cleaning:
     1. Zero-out border pixels (registration artifacts)
@@ -1139,7 +1211,13 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     5. Fill holes inside regions
     6. Erode-then-dilate to break thin noise bridges
     7. Connected-component area + circularity filtering
+
+    ``border_margin`` defaults to the env-configured value (smaller in full-res
+    mode so genuine edge changes are not discarded).
     """
+    if border_margin is None:
+        from .detection_config import get_border_margin
+        border_margin = get_border_margin()
     mask = mask.copy()
     h, w = mask.shape[:2]
 
@@ -2639,16 +2717,57 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
                   enable_registration=True, enable_normalization=True,
                   detection_sensitivity=0.5, min_region_area=None,
-                  max_size=None, on_progress=None):
+                  max_size=None, on_progress=None,
+                  before_path=None, after_path=None):
     """Run full detection pipeline; returns change_mask, result_image, stats, regions."""
+    from .detection_config import (
+        get_inference_mode, get_load_max_side, get_skip_preblur,
+        get_windowed_threshold, get_tile_size, get_tile_overlap,
+    )
+
     def _prog(pct, stage):
         if on_progress:
             on_progress(int(pct), stage)
 
-    ms = max_size or get_detection_max_size()
+    inference_mode = get_inference_mode()
+    skip_blur = get_skip_preblur()
+
+    # Decide whether to stream the deep score from native GeoTIFF windows.
+    # Triggered for very large rasters (native side > threshold) or when loading
+    # the full-res array would blow the memory budget, so peak RAM stays bounded
+    # while the model still sees full-resolution detail.
+    windowed = False
+    if inference_mode == "fullres_tiled" and before_path and after_path:
+        try:
+            from .dda.geotiff_io import read_native_size
+            from .detection_config import get_tile_memory_budget_mb
+            thr = get_windowed_threshold()
+            na = read_native_size(Path(before_path))
+            nb = read_native_size(Path(after_path))
+            if na and nb and na == nb:
+                cap = get_load_max_side()
+                long_side = min(max(na), cap)
+                # ~3 bytes/px/array, two timestamps held in memory at once
+                est_mb = (long_side * long_side * 3 * 2) / (1024 * 1024)
+                budget = get_tile_memory_budget_mb()
+                over_threshold = bool(thr and max(na) > thr)
+                over_budget = bool(budget and est_mb > budget)
+                if over_threshold or over_budget:
+                    windowed = True
+        except Exception as exc:
+            _log.warning("Windowed-size probe failed: %s", exc)
+
+    if inference_mode == "fullres_tiled" and not windowed:
+        # Keep full imagery at the full-res cap and skip denoise.
+        ms = max_size if (max_size and max_size > get_detection_max_size()) else get_load_max_side()
+    else:
+        # Windowed mode keeps the in-memory arrays bounded (registration +
+        # classical run on the preview); detail comes from the streamed score.
+        ms = max_size or get_detection_max_size()
+
     _prog(5, "Preprocessing images")
-    before_array = preprocess_image(before_pil, max_size=ms)
-    after_array = preprocess_image(after_pil, max_size=ms)
+    before_array = preprocess_image(before_pil, max_size=ms, skip_blur=skip_blur)
+    after_array = preprocess_image(after_pil, max_size=ms, skip_blur=skip_blur)
 
     registration_ok = False
     reg_meta = {}
@@ -2664,12 +2783,33 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     if enable_registration and not registration_ok:
         alignment_warning = ALIGNMENT_WARNING_MSG
 
+    dl_score_override = None
+    if windowed and method in ("AI-Based Deep Learning", "Hybrid AI"):
+        try:
+            from .model_inference import is_model_available, predict_change_score_windowed
+            if is_model_available():
+                _prog(45, "Full-res tiled inference")
+                out_h, out_w = before_array.shape[:2]
+
+                def _win_prog(frac):
+                    _prog(45 + int(frac * 5), "Full-res tiled inference")
+
+                dl_score_override = predict_change_score_windowed(
+                    before_path, after_path, out_h, out_w,
+                    tile_size=get_tile_size(), overlap=get_tile_overlap(),
+                    on_progress=_win_prog,
+                )
+        except Exception as exc:
+            _log.warning("Windowed inference failed, falling back to in-memory: %s", exc)
+            dl_score_override = None
+
     _prog(50, f"Running {method}")
     if method == "AI-Based Deep Learning":
         change_mask, threshold_debug = ai_deep_learning_method(
             before_array, after_array,
             sensitivity=detection_sensitivity,
             registration_ok=registration_ok,
+            dl_score_override=dl_score_override,
         )
     elif method == "Image Difference":
         change_mask, threshold_debug = image_difference_method(
@@ -2695,6 +2835,22 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             sensitivity=detection_sensitivity,
             registration_ok=registration_ok,
         )
+
+    # Pull the (numpy) probability map out of the debug dict so the returned
+    # threshold_debug stays JSON-serializable; stash it privately in stats for
+    # optional probability-PNG export downstream.
+    score_map = None
+    if isinstance(threshold_debug, dict):
+        score_map = threshold_debug.pop("_score_map", None)
+        from .detection_config import (
+            get_tile_size as _gts, get_tile_overlap as _gto,
+            get_multiscale_scales as _gms, get_fusion_mode as _gfm,
+        )
+        threshold_debug["inferenceMode"] = inference_mode
+        threshold_debug["windowed"] = bool(windowed)
+        threshold_debug["fusionMode"] = _gfm()
+        threshold_debug["tileConfig"] = {"tileSize": _gts(), "overlap": _gto(),
+                                         "multiscale": _gms()}
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
     changed_pixels_ratio = (
@@ -2758,7 +2914,12 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             "enable_normalization": bool(enable_normalization),
             "registration_ok": bool(registration_ok),
             "registration": reg_meta,
+            "inference_mode": inference_mode,
+            "windowed": bool(windowed),
+            "working_resolution": [int(before_array.shape[1]), int(before_array.shape[0])],
         },
     }
+    if score_map is not None:
+        stats["_score_map"] = score_map  # numpy; not serialized, consumed downstream
 
     return change_mask, result_image, stats, change_regions

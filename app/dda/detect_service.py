@@ -79,6 +79,7 @@ def run_detection_and_save(
     notify_email: Optional[str] = None,
     max_size: Optional[int] = None,
     geo_bounds_path: Optional[Path] = None,
+    comparison_file: Optional[Path] = None,
     base_path: str = "",
     user_id: Optional[int] = None,
     job_id: Optional[int] = None,
@@ -107,6 +108,12 @@ def run_detection_and_save(
         _report(job_pct, stage)
 
     _report(15, "Running detection")
+
+    def _geotiff_path(p: Optional[Path]) -> Optional[str]:
+        if p is not None and str(p).lower().endswith((".tif", ".tiff")):
+            return str(p)
+        return None
+
     change_mask, result_image, stats, change_regions = run_detection(
         before_pil,
         after_pil,
@@ -117,6 +124,8 @@ def run_detection_and_save(
         min_region_area=min_region_area,
         max_size=max_size,
         on_progress=_on_engine_progress,
+        before_path=_geotiff_path(geo_bounds_path),
+        after_path=_geotiff_path(comparison_file),
     )
 
     _report(80, "Saving results")
@@ -132,6 +141,21 @@ def run_detection_and_save(
     overlay_path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(result_image).save(overlay_path)
     relative_overlay = f"overlays/{overlay_filename}"
+
+    relative_prob = ""
+    try:
+        from ..detection_config import get_save_prob_map
+        score_map = stats.pop("_score_map", None)
+        if get_save_prob_map() and score_map is not None:
+            import numpy as _np
+            prob_u8 = _np.clip(score_map * 255.0, 0, 255).astype("uint8")
+            prob_img = Image.fromarray(prob_u8)
+            prob_img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            prob_file = OVERLAYS_DIR / f"{base_name}_prob.png"
+            prob_img.save(prob_file)
+            relative_prob = f"overlays/{base_name}_prob.png"
+    except Exception as exc:
+        logger.warning("Probability map export failed: %s", exc)
 
     relative_before_full = ""
     relative_before_thumb = ""
@@ -261,6 +285,7 @@ def run_detection_and_save(
             "alignmentWarning": stats.get("alignment_warning"),
             "registrationOk": stats.get("params", {}).get("registration_ok"),
             "geo": geo_debug,
+            "probabilityMapUrl": f"/api/overlay/{relative_prob}" if relative_prob else None,
         },
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,

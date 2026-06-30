@@ -32,9 +32,10 @@ def _utcnow():
 
 
 def _load_pair(base_path: str, comparison_path: str) -> tuple[Image.Image, Image.Image, Path]:
+    from ..detection_config import get_load_max_side
     base_file = safe_resolve(base_path)
     comp_file = safe_resolve(comparison_path)
-    max_side = get_detection_max_side()
+    max_side = get_load_max_side()
     before_pil = load_rgb_pil(base_file, max_side=max_side)
     after_pil = load_rgb_pil(comp_file, max_side=max_side)
     if before_pil.size != after_pil.size:
@@ -71,6 +72,7 @@ def _run_job_sync(job_id: int) -> None:
 
         update_job_progress(job_id, 8, "Loading images")
         before_pil, after_pil, base_file = _load_pair(base_path, comparison_path)
+        comp_file = safe_resolve(comparison_path)
         update_job_progress(job_id, 12, "Images loaded")
         title = params.get("title") or f"{Path(base_path).name} vs {Path(comparison_path).name}"
         result = run_detection_and_save(
@@ -88,6 +90,7 @@ def _run_job_sync(job_id: int) -> None:
             notify_email=job.notify_email or params.get("notify_email"),
             max_size=get_detection_max_side(),
             geo_bounds_path=base_file,
+            comparison_file=comp_file,
             base_path=base_path,
             user_id=job.created_by,
             job_id=job_id,

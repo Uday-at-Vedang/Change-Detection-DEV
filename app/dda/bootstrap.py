@@ -18,6 +18,60 @@ from .dda_auth import seed_dda_admin
 logger = logging.getLogger(__name__)
 
 
+def _migrate_detection_jobs_nullable() -> None:
+    """SQLite legacy schema required image asset FKs; tree library jobs use paths only."""
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(sa_text("PRAGMA table_info(dda_detection_jobs)")).fetchall()
+            if not rows:
+                return
+            by_name = {r[1]: r for r in rows}
+            base_col = by_name.get("base_image_id")
+            if not base_col or base_col[3] == 0:
+                return
+            logger.info("Migrating dda_detection_jobs to allow NULL image IDs for path-based jobs")
+            conn.execute(sa_text("PRAGMA foreign_keys=OFF"))
+            conn.execute(sa_text("""
+                CREATE TABLE dda_detection_jobs_new (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    status VARCHAR(32),
+                    base_image_id INTEGER,
+                    comparison_image_id INTEGER,
+                    method VARCHAR(64),
+                    params_json TEXT,
+                    run_id INTEGER,
+                    error_message TEXT,
+                    notify_email VARCHAR(255),
+                    created_by INTEGER,
+                    started_at DATETIME,
+                    completed_at DATETIME,
+                    created_at DATETIME,
+                    FOREIGN KEY(base_image_id) REFERENCES dda_image_assets (id),
+                    FOREIGN KEY(comparison_image_id) REFERENCES dda_image_assets (id),
+                    FOREIGN KEY(run_id) REFERENCES detection_runs (id),
+                    FOREIGN KEY(created_by) REFERENCES users (id)
+                )
+            """))
+            conn.execute(sa_text("""
+                INSERT INTO dda_detection_jobs_new (
+                    id, status, base_image_id, comparison_image_id, method, params_json,
+                    run_id, error_message, notify_email, created_by,
+                    started_at, completed_at, created_at
+                )
+                SELECT
+                    id, status, base_image_id, comparison_image_id, method, params_json,
+                    run_id, error_message, notify_email, created_by,
+                    started_at, completed_at, created_at
+                FROM dda_detection_jobs
+            """))
+            conn.execute(sa_text("DROP TABLE dda_detection_jobs"))
+            conn.execute(sa_text("ALTER TABLE dda_detection_jobs_new RENAME TO dda_detection_jobs"))
+            conn.execute(sa_text("PRAGMA foreign_keys=ON"))
+            conn.commit()
+    except Exception as exc:
+        logger.warning("Detection jobs nullable migration skipped: %s", exc)
+
+
 def init_dda_database():
     """Run DDA-specific startup tasks (dirs, seed, migrations)."""
     if not IS_DDA_MODE:
@@ -43,6 +97,7 @@ def init_dda_database():
                 conn.commit()
             except Exception:
                 conn.rollback()
+            _migrate_detection_jobs_nullable()
     except Exception as exc:
         logger.warning("DDA schema migration skipped: %s", exc)
 
@@ -63,9 +118,12 @@ def init_dda_database():
         from .tree.migration import run_tree_migration
         mig = run_tree_migration(db)
         logger.info("Tree migration: %s", mig)
-        from .tree.sync_service import sync_from_filesystem
-        sync_stats = sync_from_filesystem(db)
-        logger.info("Filesystem sync at startup: %s", sync_stats)
+        try:
+            from .tree.sync_service import sync_from_filesystem
+            sync_stats = sync_from_filesystem(db)
+            logger.info("Filesystem sync at startup: %s", sync_stats)
+        except Exception as exc:
+            logger.warning("Filesystem sync at startup failed: %s", exc)
         from .job_runner import reconcile_stale_jobs
         reconcile_stale_jobs(db)
     finally:

@@ -5,6 +5,95 @@ import cv2
 import numpy as np
 
 
+def make_blend_weights(tile_size: int, overlap: int) -> np.ndarray:
+    """Raised-cosine (trapezoid) 2D weight for seamless tile stitching.
+
+    Ramps from 0 to 1 across the overlap band on each edge and stays flat in
+    the interior, so overlapping tile predictions blend without visible seams.
+    """
+    overlap = max(0, min(overlap, tile_size // 2))
+    if overlap == 0:
+        return np.ones((tile_size, tile_size), dtype=np.float32)
+    ramp = np.linspace(0.0, 1.0, overlap, dtype=np.float32)
+    flat = np.ones(tile_size - 2 * overlap, dtype=np.float32)
+    profile = np.concatenate([ramp, flat, ramp[::-1]])
+    return np.outer(profile, profile).astype(np.float32)
+
+
+def tiled_score_map(score_tile_fn, img1, img2, tile_size: int = 256,
+                    overlap: int | None = None,
+                    score_batch_fn=None, batch: int = 1):
+    """Sliding-window tiled scoring with reflect padding + cosine blending.
+
+    ``score_tile_fn(tile1, tile2)`` must return a float32 array in [0, 1] the
+    same height/width as the input tile. Returns a float32 change-probability
+    map cropped back to the original (h, w). This is the single shared
+    implementation used by every deep model so blending stays consistent.
+
+    When ``batch > 1`` and ``score_batch_fn`` is provided, tiles are scored in
+    groups (``score_batch_fn(list[(t1, t2)]) -> list[prob]``) so GPUs can run
+    several tiles per forward pass.
+    """
+    h, w = img1.shape[:2]
+    if overlap is None:
+        overlap = tile_size // 4
+    overlap = max(0, min(overlap, tile_size // 2))
+    stride = max(1, tile_size - overlap)
+
+    pad_h = (tile_size - h % tile_size) % tile_size
+    pad_w = (tile_size - w % tile_size) % tile_size
+    # Guarantee at least one full tile even for small inputs
+    pad_h = max(pad_h, max(0, tile_size - h))
+    pad_w = max(pad_w, max(0, tile_size - w))
+    if pad_h or pad_w:
+        img1 = np.pad(img1, ((0, pad_h), (0, pad_w), (0, 0)), mode="reflect")
+        img2 = np.pad(img2, ((0, pad_h), (0, pad_w), (0, 0)), mode="reflect")
+
+    ph, pw = img1.shape[:2]
+    score_sum = np.zeros((ph, pw), dtype=np.float32)
+    count = np.zeros((ph, pw), dtype=np.float32)
+    weight_2d = make_blend_weights(tile_size, overlap)
+
+    ys = list(range(0, ph - tile_size + 1, stride))
+    xs = list(range(0, pw - tile_size + 1, stride))
+    # Ensure the far edges are always covered
+    if ys and ys[-1] != ph - tile_size:
+        ys.append(ph - tile_size)
+    if xs and xs[-1] != pw - tile_size:
+        xs.append(pw - tile_size)
+
+    coords = [(y0, x0) for y0 in ys for x0 in xs]
+
+    def _accumulate(y0, x0, prob):
+        if prob.shape != (tile_size, tile_size):
+            prob = cv2.resize(prob.astype(np.float32), (tile_size, tile_size),
+                              interpolation=cv2.INTER_LINEAR)
+        score_sum[y0:y0 + tile_size, x0:x0 + tile_size] += prob * weight_2d
+        count[y0:y0 + tile_size, x0:x0 + tile_size] += weight_2d
+
+    use_batch = score_batch_fn is not None and batch > 1
+    if use_batch:
+        for i in range(0, len(coords), batch):
+            chunk = coords[i:i + batch]
+            pairs = [
+                (np.ascontiguousarray(img1[y:y + tile_size, x:x + tile_size]),
+                 np.ascontiguousarray(img2[y:y + tile_size, x:x + tile_size]))
+                for (y, x) in chunk
+            ]
+            probs = score_batch_fn(pairs)
+            for (y0, x0), prob in zip(chunk, probs):
+                _accumulate(y0, x0, prob)
+    else:
+        for (y0, x0) in coords:
+            t1 = np.ascontiguousarray(img1[y0:y0 + tile_size, x0:x0 + tile_size])
+            t2 = np.ascontiguousarray(img2[y0:y0 + tile_size, x0:x0 + tile_size])
+            _accumulate(y0, x0, score_tile_fn(t1, t2))
+
+    count = np.maximum(count, 1e-6)
+    avg = score_sum / count
+    return avg[:h, :w]
+
+
 def split_into_tiles(img, tile_size=512, overlap=64):
     """
     Split an image into overlapping tiles.
