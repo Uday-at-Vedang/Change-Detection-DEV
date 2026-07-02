@@ -121,21 +121,21 @@
         <main class="dda-main">
           <div class="card">
             <div class="card-header"><h3>Compare Images</h3></div>
-            <p class="sub">Select <strong>Base (T1)</strong> and <strong>Comparison (T2)</strong> from the library, then run detection.</p>
+            <p class="sub">Select <strong>Old Image (T1)</strong> and <strong>New Image (T2)</strong> from the library, then run detection.</p>
             <div class="dda-compare-slots">
               <div class="dda-slot" id="slot-t1" data-slot="t1">
-                <span class="dda-slot-label">Base Image (T1)</span>
+                <span class="dda-slot-label">Old Image (T1)</span>
                 <div id="slot-t1-preview" class="dda-slot-preview-wrap"></div>
-                <select id="select-t1" class="dda-image-select" aria-label="Select base image">
-                  <option value="">— Choose base image —</option>
+                <select id="select-t1" class="dda-image-select" aria-label="Select old image">
+                  <option value="">— Choose old image —</option>
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t1">Browse library</button>
               </div>
               <div class="dda-slot" id="slot-t2" data-slot="t2">
-                <span class="dda-slot-label">Comparison Image (T2)</span>
+                <span class="dda-slot-label">New Image (T2)</span>
                 <div id="slot-t2-preview" class="dda-slot-preview-wrap"></div>
-                <select id="select-t2" class="dda-image-select" aria-label="Select comparison image">
-                  <option value="">— Choose comparison image —</option>
+                <select id="select-t2" class="dda-image-select" aria-label="Select new image">
+                  <option value="">— Choose new image —</option>
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t2">Browse library</button>
               </div>
@@ -219,8 +219,8 @@
       <div class="dda-view-toolbar">
         <span class="dda-view-label">View:</span>
         <button type="button" class="dda-view-btn active" data-view="slider">Slider</button>
-        <button type="button" class="dda-view-btn" data-view="t1">Base (T1)</button>
-        <button type="button" class="dda-view-btn" data-view="t2">Comparison (T2)</button>
+        <button type="button" class="dda-view-btn" data-view="t1">Old Image (T1)</button>
+        <button type="button" class="dda-view-btn" data-view="t2">New Image (T2)</button>
         <button type="button" class="dda-view-btn" data-view="overlay">Overlay</button>
         <button type="button" class="btn btn-secondary btn-sm" id="dda-locate-btn" title="Locate selected region" disabled>Locate</button>
       </div>
@@ -326,7 +326,7 @@
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/library.js?v=10"></script>
   <script src="/static/js/dda/result.js?v=7"></script>
-  <script src="/static/js/dda/compare.js?v=13"></script>
+  <script src="/static/js/dda/compare.js?v=14"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>
 </body>

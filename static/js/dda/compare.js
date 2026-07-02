@@ -57,7 +57,7 @@ function populateSelects(items) {
     const sel = document.getElementById(id);
     if (!sel) return;
     const current = sel.value;
-    const label = id === 'select-t1' ? '— Choose base image —' : '— Choose comparison image —';
+    const label = id === 'select-t1' ? '— Choose old image —' : '— Choose new image —';
     sel.innerHTML = `<option value="">${label}</option>` +
       items.map((img) => `<option value="${encodePath(img.path)}">${escapeHtml(img.breadcrumb || img.nodePath || img.filename)}</option>`).join('');
     if (current) sel.value = current;
@@ -199,7 +199,7 @@ async function openPicker(slotKey) {
   if (!modal || !list) return;
 
   if (title) {
-    title.textContent = slotKey === 't1' ? 'Select Base Image (T1)' : 'Select Comparison Image (T2)';
+    title.textContent = slotKey === 't1' ? 'Select Old Image (T1)' : 'Select New Image (T2)';
   }
   list.innerHTML = '<p class="dim">Loading library…</p>';
   modal.classList.remove('hidden');
@@ -435,7 +435,7 @@ async function pollJobUntilDone(jobId) {
 
 async function runLibraryDetection() {
   if (!compareState.t1 || !compareState.t2) {
-    if (typeof showDdaError === 'function') showDdaError('Select both T1 (base) and T2 (comparison) images first.');
+    if (typeof showDdaError === 'function') showDdaError('Select both T1 (old) and T2 (new) images first.');
     return;
   }
   const btn = document.getElementById('btn-run-job');
