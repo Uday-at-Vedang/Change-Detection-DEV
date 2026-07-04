@@ -1037,6 +1037,32 @@ input:focus, select:focus, textarea:focus {
   font-weight: 600;
   margin: 0;
 }
+.result-modal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  gap: 1rem;
+  align-items: start;
+}
+.result-modal-main {
+  min-width: 0;
+}
+.result-modal-side {
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 1rem;
+}
+.result-modal-side .dda-review-bar {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.result-modal-side .regions-table-wrap {
+  max-height: 68vh;
+  overflow: auto;
+}
+.result-modal-side .regions-table {
+  min-width: 860px;
+}
 .btn-close-modal {
   background: none;
   border: none;
@@ -1058,6 +1084,20 @@ input:focus, select:focus, textarea:focus {
     border-radius: 0;
     min-height: 100vh;
     padding: 1rem;
+  }
+}
+@media (max-width: 1100px) {
+  .result-modal-layout {
+    grid-template-columns: 1fr;
+  }
+  .result-modal-side {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 0.75rem;
+  }
+  .result-modal-side .regions-table-wrap {
+    max-height: none;
   }
 }
 
