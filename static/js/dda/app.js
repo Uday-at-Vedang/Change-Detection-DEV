@@ -174,8 +174,10 @@ async function loadLibraryImages() {
     grid.innerHTML = items.map((img) => {
       const thumb = img.thumbUrl || '';
       const crumb = img.breadcrumb || img.nodePath || img.filename;
+      const encPath = encodeURIComponent(img.path);
       return `
-      <div class="dda-card-img" draggable="true" data-image-path="${img.path.replace(/"/g, '&quot;')}" title="${escapeHtml(img.filename)}">
+      <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
+        <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image">×</button>
         ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
         <div class="meta">
           <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
@@ -183,12 +185,7 @@ async function loadLibraryImages() {
         </div>
       </div>`;
     }).join('');
-    grid.querySelectorAll('.dda-card-img').forEach((card) => {
-      card.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('application/x-dda-image-path', card.dataset.imagePath);
-        e.dataTransfer.setData('text/plain', card.dataset.imagePath);
-      });
-    });
+    if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
     if (typeof loadCompareLibraryGrid === 'function') loadCompareLibraryGrid();
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;

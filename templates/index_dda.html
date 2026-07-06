@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=31" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=13" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=15" />
 </head>
 <body>
   <div class="app dda-app">
@@ -101,6 +101,7 @@
               <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
             </div>
             <div id="lib-grid" class="dda-grid"><p class="dim">Select a node in the tree.</p></div>
+            <p class="sub dim">Click an image to view · use the delete button to remove from library</p>
           </div>
         </main>
       </div>
@@ -291,6 +292,25 @@
     </div>
   </div>
 
+  <div id="dda-image-viewer-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card dda-image-viewer-panel">
+      <div class="card-header">
+        <h3 id="dda-image-viewer-title">Image</h3>
+        <div class="dda-image-viewer-actions">
+          <button type="button" class="btn btn-danger btn-sm" id="dda-image-delete-btn">Delete</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="dda-image-viewer-close">Close</button>
+        </div>
+      </div>
+      <div class="dda-image-viewer-body">
+        <p id="dda-image-viewer-meta" class="dim"></p>
+        <p id="dda-image-viewer-status" class="dim dda-image-viewer-status"></p>
+        <div class="dda-image-viewer-wrap">
+          <img id="dda-image-viewer-img" alt="" />
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="dda-manage-modal" class="dda-modal hidden" role="dialog">
     <div class="dda-modal-panel card dda-manage-panel">
       <div class="card-header">
@@ -327,9 +347,9 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/app.js?v=15"></script>
+  <script src="/static/js/dda/app.js?v=16"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
-  <script src="/static/js/dda/library.js?v=10"></script>
+  <script src="/static/js/dda/library.js?v=12"></script>
   <script src="/static/js/dda/result.js?v=7"></script>
   <script src="/static/js/dda/compare.js?v=14"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>

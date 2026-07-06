@@ -36,6 +36,41 @@ def _thumb_cache_path(relative_path: str) -> Path:
     return LOCAL_THUMB_CACHE / f"{key}.png"
 
 
+def _preview_cache_path(relative_path: str, max_side: int) -> Path:
+    key = hashlib.sha256(f"{relative_path}:{max_side}".encode("utf-8")).hexdigest()[:32]
+    return LOCAL_THUMB_CACHE / "preview" / f"{key}.png"
+
+
+def _clear_image_caches(relative_path: str) -> None:
+    _thumb_cache_path(relative_path).unlink(missing_ok=True)
+    for max_side in (1024, 1600, 2048, 4096):
+        _preview_cache_path(relative_path, max_side).unlink(missing_ok=True)
+
+
+def _delete_related_sidecars(path: Path) -> None:
+    """Remove common geospatial sidecars next to a library image."""
+    candidates = [
+        Path(f"{path}.aux.xml"),
+        path.with_suffix(".tfw"),
+        path.with_suffix(".tifw"),
+        path.with_suffix(".jgw"),
+        path.with_suffix(".jpgw"),
+        path.with_suffix(".pgw"),
+        path.with_suffix(".pngw"),
+        path.with_suffix(".prj"),
+        Path(f"{path}.wld"),
+    ]
+    ext = path.suffix.lower()
+    if ext in (".jpg", ".jpeg"):
+        candidates.append(path.with_name(path.name + "w"))
+    for sidecar in candidates:
+        try:
+            if sidecar.is_file():
+                sidecar.unlink()
+        except OSError as exc:
+            logger.warning("Could not delete sidecar %s: %s", sidecar, exc)
+
+
 def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
     encoded = quote(img.file_path, safe="/")
     return {
@@ -52,6 +87,7 @@ def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
         "uploadedBy": img.uploaded_by,
         "uploadedOn": img.uploaded_on.isoformat() if img.uploaded_on else None,
         "thumbUrl": f"/api/dda/local/thumb?path={encoded}",
+        "previewUrl": f"/api/dda/local/preview?path={encoded}",
         "hasGeoref": img.has_georef,
         "width": img.width,
         "height": img.height,
@@ -189,3 +225,77 @@ def get_or_build_thumb(relative_path: str, max_side: int = 256) -> Path:
         logger.warning("Thumb failed for %s: %s", relative_path, exc)
         write_placeholder_png(cache, Path(relative_path).name, max_side)
         return cache
+
+
+def get_or_build_preview(relative_path: str, max_side: int = 1600) -> Path:
+    """Larger cached preview for in-app image viewer."""
+    full = resolve_file(relative_path)
+    max_side = max(256, min(int(max_side), 4096))
+    try:
+        size = full.stat().st_size
+        if size > 2 * 1024 ** 3:
+            max_side = min(max_side, 512)
+        elif size > 500 * 1024 ** 2:
+            max_side = min(max_side, 1024)
+    except OSError:
+        pass
+    cache = _preview_cache_path(relative_path, max_side)
+    try:
+        if cache.exists() and cache.stat().st_mtime >= full.stat().st_mtime:
+            return cache
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        raster_to_preview_png(full, cache, max_side=max_side)
+        return cache
+    except Exception as exc:
+        logger.warning("Preview failed for %s: %s", relative_path, exc)
+        write_placeholder_png(cache, Path(relative_path).name, min(max_side, 1024))
+        return cache
+
+
+def get_image_by_id(db: Session, image_id: int) -> Optional[ImageLibrary]:
+    return db.query(ImageLibrary).filter(ImageLibrary.id == image_id).first()
+
+
+def delete_library_image(
+    db: Session,
+    *,
+    image_id: Optional[int] = None,
+    relative_path: Optional[str] = None,
+    action_by: str = "",
+) -> dict:
+    """Remove an image from disk and the library index."""
+    img: Optional[ImageLibrary] = None
+    if image_id is not None:
+        img = get_image_by_id(db, image_id)
+    elif relative_path:
+        img = get_image_by_file_path(db, relative_path)
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found in library")
+
+    rel = img.file_path
+    node_id = img.node_id
+    image_name = img.image_name
+    saved_id = img.id
+
+    try:
+        full = resolve_file(rel)
+        if full.is_file():
+            full.unlink()
+        _delete_related_sidecars(full)
+    except FileNotFoundError:
+        logger.warning("Library file already missing on disk: %s", rel)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not delete file: {exc}") from exc
+
+    _clear_image_caches(rel)
+    log_action(
+        db,
+        "delete_image",
+        node_id=node_id,
+        old_value={"file": rel, "name": image_name},
+        action_by=action_by,
+    )
+    db.delete(img)
+    db.commit()
+    logger.info("Deleted library image %s (%s)", image_name, rel)
+    return {"ok": True, "deletedPath": rel, "imageName": image_name, "imageId": saved_id}

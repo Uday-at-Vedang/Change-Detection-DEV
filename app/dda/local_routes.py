@@ -2,15 +2,17 @@
 import logging
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from PIL import Image
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from .dda_auth import current_dda_user
+from .dda_auth import current_dda_user, require_min_role
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
 
@@ -24,12 +26,35 @@ from .config import (
     get_storage_root,
     is_hf_hosted,
 )
-from .tree.image_service import get_or_build_thumb, list_all_images
+from .tree.image_service import (
+    delete_library_image,
+    get_or_build_preview,
+    get_or_build_thumb,
+    list_all_images,
+)
 from .tree.path_service import resolve_file
 from .tree.tree_service import build_tree
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class LocalImageDeleteBody(BaseModel):
+    path: str
+
+
+def _normalize_library_path(path: str) -> str:
+    return unquote((path or "").replace("\\", "/").strip().lstrip("/"))
+
+
+def _delete_image_by_path(db: Session, user: User, rel: str) -> dict:
+    require_min_role(user, db, "viewer")
+    if not rel:
+        raise HTTPException(status_code=400, detail="path is required")
+    result = delete_library_image(
+        db, relative_path=rel, action_by=user.email or str(user.id),
+    )
+    return {"ok": True, **result}
 
 
 def _require_dda():
@@ -93,6 +118,7 @@ def local_images(
 @router.get("/local/thumb")
 def local_thumb(path: str = Query(...)):
     _require_dda()
+    path = _normalize_library_path(path)
     try:
         thumb = get_or_build_thumb(path)
         return FileResponse(thumb, media_type="image/png")
@@ -104,6 +130,46 @@ def local_thumb(path: str = Query(...)):
         cache = LOCAL_THUMB_CACHE / "fallback.png"
         write_placeholder_png(cache, Path(path).name)
         return FileResponse(cache, media_type="image/png")
+
+
+@router.get("/local/preview")
+def local_preview(path: str = Query(...), max: int = Query(1600, ge=256, le=4096)):
+    """Full-size preview for library image viewer (cached PNG)."""
+    _require_dda()
+    path = _normalize_library_path(path)
+    try:
+        preview = get_or_build_preview(path, max_side=max)
+        return FileResponse(preview, media_type="image/png")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image file not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.warning("Preview endpoint failed for %s: %s", path, exc)
+        raise HTTPException(status_code=500, detail=f"Could not build preview: {exc}") from exc
+
+
+@router.post("/local/images/delete")
+def local_delete_image_post(
+    body: LocalImageDeleteBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Delete a library image (preferred — works reliably across browsers)."""
+    _require_dda()
+    return _delete_image_by_path(db, user, _normalize_library_path(body.path))
+
+
+@router.delete("/local/images")
+def local_delete_image(
+    body: Optional[LocalImageDeleteBody] = None,
+    path: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    _require_dda()
+    rel = _normalize_library_path(body.path if body and body.path else (path or ""))
+    return _delete_image_by_path(db, user, rel)
 
 
 @router.post("/local/rescan")

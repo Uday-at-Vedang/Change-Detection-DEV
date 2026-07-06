@@ -11,7 +11,14 @@ from ...database import get_db
 from ...models import User
 from ..config import IS_DDA_MODE
 from ..dda_auth import current_dda_user, get_user_role, require_min_role
-from .image_service import IMAGE_TYPES, image_to_dict, list_all_images, list_images_for_node, upload_image
+from .image_service import (
+    IMAGE_TYPES,
+    delete_library_image,
+    image_to_dict,
+    list_all_images,
+    list_images_for_node,
+    upload_image,
+)
 from .tree_service import build_tree, create_node, delete_node, get_node_or_404, move_node, rename_node
 
 router = APIRouter()
@@ -172,3 +179,17 @@ async def api_upload_image(
     )
     node = get_node_or_404(db, node_id)
     return {"status": True, "message": "Image Uploaded Successfully", "image": image_to_dict(img, node)}
+
+
+@router.delete("/tree/images/{image_id}")
+def api_delete_image(
+    image_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    _require_dda()
+    require_min_role(user, db, "viewer")
+    result = delete_library_image(
+        db, image_id=image_id, action_by=user.email or str(user.id),
+    )
+    return {"status": True, "message": "Image Deleted Successfully", **result}

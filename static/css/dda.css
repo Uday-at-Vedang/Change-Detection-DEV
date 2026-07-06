@@ -179,15 +179,37 @@
   min-height: 80px;
 }
 .dda-card-img {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
   background: var(--bg-elevated);
-  cursor: grab;
+  cursor: pointer;
   transition: border-color var(--transition);
 }
+.dda-card-img[draggable="true"] { cursor: grab; }
 .dda-card-img:hover { border-color: var(--grad-start); }
-.dda-card-img img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.dda-card-img img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; pointer-events: none; }
+.dda-card-delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition), background var(--transition);
+}
+.dda-card-img:hover .dda-card-delete-btn,
+.dda-card-delete-btn:focus { opacity: 1; }
+.dda-card-delete-btn:hover { background: var(--danger, #dc2626); }
 .dda-card-img .meta {
   padding: 0.4rem 0.5rem;
   font-size: 0.75rem;
@@ -314,6 +336,40 @@
 .dda-picker-item:hover { border-color: var(--grad-start); }
 .dda-picker-item img { width: 100%; aspect-ratio: 1; object-fit: cover; }
 .dda-picker-item span { padding: 0.4rem 0.5rem; font-size: 0.75rem; }
+
+.dda-image-viewer-panel {
+  width: min(1100px, 96vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.dda-image-viewer-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.dda-image-viewer-body {
+  padding: 0 1rem 1rem;
+  overflow: auto;
+}
+.dda-image-viewer-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+#dda-image-viewer-img {
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  display: block;
+}
+.dda-image-viewer-status { min-height: 1.2rem; margin: 0 0 0.5rem; }
+.dda-image-viewer-status.dda-viewer-error { color: var(--danger, #dc2626); }
 
 .dda-result-overlay { margin: 1rem 0; }
 .dda-result-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }

@@ -194,11 +194,27 @@ def _rasterio_read_rgb(path: Path, max_side: int):
         scale = min(1.0, max_side / max(src.width, src.height, 1))
         out_h = max(1, int(src.height * scale))
         out_w = max(1, int(src.width * scale))
-        data = src.read(
-            indexes=list(range(1, count + 1)),
-            out_shape=(count, out_h, out_w),
-            resampling=Resampling.bilinear,
-        )
+
+        read_kwargs = {
+            "indexes": list(range(1, count + 1)),
+            "out_shape": (count, out_h, out_w),
+            "resampling": Resampling.bilinear,
+        }
+        try:
+            data = src.read(**read_kwargs)
+        except Exception:
+            # Fallback: read from coarsest overview when full decimation fails
+            if src.overviews(1):
+                with rasterio.open(path, overview_level=len(src.overviews(1))) as ov_src:
+                    ocount = min(3, ov_src.count)
+                    data = ov_src.read(
+                        indexes=list(range(1, ocount + 1)),
+                        out_shape=(ocount, out_h, out_w),
+                        resampling=Resampling.bilinear,
+                    )
+            else:
+                raise
+
         if count == 1:
             rgb = np.stack([data[0], data[0], data[0]])
         else:
