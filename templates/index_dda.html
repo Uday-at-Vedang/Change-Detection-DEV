@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=30" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=11" />
+  <link rel="stylesheet" href="/static/css/style.css?v=31" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=15" />
 </head>
 <body>
   <div class="app dda-app">
@@ -32,55 +32,67 @@
     <div id="dda-error" class="alert alert-error hidden"></div>
     <div id="dda-success" class="alert alert-success hidden"></div>
 
-    <!-- Tab: Image Library — reads from library_sources/ year folders -->
+    <!-- Tab: Image Library — unlimited-depth tree -->
     <section id="tab-library" class="dda-panel active" role="tabpanel">
       <div class="dda-layout">
         <aside class="dda-sidebar card">
           <div class="card-header">
-            <h3>Years</h3>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" title="Rescan folder">Refresh</button>
+            <h3>Library tree</h3>
+            <div class="dda-sidebar-actions">
+              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library">Manage</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib">Refresh</button>
+            </div>
           </div>
           <div id="lib-folder-path" class="dda-folder-path dim"></div>
-          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter years…" />
+          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter nodes…" />
           <div id="lib-tree" class="dda-tree"><p class="dim">Loading…</p></div>
-          <div class="dda-hierarchy-wrap">
-            <h4 class="dda-hierarchy-title">DDA zones</h4>
-            <div id="lib-hierarchy" class="dda-hierarchy"><p class="dim">Loading…</p></div>
-          </div>
         </aside>
         <main class="dda-main">
           <div class="card dda-instructions">
             <div class="card-header">
-              <h3>Local folder library</h3>
+              <h3>Tree library</h3>
               <span class="dim" id="lib-config-hint"></span>
             </div>
-            <p class="sub" id="lib-instructions">
-              Copy <code>.tif</code> images into <code>library_sources/YEAR/</code> in your project folder, then click <strong>Refresh</strong>.
-            </p>
+            <p class="sub" id="lib-instructions">Organize images in a configurable zone → area → year → type hierarchy.</p>
             <pre id="lib-path-display" class="dda-path-code"></pre>
           </div>
-          <div class="card hidden" id="hf-upload-card">
+          <div class="card" id="upload-card">
             <div class="card-header">
-              <h3>Upload to Space storage</h3>
-              <span class="dim">Required on Hugging Face</span>
+              <h3>Upload image</h3>
             </div>
-            <p class="sub" id="hf-upload-limit">Files on your computer are not on the server. Upload .tif images here (up to 5 GB each).</p>
-            <form id="form-hf-upload" class="dda-upload-form">
+            <p class="sub" id="upload-limit-hint">Select a tree node and image type.</p>
+            <form id="form-tree-upload" class="dda-upload-form">
               <div class="location-row">
                 <div class="form-group">
-                  <label for="hf-year">Year folder</label>
-                  <input type="number" id="hf-year" required min="2000" max="2100" value="2025" />
+                  <label for="upload-node">Tree node</label>
+                  <select id="upload-node" required><option value="">— Select node —</option></select>
                 </div>
                 <div class="form-group">
-                  <label for="hf-file">GeoTIFF file</label>
-                  <input type="file" id="hf-file" accept=".tif,.tiff" required />
+                  <label for="upload-image-type">Image type</label>
+                  <select id="upload-image-type">
+                    <option>GeoTIFF</option><option>Satellite</option><option>Drone</option>
+                    <option>Orthomosaic</option><option>DEM</option><option>Raster</option>
+                    <option>PNG</option><option>JPEG</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="upload-capture-date">Capture date</label>
+                  <input type="date" id="upload-capture-date" />
+                </div>
+                <div class="form-group">
+                  <label for="upload-file">File</label>
+                  <input type="file" id="upload-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
+                </div>
+                <div class="form-group">
+                  <label for="upload-manual-bounds">Geo bounds (W,S,E,N)</label>
+                  <input type="text" id="upload-manual-bounds" placeholder="optional, e.g. 77.5,12.9,77.6,13.0" />
                 </div>
               </div>
-              <div id="hf-upload-progress" class="dda-upload-progress hidden">
-                <div class="dda-progress-bar"><div id="hf-upload-progress-fill" class="dda-progress-fill"></div></div>
-                <span id="hf-upload-progress-label" class="dim">Uploading…</span>
+              <div id="upload-progress" class="dda-upload-progress hidden">
+                <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
+                <span id="upload-progress-label" class="dim">Uploading…</span>
               </div>
-              <button type="submit" class="btn btn-primary" id="btn-hf-upload">Upload to library</button>
+              <button type="submit" class="btn btn-primary" id="btn-tree-upload">Upload to node</button>
             </form>
           </div>
           <div class="card">
@@ -88,7 +100,8 @@
               <h3 id="lib-grid-title">Images</h3>
               <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
             </div>
-            <div id="lib-grid" class="dda-grid"><p class="dim">Select a year or add images to library_sources/.</p></div>
+            <div id="lib-grid" class="dda-grid"><p class="dim">Select a node in the tree.</p></div>
+            <p class="sub dim">Click an image to view · use the delete button to remove from library</p>
           </div>
         </main>
       </div>
@@ -96,63 +109,77 @@
 
     <!-- Tab: Change Detection -->
     <section id="tab-detect" class="dda-panel" role="tabpanel">
-      <div class="card">
-        <div class="card-header"><h3>Compare Images</h3></div>
-        <p class="sub">Select <strong>Base (T1)</strong> and <strong>Comparison (T2)</strong> from the library, then run detection.</p>
-        <div class="dda-compare-slots">
-          <div class="dda-slot" id="slot-t1" data-slot="t1">
-            <span class="dda-slot-label">Base Image (T1)</span>
-            <div id="slot-t1-preview" class="dda-slot-preview-wrap"></div>
-            <select id="select-t1" class="dda-image-select" aria-label="Select base image">
-              <option value="">— Choose base image —</option>
-            </select>
-            <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t1">Browse library</button>
-          </div>
-          <div class="dda-slot" id="slot-t2" data-slot="t2">
-            <span class="dda-slot-label">Comparison Image (T2)</span>
-            <div id="slot-t2-preview" class="dda-slot-preview-wrap"></div>
-            <select id="select-t2" class="dda-image-select" aria-label="Select comparison image">
-              <option value="">— Choose comparison image —</option>
-            </select>
-            <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t2">Browse library</button>
-          </div>
-        </div>
-        <div class="dda-compare-library card">
+      <div class="dda-layout">
+        <aside class="dda-sidebar card">
           <div class="card-header">
-            <h3>Pick from library</h3>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-compare-refresh">Refresh list</button>
+            <h3>Folders</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-compare-refresh">Refresh</button>
           </div>
-          <p class="sub dim">Click <strong>T1</strong> or <strong>T2</strong> on an image, or use the dropdowns above.</p>
-          <div id="compare-lib-grid" class="dda-grid dda-compare-grid">
-            <p class="dim">Loading library images…</p>
+          <div id="compare-folder-path" class="dda-folder-path dim">All images</div>
+          <input type="search" id="compare-tree-search" class="dda-search" placeholder="Filter nodes…" />
+          <div id="compare-tree" class="dda-tree"><p class="dim">Loading…</p></div>
+        </aside>
+        <main class="dda-main">
+          <div class="card">
+            <div class="card-header"><h3>Compare Images</h3></div>
+            <p class="sub">Select <strong>Old Image (T1)</strong> and <strong>New Image (T2)</strong> from the library, then run detection.</p>
+            <div class="dda-compare-slots">
+              <div class="dda-slot" id="slot-t1" data-slot="t1">
+                <span class="dda-slot-label">Old Image (T1)</span>
+                <div id="slot-t1-preview" class="dda-slot-preview-wrap"></div>
+                <select id="select-t1" class="dda-image-select" aria-label="Select old image">
+                  <option value="">— Choose old image —</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t1">Browse library</button>
+              </div>
+              <div class="dda-slot" id="slot-t2" data-slot="t2">
+                <span class="dda-slot-label">New Image (T2)</span>
+                <div id="slot-t2-preview" class="dda-slot-preview-wrap"></div>
+                <select id="select-t2" class="dda-image-select" aria-label="Select new image">
+                  <option value="">— Choose new image —</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t2">Browse library</button>
+              </div>
+            </div>
+            <div class="dda-compare-library card">
+              <div class="card-header">
+                <h3 id="compare-grid-title">Pick from library</h3>
+              </div>
+              <p class="sub dim">Click <strong>T1</strong> or <strong>T2</strong> on an image, or use the dropdowns above (all images).</p>
+              <div id="compare-lib-grid" class="dda-grid dda-compare-grid">
+                <p class="dim">Loading library images…</p>
+              </div>
+            </div>
+            <div class="dda-detect-options">
+              <div class="form-group">
+                <label for="dda-detect-method">Method</label>
+                <select id="dda-detect-method">
+                  <option value="AI-Based Deep Learning">AI-Based Deep Learning</option>
+                  <option value="Hybrid AI">Hybrid AI</option>
+                  <option value="Feature-Based">Feature-Based</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="dda-detect-sensitivity">Sensitivity (0–1)</label>
+                <input type="number" id="dda-detect-sensitivity" min="0" max="1" step="0.05" value="0.45" />
+              </div>
+              <div class="form-group">
+                <label for="dda-detect-min-area">Min region area (px)</label>
+                <input type="number" id="dda-detect-min-area" min="50" max="10000" step="10" value="150" />
+              </div>
+              <label class="dda-check"><input type="checkbox" id="dda-detect-registration" checked /> Image registration</label>
+              <label class="dda-check"><input type="checkbox" id="dda-detect-normalization" checked /> Normalization</label>
+              <label class="dda-check"><input type="checkbox" id="dda-detect-notify" /> Email report when done</label>
+              <input type="email" id="dda-detect-notify-email" class="dda-notify-email hidden" placeholder="recipient@example.com" />
+            </div>
+            <p class="dim" id="dda-detect-res-hint"></p>
+            <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection</button>
+            <div id="detect-progress" class="dda-upload-progress hidden" style="margin-top:0.75rem">
+              <div class="dda-progress-bar"><div id="detect-progress-fill" class="dda-progress-fill"></div></div>
+              <span id="detect-progress-label" class="dim">Starting detection…</span>
+            </div>
           </div>
-        </div>
-        <div class="dda-detect-options">
-          <div class="form-group">
-            <label for="dda-detect-method">Method</label>
-            <select id="dda-detect-method">
-              <option value="AI-Based Deep Learning">AI-Based Deep Learning</option>
-              <option value="Hybrid AI">Hybrid AI</option>
-              <option value="Hybrid Approach">Hybrid Approach</option>
-              <option value="Image Difference">Image Difference</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="dda-detect-sensitivity">Sensitivity (0–1)</label>
-            <input type="number" id="dda-detect-sensitivity" min="0" max="1" step="0.05" value="0.45" />
-          </div>
-          <div class="form-group">
-            <label for="dda-detect-min-area">Min region area (px)</label>
-            <input type="number" id="dda-detect-min-area" min="50" max="10000" step="10" value="150" />
-          </div>
-          <label class="dda-check"><input type="checkbox" id="dda-detect-registration" checked /> Image registration</label>
-          <label class="dda-check"><input type="checkbox" id="dda-detect-normalization" checked /> Normalization</label>
-          <label class="dda-check"><input type="checkbox" id="dda-detect-notify" /> Email report when done</label>
-          <input type="email" id="dda-detect-notify-email" class="dda-notify-email hidden" placeholder="recipient@example.com" />
-        </div>
-        <p class="dim" id="dda-detect-res-hint"></p>
-        <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection</button>
-        <p id="dda-detect-loading" class="dim hidden" style="margin-top:0.75rem">Detection runs as a background job — large GeoTIFFs may take several minutes…</p>
+        </main>
       </div>
     </section>
 
@@ -192,77 +219,139 @@
       <div class="dda-view-toolbar">
         <span class="dda-view-label">View:</span>
         <button type="button" class="dda-view-btn active" data-view="slider">Slider</button>
-        <button type="button" class="dda-view-btn" data-view="t1">Base (T1)</button>
-        <button type="button" class="dda-view-btn" data-view="t2">Comparison (T2)</button>
+        <button type="button" class="dda-view-btn" data-view="t1">Old Image (T1)</button>
+        <button type="button" class="dda-view-btn" data-view="t2">New Image (T2)</button>
         <button type="button" class="dda-view-btn" data-view="overlay">Overlay</button>
         <button type="button" class="btn btn-secondary btn-sm" id="dda-locate-btn" title="Locate selected region" disabled>Locate</button>
       </div>
-      <div class="zoom-slider-section">
-        <div class="zoom-controls">
-          <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-          <span class="zoom-level" id="zoom-level">100%</span>
-          <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-        </div>
-        <div class="zoom-wrapper" id="zoom-wrapper">
-          <div class="compare-slider compare-slider-zoomed" id="compare-slider">
-            <div class="compare-before">
-              <img id="compare-before-img" alt="Before" draggable="false" />
-              <span class="compare-label compare-label-left">Before</span>
+      <div class="result-modal-layout">
+        <div class="result-modal-main">
+          <div class="zoom-slider-section">
+            <div class="zoom-controls">
+              <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+              <span class="zoom-level" id="zoom-level">100%</span>
+              <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
             </div>
-            <div class="compare-after" id="compare-after-clip">
-              <img id="compare-after-img" alt="Changes detected" draggable="false" />
-              <span class="compare-label compare-label-right">Changes</span>
-            </div>
-            <div class="compare-handle" id="compare-handle">
-              <div class="compare-handle-line"></div>
-              <div class="compare-handle-knob">
-                <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 10l4-5v10z" fill="currentColor"/><path d="M14 10l-4-5v10z" fill="currentColor"/></svg>
+            <div class="zoom-wrapper" id="zoom-wrapper">
+              <div class="compare-slider compare-slider-zoomed" id="compare-slider">
+                <div class="compare-before">
+                  <img id="compare-before-img" alt="Before" draggable="false" />
+                  <span class="compare-label compare-label-left">Before</span>
+                </div>
+                <div class="compare-after" id="compare-after-clip">
+                  <img id="compare-after-img" alt="Changes detected" draggable="false" />
+                  <span class="compare-label compare-label-right">Changes</span>
+                </div>
+                <div class="compare-handle" id="compare-handle">
+                  <div class="compare-handle-line"></div>
+                  <div class="compare-handle-knob">
+                    <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 10l4-5v10z" fill="currentColor"/><path d="M14 10l-4-5v10z" fill="currentColor"/></svg>
+                  </div>
+                  <div class="compare-handle-line"></div>
+                </div>
+                <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
               </div>
-              <div class="compare-handle-line"></div>
             </div>
-            <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
           </div>
         </div>
-      </div>
-      <div class="dda-review-bar" id="dda-review-bar">
-        <span class="dda-review-summary dim" id="dda-review-summary"></span>
-        <div class="dda-review-actions">
-          <a class="btn btn-secondary btn-sm" id="dda-export-csv" href="#" download>Export CSV</a>
-          <a class="btn btn-secondary btn-sm" id="dda-export-confirmed" href="#" download>Export confirmed</a>
-          <button type="button" class="btn btn-primary btn-sm" id="dda-submit-dept">Submit confirmed</button>
-        </div>
-      </div>
-      <div class="regions-table-wrap">
-        <table class="regions-table" id="regions-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Change Type</th>
-              <th>DDA Type</th>
-              <th>Lat/Lng</th>
-              <th>Sub-Type</th>
-              <th>Severity</th>
-              <th>Confidence</th>
-              <th>Area (px)</th>
-              <th>Coordinates</th>
-              <th>Stories</th>
-              <th>Height</th>
-              <th>Stage</th>
-              <th>Review</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="regions-tbody"></tbody>
-        </table>
-        <div class="pagination" id="regions-pagination"></div>
+        <aside class="result-modal-side">
+          <div class="dda-review-bar" id="dda-review-bar">
+            <span class="dda-review-summary dim" id="dda-review-summary"></span>
+            <div class="dda-review-actions">
+              <a class="btn btn-secondary btn-sm" id="dda-export-csv" href="#" download>Export CSV</a>
+              <a class="btn btn-secondary btn-sm" id="dda-export-confirmed" href="#" download>Export confirmed</a>
+              <button type="button" class="btn btn-primary btn-sm" id="dda-submit-dept">Submit confirmed</button>
+            </div>
+          </div>
+          <div class="regions-table-wrap">
+            <table class="regions-table" id="regions-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Change Type</th>
+                  <th>DDA Type</th>
+                  <th>Lat/Lng</th>
+                  <th>Sub-Type</th>
+                  <th>Severity</th>
+                  <th>Confidence</th>
+                  <th>Area (px)</th>
+                  <th>Coordinates</th>
+                  <th>Stories</th>
+                  <th>Height</th>
+                  <th>Stage</th>
+                  <th>Review</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="regions-tbody"></tbody>
+            </table>
+            <div class="pagination" id="regions-pagination"></div>
+          </div>
+        </aside>
       </div>
     </div>
   </div>
 
-  <script src="/static/js/dda/app.js?v=12"></script>
-  <script src="/static/js/dda/library.js?v=6"></script>
-  <script src="/static/js/dda/result.js?v=6"></script>
-  <script src="/static/js/dda/compare.js?v=9"></script>
+  <div id="dda-image-viewer-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card dda-image-viewer-panel">
+      <div class="card-header">
+        <h3 id="dda-image-viewer-title">Image</h3>
+        <div class="dda-image-viewer-actions">
+          <button type="button" class="btn btn-danger btn-sm" id="dda-image-delete-btn">Delete</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="dda-image-viewer-close">Close</button>
+        </div>
+      </div>
+      <div class="dda-image-viewer-body">
+        <p id="dda-image-viewer-meta" class="dim"></p>
+        <p id="dda-image-viewer-status" class="dim dda-image-viewer-status"></p>
+        <div class="dda-image-viewer-wrap">
+          <img id="dda-image-viewer-img" alt="" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dda-manage-modal" class="dda-modal hidden" role="dialog">
+    <div class="dda-modal-panel card dda-manage-panel">
+      <div class="card-header">
+        <h3>Manage tree</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-manage-close">Close</button>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Add node</h4>
+        <div class="location-row">
+          <select id="add-child-parent"><option value="">— Root —</option></select>
+          <input type="text" id="add-node-name" placeholder="Node name" />
+          <select id="add-node-type">
+            <option>Zone</option><option>Area</option><option>Year</option>
+            <option>Satellite Images</option><option>Drone Survey</option><option>Change Detection</option>
+            <option>Folder</option>
+          </select>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-add-node">Add</button>
+        </div>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Edit / move / delete</h4>
+        <select id="manage-node-select"></select>
+        <div class="location-row">
+          <input type="text" id="rename-node-name" placeholder="Rename to…" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-node">Rename</button>
+        </div>
+        <div class="location-row">
+          <select id="move-parent"><option value="">— Move to root —</option></select>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-move-node">Move</button>
+        </div>
+        <label class="dda-check"><input type="checkbox" id="delete-files-check" /> Delete files on disk</label>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-node">Delete node</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/app.js?v=16"></script>
+  <script src="/static/js/dda/tree.js?v=2"></script>
+  <script src="/static/js/dda/library.js?v=12"></script>
+  <script src="/static/js/dda/result.js?v=7"></script>
+  <script src="/static/js/dda/compare.js?v=14"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>
 </body>

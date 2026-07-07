@@ -7,13 +7,19 @@ from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .auth import (
     COOKIE_NAME,
@@ -29,6 +35,7 @@ from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
 from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview  # noqa: F401
+from .dda.tree.models import TreeNode, ImageLibrary, AuditLog  # noqa: F401
 from .dda.config import IS_DDA_MODE
 from .dda.bootstrap import init_dda_database, setup_dda
 from .notifier import send_notification, send_test_email
@@ -118,9 +125,15 @@ def health():
     if IS_DDA_MODE:
         try:
             from .dda.job_runner import is_job_runner_busy
-            from .dda.local_library import scan_images
+            from .dda.tree.image_service import list_all_images
+            from .database import SessionLocal
+            _sdb = SessionLocal()
+            try:
+                lib_count = len(list_all_images(_sdb))
+            finally:
+                _sdb.close()
             payload["dda"] = {
-                "libraryImages": len(scan_images()),
+                "libraryImages": lib_count,
                 "jobRunnerBusy": is_job_runner_busy(),
             }
         except Exception as exc:
@@ -299,7 +312,9 @@ async def detect(
                 raise HTTPException(status_code=400, detail=f"{field_name} image is empty")
             if len(raw) > MAX_UPLOAD_BYTES:
                 raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
-            return Image.open(io.BytesIO(raw)).convert("RGB")
+            img = Image.open(io.BytesIO(raw))
+            img = ImageOps.exif_transpose(img)
+            return img.convert("RGB")
         except HTTPException:
             raise
         except Exception as e:

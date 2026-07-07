@@ -65,7 +65,7 @@ def _image_to_dict(asset: ImageAsset, zone_name: str = "", village_name: str = "
 @router.get("/config")
 def dda_config():
     _require_dda()
-    from .config import MAX_GEOTIFF_BYTES, MAX_IMAGE_BYTES, get_library_roots
+    from .config import MAX_GEOTIFF_BYTES, MAX_IMAGE_BYTES, get_library_roots, get_storage_root
     max_gb = MAX_GEOTIFF_BYTES / (1024 ** 3)
     return {
         "mode": "dda",
@@ -75,10 +75,12 @@ def dda_config():
         "maxGeotiffMb": MAX_GEOTIFF_BYTES // (1024 * 1024),
         "maxGeotiffBytes": MAX_GEOTIFF_BYTES,
         "maxImageMb": MAX_IMAGE_BYTES // (1024 * 1024),
+        "maxImageBytes": MAX_IMAGE_BYTES,
         "geotiffEnabled": geotiff_io_available(),
         "allowedExtensions": sorted(ALLOWED_EXTENSIONS),
-        "hierarchyMode": "admin",
-        "librarySource": "local_folder",
+        "hierarchyMode": "tree",
+        "librarySource": "tree_library",
+        "storageRoot": str(get_storage_root()),
         "localLibraryPaths": [str(r) for r in get_library_roots()],
     }
 
@@ -86,34 +88,8 @@ def dda_config():
 @router.get("/hierarchy")
 def get_hierarchy(db: Session = Depends(get_db)):
     _require_dda()
-    zones = db.query(DdaZone).order_by(DdaZone.name).all()
-    tree = []
-    for zone in zones:
-        villages = (
-            db.query(DdaVillage)
-            .filter(DdaVillage.zone_id == zone.id)
-            .order_by(DdaVillage.name)
-            .all()
-        )
-        image_counts = {}
-        for v in villages:
-            cnt = db.query(ImageAsset).filter(ImageAsset.village_id == v.id).count()
-            if cnt:
-                image_counts[v.id] = cnt
-        tree.append({
-            "id": zone.id,
-            "name": zone.name,
-            "mode": zone.mode,
-            "villages": [
-                {
-                    "id": v.id,
-                    "name": v.name,
-                    "imageCount": image_counts.get(v.id, 0),
-                }
-                for v in villages
-            ],
-        })
-    return {"zones": tree}
+    from .tree.tree_service import build_tree
+    return {"tree": build_tree(db)}
 
 
 @router.get("/images")
@@ -195,6 +171,10 @@ async def upload_image(
     db: Session = Depends(get_db),
 ):
     _require_dda()
+    raise HTTPException(
+        status_code=410,
+        detail="Deprecated: use POST /api/dda/tree/nodes/{node_id}/images/upload",
+    )
     ensure_library_dirs()
     user = get_or_create_guest_user(db)
 

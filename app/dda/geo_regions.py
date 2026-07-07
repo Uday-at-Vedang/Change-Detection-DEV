@@ -3,15 +3,34 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy.orm import Session
+
 from .change_type_map import enrich_region_for_dda
-from .geotiff_io import inspect_image
+from .geotiff_io import GeorefInfo, inspect_image, pixel_to_geo_wgs84, read_georef
 
 logger = logging.getLogger(__name__)
 
 BoundsWGS84 = Tuple[float, float, float, float]  # west, south, east, north
+
+
+@dataclass
+class GeoContext:
+    bounds: Optional[BoundsWGS84]
+    georef: Optional[GeorefInfo]
+    georef_width: int
+    georef_height: int
+    source: str = "none"  # embedded | worldfile | manual | linear | none
+
+
+def _bounds_in_range(b: Optional[BoundsWGS84]) -> bool:
+    if not b:
+        return False
+    w, s, e, n = b
+    return abs(w) <= 180 and abs(e) <= 180 and abs(s) <= 90 and abs(n) <= 90
 
 
 def parse_bounds(bounds: Any) -> Optional[BoundsWGS84]:
@@ -49,18 +68,89 @@ def bounds_from_image_path(path: Path) -> Optional[BoundsWGS84]:
         return None
 
 
+def resolve_geo_context(
+    db: Session,
+    base_path: str,
+    base_file: Path,
+) -> GeoContext:
+    """Resolve bounds and affine georef for detection geo enrichment.
+
+    Priority: embedded/world-file affine georef → DB manual bounds → linear
+    bounds inferred from the image sidecars. Tracks which source was used.
+    """
+    georef = read_georef(base_file)
+    bounds = georef.bounds_wgs84 if georef else None
+    georef_width = georef.width if georef else 0
+    georef_height = georef.height if georef else 0
+    source = getattr(georef, "source", "embedded") if georef else "none"
+
+    if not bounds:
+        from .tree.image_service import get_image_by_file_path
+
+        rel = base_path.replace("\\", "/").strip().lstrip("/")
+        img = get_image_by_file_path(db, rel)
+        if img and img.bounds_json:
+            db_bounds = parse_bounds(img.bounds_json)
+            if db_bounds:
+                bounds = db_bounds
+                source = "manual"
+
+    if not bounds:
+        bounds = bounds_from_image_path(base_file)
+        if bounds:
+            source = "linear"
+
+    if (georef_width <= 0 or georef_height <= 0) and bounds:
+        meta = inspect_image(base_file)
+        georef_width = meta.width or georef_width
+        georef_height = meta.height or georef_height
+
+    return GeoContext(
+        bounds=bounds,
+        georef=georef,
+        georef_width=georef_width or 0,
+        georef_height=georef_height or 0,
+        source=source if bounds else "none",
+    )
+
+
 def pixel_to_lat_lng(
     x: float,
     y: float,
     img_width: int,
     img_height: int,
     bounds: BoundsWGS84,
+    *,
+    geo: Optional[GeoContext] = None,
 ) -> Optional[Dict[str, float]]:
-    if img_width <= 0 or img_height <= 0 or not bounds:
+    if img_width <= 0 or img_height <= 0:
         return None
+
+    if geo and geo.georef:
+        coords = pixel_to_geo_wgs84(
+            x, y, geo.georef,
+            detection_width=img_width,
+            detection_height=img_height,
+        )
+        if coords:
+            lng, lat = coords
+            # Guard against bad transforms emitting impossible coordinates
+            if abs(lat) <= 90 and abs(lng) <= 180:
+                return {"lat": round(lat, 6), "lng": round(lng, 6)}
+            logger.warning("Affine produced out-of-range lat/lng (%.3f,%.3f); using linear", lat, lng)
+
+    if not bounds:
+        return None
+
     west, south, east, north = bounds
-    lng = west + (float(x) / img_width) * (east - west)
-    lat = north - (float(y) / img_height) * (north - south)
+    ref_w = geo.georef_width if geo and geo.georef_width > 0 else img_width
+    ref_h = geo.georef_height if geo and geo.georef_height > 0 else img_height
+    scale_x = ref_w / float(img_width)
+    scale_y = ref_h / float(img_height)
+    px = float(x) * scale_x
+    py = float(y) * scale_y
+    lng = west + (px / ref_w) * (east - west)
+    lat = north - (py / ref_h) * (north - south)
     return {"lat": round(lat, 6), "lng": round(lng, 6)}
 
 
@@ -69,20 +159,25 @@ def bbox_area_sq_m(
     img_width: int,
     img_height: int,
     bounds: BoundsWGS84,
+    *,
+    geo: Optional[GeoContext] = None,
 ) -> Optional[float]:
     """Approximate region area in square metres using geographic bounds."""
     if img_width <= 0 or img_height <= 0 or not bounds:
         return None
     west, south, east, north = bounds
-    m_per_px_x = abs(east - west) / img_width
-    m_per_px_y = abs(north - south) / img_height
-    # Rough conversion: 1 degree ≈ 111_320 m at equator; scale lng by cos(lat)
+    ref_w = geo.georef_width if geo and geo.georef_width > 0 else img_width
+    ref_h = geo.georef_height if geo and geo.georef_height > 0 else img_height
+    scale_x = ref_w / float(img_width)
+    scale_y = ref_h / float(img_height)
+    m_per_px_x = abs(east - west) / ref_w
+    m_per_px_y = abs(north - south) / ref_h
     import math
     mid_lat = (north + south) / 2.0
     lat_scale = 111_320.0
     lng_scale = 111_320.0 * math.cos(math.radians(mid_lat))
-    w_m = bbox.get("w", 0) * m_per_px_x * lng_scale
-    h_m = bbox.get("h", 0) * m_per_px_y * lat_scale
+    w_m = bbox.get("w", 0) * scale_x * m_per_px_x * lng_scale
+    h_m = bbox.get("h", 0) * scale_y * m_per_px_y * lat_scale
     return round(w_m * h_m, 1)
 
 
@@ -92,22 +187,30 @@ def enrich_regions_geo(
     img_width: int,
     img_height: int,
     bounds: Optional[BoundsWGS84],
+    geo: Optional[GeoContext] = None,
 ) -> List[dict]:
     """Add latLng, areaSqM, and DDA change type to each region."""
+    effective_bounds = bounds or (geo.bounds if geo else None)
     out = []
     for region in regions:
         enriched = enrich_region_for_dda(region)
         center = region.get("center") or {}
         cx = center.get("x", 0)
         cy = center.get("y", 0)
-        if bounds:
-            lat_lng = pixel_to_lat_lng(cx, cy, img_width, img_height, bounds)
+        if effective_bounds or (geo and geo.georef):
+            lat_lng = pixel_to_lat_lng(
+                cx, cy, img_width, img_height, effective_bounds,
+                geo=geo,
+            )
             if lat_lng:
                 enriched["latLng"] = lat_lng
             bbox = region.get("bbox") or {}
-            area_sq_m = bbox_area_sq_m(bbox, img_width, img_height, bounds)
-            if area_sq_m is not None:
-                enriched["areaSqM"] = area_sq_m
+            if effective_bounds:
+                area_sq_m = bbox_area_sq_m(
+                    bbox, img_width, img_height, effective_bounds, geo=geo,
+                )
+                if area_sq_m is not None:
+                    enriched["areaSqM"] = area_sq_m
         else:
             enriched["latLng"] = None
         out.append(enriched)
@@ -125,4 +228,3 @@ def region_lat_lng(region: dict) -> tuple[Optional[float], Optional[float]]:
         return float(lat), float(lng)
     except (TypeError, ValueError):
         return None, None
-

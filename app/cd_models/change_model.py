@@ -189,54 +189,23 @@ def predict_siamese(img1, img2, threshold=0.5):
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    h, w = img1.shape[:2]
-    tile = _TILE
-    overlap = tile // 4
-    stride = tile - overlap
-
-    pad_h = (tile - h % tile) % tile
-    pad_w = (tile - w % tile) % tile
-    if pad_h or pad_w:
-        img1 = np.pad(img1, ((0, pad_h), (0, pad_w), (0, 0)), mode="reflect")
-        img2 = np.pad(img2, ((0, pad_h), (0, pad_w), (0, 0)), mode="reflect")
-
-    ph, pw = img1.shape[:2]
-    score_sum = np.zeros((ph, pw), dtype=np.float32)
-    count = np.zeros((ph, pw), dtype=np.float32)
-
-    ramp = np.linspace(0, 1, overlap)
-    flat = np.ones(tile - 2 * overlap)
-    profile = np.concatenate([ramp, flat, ramp[::-1]])
-    weight_2d = np.outer(profile, profile).astype(np.float32)
+    from .model_utils import tiled_score_map
 
     mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
     std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
+    def _score_tile(t1, t2):
+        n1 = (t1.astype(np.float32) / 255.0 - mean) / std
+        n2 = (t2.astype(np.float32) / 255.0 - mean) / std
+        ta = torch.from_numpy(n1.transpose(2, 0, 1)).unsqueeze(0).to(_DEVICE)
+        tb = torch.from_numpy(n2.transpose(2, 0, 1)).unsqueeze(0).to(_DEVICE)
+        logits = model(ta, tb)
+        probs = torch.softmax(logits, dim=1)
+        return probs[0, 1].cpu().numpy()
+
     with torch.no_grad():
-        for y0 in range(0, ph - tile + 1, stride):
-            for x0 in range(0, pw - tile + 1, stride):
-                t1 = img1[y0:y0+tile, x0:x0+tile].astype(np.float32) / 255.0
-                t2 = img2[y0:y0+tile, x0:x0+tile].astype(np.float32) / 255.0
-
-                t1 = (t1 - mean) / std
-                t2 = (t2 - mean) / std
-
-                ta = torch.from_numpy(t1.transpose(2, 0, 1)).unsqueeze(0).to(_DEVICE)
-                tb = torch.from_numpy(t2.transpose(2, 0, 1)).unsqueeze(0).to(_DEVICE)
-
-                logits = model(ta, tb)
-                probs = torch.softmax(logits, dim=1)
-                prob_map = probs[0, 1].cpu().numpy()
-
-                if prob_map.shape != (tile, tile):
-                    prob_map = cv2.resize(prob_map, (tile, tile))
-
-                score_sum[y0:y0+tile, x0:x0+tile] += prob_map * weight_2d
-                count[y0:y0+tile, x0:x0+tile] += weight_2d
-
-    count = np.maximum(count, 1e-6)
-    avg = score_sum / count
-    avg = avg[:h, :w]
+        avg = tiled_score_map(_score_tile, img1, img2,
+                              tile_size=_TILE, overlap=_TILE // 4)
 
     mask = (avg >= threshold).astype(np.uint8) * 255
     return mask, avg

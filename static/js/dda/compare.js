@@ -1,6 +1,6 @@
 /** Change Detection tab — pick library images and run comparison. */
 
-const compareState = { t1: null, t2: null, pickingSlot: null };
+const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [] };
 
 function compareFormatBytes(n) {
   if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
@@ -49,7 +49,7 @@ function renderSlotPreview(slotKey, selection) {
   const thumb = selection.thumbUrl || thumbUrlFor(selection.path);
   wrap.innerHTML = `
     <img class="dda-slot-preview" src="${thumb}" alt="" />
-    <div class="dda-slot-meta"><strong>${selection.year}</strong> — ${selection.filename}</div>`;
+    <div class="dda-slot-meta">${escapeHtml(selection.label || selection.filename)}</div>`;
 }
 
 function populateSelects(items) {
@@ -57,9 +57,9 @@ function populateSelects(items) {
     const sel = document.getElementById(id);
     if (!sel) return;
     const current = sel.value;
-    const label = id === 'select-t1' ? '— Choose base image —' : '— Choose comparison image —';
+    const label = id === 'select-t1' ? '— Choose old image —' : '— Choose new image —';
     sel.innerHTML = `<option value="">${label}</option>` +
-      items.map((img) => `<option value="${encodePath(img.path)}">${img.year} — ${img.filename}</option>`).join('');
+      items.map((img) => `<option value="${encodePath(img.path)}">${escapeHtml(img.breadcrumb || img.nodePath || img.filename)}</option>`).join('');
     if (current) sel.value = current;
   });
 }
@@ -68,7 +68,7 @@ function setSlot(slotKey, img) {
   if (!img || !img.path) return;
   const item = {
     path: img.path,
-    year: img.year,
+    label: img.breadcrumb || img.nodePath || img.filename,
     filename: img.filename,
     thumbUrl: img.thumbUrl || thumbUrlFor(img.path),
   };
@@ -92,13 +92,65 @@ function setSlot(slotKey, img) {
 
 function findLibraryItem(path) {
   const norm = decodePath(path);
+  const all = compareState.allLibraryItems || [];
+  const fromAll = all.find((i) => i.path === norm);
+  if (fromAll) return fromAll;
   const items = ensureDdaState().libraryItems || [];
   return items.find((i) => i.path === norm) || {
     path: norm,
-    year: parseInt(norm.split('/')[0], 10) || '',
+    label: norm.split('/').pop(),
     filename: norm.split('/').pop(),
     thumbUrl: thumbUrlFor(norm),
   };
+}
+
+function compareSelectionTitle() {
+  return compareState.selectedNode?.path || 'All images';
+}
+
+function updateCompareFolderPath() {
+  const el = document.getElementById('compare-folder-path');
+  if (el) el.textContent = compareSelectionTitle();
+}
+
+function renderCompareGrid(items) {
+  const grid = document.getElementById('compare-lib-grid');
+  if (!grid) return;
+
+  if (!items.length) {
+    grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(compareSelectionTitle())}</strong>. Select another folder or click Refresh to sync from disk.</p>`;
+    return;
+  }
+
+  grid.innerHTML = items.map((img) => {
+    const thumb = img.thumbUrl || thumbUrlFor(img.path);
+    const enc = encodePath(img.path);
+    const t1Sel = compareState.t1?.path === img.path ? ' selected-t1' : '';
+    const t2Sel = compareState.t2?.path === img.path ? ' selected-t2' : '';
+    const safeName = img.filename.replace(/</g, '&lt;');
+    return `
+      <div class="dda-compare-card dda-card-img${t1Sel}${t2Sel}" data-image-path="${enc}" draggable="true">
+        ${thumb ? `<img src="${thumb}" alt="" loading="lazy" draggable="false" />` : '<div class="meta">No preview</div>'}
+        <div class="meta">
+          <span class="dim">${escapeHtml(img.breadcrumb || img.nodePath || '')}</span><br/>
+          ${safeName}<br/>
+          <span class="dim">${compareFormatBytes(img.fileSizeBytes)}</span>
+        </div>
+        <div class="dda-compare-assign">
+          <button type="button" class="btn btn-secondary btn-sm" data-assign="t1" data-path="${enc}">T1</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-assign="t2" data-path="${enc}">T2</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.dda-compare-card').forEach((card) => {
+    card.addEventListener('dragstart', (e) => {
+      const path = decodePath(card.dataset.imagePath);
+      e.dataTransfer.setData('application/x-dda-image-path', path);
+      e.dataTransfer.setData('text/plain', path);
+    });
+  });
+  refreshCompareLibrarySelection();
 }
 
 function refreshCompareLibrarySelection() {
@@ -113,47 +165,26 @@ function refreshCompareLibrarySelection() {
 
 async function loadCompareLibraryGrid() {
   const grid = document.getElementById('compare-lib-grid');
+  const title = document.getElementById('compare-grid-title');
   if (!grid) return;
 
   grid.innerHTML = '<p class="dim">Loading library images…</p>';
+  if (title) title.textContent = `Pick from library — ${compareSelectionTitle()}`;
+  updateCompareFolderPath();
+
   try {
-    const items = await ddaApi('GET', '/api/dda/local/images');
-    ensureDdaState().libraryItems = items;
-    populateSelects(items);
+    const allItems = await ddaApi('GET', '/api/dda/local/images');
+    compareState.allLibraryItems = allItems;
+    populateSelects(allItems);
 
-    if (!items.length) {
-      grid.innerHTML = '<p class="dim">No images found. Copy .tif files into <code>library_sources/YEAR/</code> in your project folder, then click <strong>Refresh list</strong>.</p>';
-      return;
-    }
+    const params = new URLSearchParams();
+    if (compareState.selectedNode?.id) params.set('node_id', String(compareState.selectedNode.id));
+    const gridItems = compareState.selectedNode?.id
+      ? await ddaApi('GET', '/api/dda/local/images?' + params.toString())
+      : allItems;
 
-    grid.innerHTML = items.map((img) => {
-      const thumb = img.thumbUrl || thumbUrlFor(img.path);
-      const enc = encodePath(img.path);
-      const t1Sel = compareState.t1?.path === img.path ? ' selected-t1' : '';
-      const t2Sel = compareState.t2?.path === img.path ? ' selected-t2' : '';
-      const safeName = img.filename.replace(/</g, '&lt;');
-      return `
-        <div class="dda-compare-card dda-card-img${t1Sel}${t2Sel}" data-image-path="${enc}" draggable="true">
-          ${thumb ? `<img src="${thumb}" alt="" loading="lazy" draggable="false" />` : '<div class="meta">No preview</div>'}
-          <div class="meta">
-            <strong>${img.year}</strong><br/>
-            ${safeName}<br/>
-            <span class="dim">${compareFormatBytes(img.fileSizeBytes)}</span>
-          </div>
-          <div class="dda-compare-assign">
-            <button type="button" class="btn btn-secondary btn-sm" data-assign="t1" data-path="${enc}">T1</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-assign="t2" data-path="${enc}">T2</button>
-          </div>
-        </div>`;
-    }).join('');
-
-    grid.querySelectorAll('.dda-compare-card').forEach((card) => {
-      card.addEventListener('dragstart', (e) => {
-        const path = decodePath(card.dataset.imagePath);
-        e.dataTransfer.setData('application/x-dda-image-path', path);
-        e.dataTransfer.setData('text/plain', path);
-      });
-    });
+    ensureDdaState().libraryItems = gridItems;
+    renderCompareGrid(gridItems);
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
     if (typeof showDdaError === 'function') showDdaError(err.message);
@@ -168,16 +199,26 @@ async function openPicker(slotKey) {
   if (!modal || !list) return;
 
   if (title) {
-    title.textContent = slotKey === 't1' ? 'Select Base Image (T1)' : 'Select Comparison Image (T2)';
+    title.textContent = slotKey === 't1' ? 'Select Old Image (T1)' : 'Select New Image (T2)';
   }
   list.innerHTML = '<p class="dim">Loading library…</p>';
   modal.classList.remove('hidden');
 
   let items = ensureDdaState().libraryItems || [];
   try {
-    items = await ddaApi('GET', '/api/dda/local/images');
-    ensureDdaState().libraryItems = items;
-    populateSelects(items);
+    if (compareState.selectedNode?.id) {
+      const params = new URLSearchParams();
+      params.set('node_id', String(compareState.selectedNode.id));
+      items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
+    } else {
+      items = compareState.allLibraryItems.length
+        ? compareState.allLibraryItems
+        : await ddaApi('GET', '/api/dda/local/images');
+      compareState.allLibraryItems = items;
+    }
+    populateSelects(compareState.allLibraryItems.length
+      ? compareState.allLibraryItems
+      : items);
   } catch (err) {
     list.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
     return;
@@ -191,7 +232,7 @@ async function openPicker(slotKey) {
       return `
       <button type="button" class="dda-picker-item" data-path="${enc}">
         <img src="${img.thumbUrl || thumbUrlFor(img.path)}" alt="" loading="lazy" />
-        <span><strong>${img.year}</strong><br/>${img.filename}</span>
+        <span>${escapeHtml(img.breadcrumb || img.filename)}</span>
       </button>`;
     }).join('');
     list.querySelectorAll('.dda-picker-item').forEach((btn) => {
@@ -272,7 +313,23 @@ function setupCompareInteractions() {
     });
   });
 
-  document.getElementById('btn-compare-refresh')?.addEventListener('click', () => loadCompareLibraryGrid());
+  document.getElementById('btn-compare-refresh')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-compare-refresh');
+    btn.disabled = true;
+    try {
+      const data = await window.ddaState.rescan();
+      const sync = data.sync || {};
+      const parts = [`${data.totalImages || 0} image(s)`];
+      if (sync.nodesCreated) parts.push(`${sync.nodesCreated} folder(s) imported`);
+      if (sync.imagesIndexed) parts.push(`${sync.imagesIndexed} image(s) indexed`);
+      if (typeof showDdaSuccess === 'function') showDdaSuccess(`Library synced — ${parts.join(', ')}.`);
+      await loadCompareLibraryGrid();
+    } catch (err) {
+      if (typeof showDdaError === 'function') showDdaError(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   document.getElementById('dda-picker-close')?.addEventListener('click', closePicker);
   document.getElementById('dda-picker-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'dda-picker-modal') closePicker();
@@ -297,33 +354,68 @@ function showDetectResult(data) {
   else if (typeof showDdaError === 'function') showDdaError('Result viewer failed to load.');
 }
 
-async function runDetectionWithFallback(form, loadingEl) {
-  const hosted = window.ddaState?.localCfg?.isHosted;
-  if (hosted) {
-    loadingEl.textContent = 'Queuing detection job…';
-    try {
-      const queued = await ddaApi('POST', '/api/dda/jobs', { body: form });
-      return await pollJobUntilDone(queued.jobId, loadingEl);
-    } catch (err) {
-      const msg = String(err.message || '');
-      const useSync = msg.includes('Not Found') || msg.includes('404')
-        || msg.includes('503') || msg.includes('409') || msg.includes('busy');
-      if (!useSync) throw err;
-      loadingEl.textContent = 'Running detection (sync fallback)…';
-    }
-  }
-  return ddaApi('POST', '/api/dda/detect/from-library', { body: form }).then((result) => ({ result, jobId: null }));
+function setDetectProgress(pct, stage) {
+  const fill = document.getElementById('detect-progress-fill');
+  const label = document.getElementById('detect-progress-label');
+  const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (fill) fill.style.width = `${clamped}%`;
+  const text = stage ? `${stage} — ${clamped}%` : `${clamped}%`;
+  if (label) label.textContent = text;
 }
 
-async function pollJobUntilDone(jobId, loadingEl) {
+function showDetectProgress() {
+  const wrap = document.getElementById('detect-progress');
+  wrap?.classList.remove('hidden');
+  setDetectProgress(0, 'Starting detection');
+}
+
+function hideDetectProgress(delayMs = 0) {
+  const hide = () => document.getElementById('detect-progress')?.classList.add('hidden');
+  if (delayMs > 0) setTimeout(hide, delayMs);
+  else hide();
+}
+
+async function runDetectionWithFallback(form) {
+  setDetectProgress(2, 'Queuing detection job');
+  try {
+    const queued = await ddaApi('POST', '/api/dda/jobs', { body: form });
+    return await pollJobUntilDone(queued.jobId);
+  } catch (err) {
+    const msg = String(err.message || '');
+    const useSync = msg.includes('Not Found') || msg.includes('404')
+      || msg.includes('503') || msg.includes('409') || msg.includes('busy')
+      || msg.includes('Internal Server Error') || msg.includes('NOT NULL');
+    if (!useSync) throw err;
+    return runSyncDetectionWithProgress(form);
+  }
+}
+
+async function runSyncDetectionWithProgress(form) {
+  let pct = 5;
+  setDetectProgress(pct, 'Running detection (sync)');
+  const timer = setInterval(() => {
+    pct = Math.min(92, pct + (pct < 50 ? 4 : 2));
+    setDetectProgress(pct, 'Running detection (sync)');
+  }, 1500);
+  try {
+    const result = await ddaApi('POST', '/api/dda/detect/from-library', { body: form });
+    setDetectProgress(100, 'Complete');
+    return { result, jobId: null };
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+async function pollJobUntilDone(jobId) {
   const maxAttempts = 600;
   for (let i = 0; i < maxAttempts; i++) {
     const job = await ddaApi('GET', `/api/dda/jobs/${jobId}`);
     const status = job.status;
-    if (loadingEl) {
-      loadingEl.textContent = `Detection job #${jobId} — ${status}… (${i + 1})`;
-    }
+    const pct = job.progressPct ?? (status === 'queued' ? 0 : 10);
+    const stage = job.progressStage || (status === 'queued' ? 'Queued' : 'Running');
+    setDetectProgress(pct, stage);
     if (status === 'completed') {
+      setDetectProgress(100, 'Complete');
       if (job.result) {
         if (typeof window.refreshDdaNotifications === 'function') window.refreshDdaNotifications();
         return { result: job.result, jobId };
@@ -343,15 +435,13 @@ async function pollJobUntilDone(jobId, loadingEl) {
 
 async function runLibraryDetection() {
   if (!compareState.t1 || !compareState.t2) {
-    if (typeof showDdaError === 'function') showDdaError('Select both T1 (base) and T2 (comparison) images first.');
+    if (typeof showDdaError === 'function') showDdaError('Select both T1 (old) and T2 (new) images first.');
     return;
   }
   const btn = document.getElementById('btn-run-job');
-  const loading = document.getElementById('dda-detect-loading');
   if (typeof hideDdaError === 'function') hideDdaError();
   btn.disabled = true;
-  loading?.classList.remove('hidden');
-  loading.textContent = 'Running detection…';
+  showDetectProgress();
 
   const form = new FormData();
   form.append('base_path', compareState.t1.path);
@@ -370,7 +460,7 @@ async function runLibraryDetection() {
   }
 
   try {
-    const { result: data, jobId } = await runDetectionWithFallback(form, loading);
+    const { result: data, jobId } = await runDetectionWithFallback(form);
     if (jobId && typeof window.markDdaJobSeen === 'function') window.markDdaJobSeen(jobId);
     showDetectResult(data);
     if (typeof showDdaSuccess === 'function') {
@@ -383,7 +473,7 @@ async function runLibraryDetection() {
     if (typeof showDdaError === 'function') showDdaError(err.message || 'Detection failed');
   } finally {
     btn.disabled = !(compareState.t1 && compareState.t2);
-    loading?.classList.add('hidden');
+    hideDetectProgress(2000);
   }
 }
 
@@ -391,11 +481,31 @@ let compareInitialized = false;
 
 function initCompareTab() {
   if (!compareInitialized) {
+    if (typeof registerCompareTreeSidebar === 'function') {
+      registerCompareTreeSidebar({
+        containerId: 'compare-tree',
+        searchId: 'compare-tree-search',
+        allBtnId: 'btn-compare-tree-all',
+        getSelectedNode: () => compareState.selectedNode,
+        onNodeSelect: (node) => {
+          compareState.selectedNode = node;
+          loadCompareLibraryGrid();
+        },
+        onClearNode: () => {
+          compareState.selectedNode = null;
+          loadCompareLibraryGrid();
+        },
+      });
+    }
     setupCompareInteractions();
     compareInitialized = true;
   }
   updateRunButton();
-  loadCompareLibraryGrid();
+  if (typeof loadTree === 'function') {
+    loadTree().then(() => loadCompareLibraryGrid()).catch(() => loadCompareLibraryGrid());
+  } else {
+    loadCompareLibraryGrid();
+  }
 }
 
 window.loadCompareLibraryGrid = loadCompareLibraryGrid;

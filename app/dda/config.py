@@ -44,12 +44,26 @@ def get_writable_library_root() -> Path:
     return (DATA_DIR / "library_sources").resolve()
 
 
-def get_library_roots() -> List[Path]:
-    """Folders scanned for year-based images."""
-    roots: List[Path] = []
+def get_storage_root() -> Path:
+    """Tree library root (doc: root_directory / STORAGE_ROOT)."""
+    explicit = os.environ.get("STORAGE_ROOT", "").strip()
+    if explicit:
+        return Path(explicit).resolve()
     if os.environ.get("LOCAL_LIBRARY_ROOT"):
-        roots.append(Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve())
-    # Writable data dir first on Hugging Face (where uploads land)
+        return Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve()
+    return get_writable_library_root()
+
+
+def get_library_roots() -> List[Path]:
+    """Folders scanned for library images (tree storage root)."""
+    roots: List[Path] = []
+    sr = get_storage_root()
+    if sr not in roots:
+        roots.append(sr)
+    if os.environ.get("LOCAL_LIBRARY_ROOT"):
+        p = Path(os.environ["LOCAL_LIBRARY_ROOT"]).resolve()
+        if p not in roots:
+            roots.append(p)
     if is_hf_hosted():
         wr = get_writable_library_root()
         if wr not in roots:
@@ -69,11 +83,12 @@ THUMBS_DIR = LIBRARY_DIR / "thumbs"
 PREVIEWS_DIR = LIBRARY_DIR / "previews"
 LOCAL_THUMB_CACHE = DATA_DIR / "library_cache" / "thumbs"
 
-# GeoTIFF library upload limit (default 5 GB; override with MAX_GEOTIFF_MB on HF dev Space)
-MAX_GEOTIFF_BYTES = int(os.environ.get("MAX_GEOTIFF_MB", "5120")) * 1024 * 1024
+# Library upload limit (default 15 GB; override with MAX_GEOTIFF_MB / MAX_IMAGE_MB)
+_MAX_UPLOAD_MB_DEFAULT = "15360"  # 15 * 1024
+MAX_GEOTIFF_BYTES = int(os.environ.get("MAX_GEOTIFF_MB", _MAX_UPLOAD_MB_DEFAULT)) * 1024 * 1024
 
-# Raster sidecar formats (PNG/JPEG) — smaller cap for library uploads
-MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_MB", "50")) * 1024 * 1024
+# PNG/JPEG use the same cap unless MAX_IMAGE_MB is set separately
+MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_MB", _MAX_UPLOAD_MB_DEFAULT)) * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 
@@ -119,9 +134,5 @@ def geotiff_io_available() -> bool:
 
 def get_detection_max_side() -> int:
     """Max pixel dimension for GeoTIFF load + detection pipeline (higher = sharper, more RAM)."""
-    default = "2048" if is_hf_hosted() else "4096"
-    try:
-        value = int(os.environ.get("DETECTION_MAX_SIDE", default))
-    except ValueError:
-        value = int(default)
-    return max(1024, min(8192, value))
+    from ..detection_config import get_detection_max_side as _central
+    return _central()

@@ -67,6 +67,10 @@ async function loadReportPage() {
       tbody.innerHTML = regions.length
         ? regions.map((r) => {
             const { lat, lng } = regionLatLng(r);
+            const hasCoords = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+            const mapsUrl = hasCoords
+              ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+              : null;
             return `
             <tr>
               <td>${r.id ?? ''}</td>
@@ -76,9 +80,10 @@ async function loadReportPage() {
               <td>${(r.area ?? 0).toLocaleString()}</td>
               <td>${formatCoord(lat)}</td>
               <td>${formatCoord(lng)}</td>
+              <td>${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${mapsUrl}" target="_blank" rel="noopener">Map</a>` : '—'}</td>
             </tr>`;
           }).join('')
-        : '<tr><td colspan="7" class="dim">No regions detected.</td></tr>';
+        : '<tr><td colspan="8" class="dim">No regions detected.</td></tr>';
     }
 
     const pdfBtn = document.getElementById('report-pdf-btn');

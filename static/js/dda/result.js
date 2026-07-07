@@ -130,6 +130,10 @@ function showDdaResult(data) {
   const fusionPx = thrDbg.fused_changed_px != null
     ? `DL ${thrDbg.dl_changed_px ?? '—'} / fused ${thrDbg.fused_changed_px}`
     : '';
+  const tileSkip = thrDbg.tileSkip;
+  const tileSkipHtml = (tileSkip && tileSkip.totalTiles)
+    ? `<div class="stat-box"><div class="value value-sm">${tileSkip.skippedTiles}/${tileSkip.totalTiles}</div><div class="label">Tiles skipped</div></div>`
+    : '';
 
   let warnHtml = '';
   if (alignWarn) {
@@ -150,6 +154,7 @@ function showDdaResult(data) {
     ${resHint}
     ${fusionPx ? `<div class="stat-box stat-box-wide"><div class="value value-sm">${fusionPx}</div><div class="label">Fusion px</div></div>` : ''}
     <div class="stat-box"><div class="value value-sm">${regOk === true ? 'OK' : regOk === false ? 'Weak' : '—'}</div><div class="label">Alignment</div></div>
+    ${tileSkipHtml}
   `;
 
   const overlaySrc = data.overlayBase64Png
@@ -183,7 +188,12 @@ function showDdaResult(data) {
     tr.dataset.regionId = r.id;
     const subType = r.subType || '—';
     const ddaType = r.ddaChangeType || '—';
-    const latLng = r.latLng ? `${r.latLng.lat}, ${r.latLng.lng}` : '—';
+    const mapsUrl = r.latLng
+      ? `https://www.google.com/maps/search/?api=1&query=${r.latLng.lat},${r.latLng.lng}`
+      : null;
+    const latLng = r.latLng
+      ? `<a href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">${r.latLng.lat}, ${r.latLng.lng}</a>`
+      : '—';
     const severity = (r.severity || 'minor').toLowerCase();
     const stories = r.estimatedStories != null ? r.estimatedStories : '—';
     const height = r.estimatedHeightM != null ? r.estimatedHeightM + ' m' : '—';
@@ -208,6 +218,7 @@ function showDdaResult(data) {
         <button type="button" class="btn btn-secondary btn-sm btn-review-ok" data-action="confirmed" ${locked ? 'disabled' : ''} title="Confirm">✓</button>
         <button type="button" class="btn btn-secondary btn-sm btn-review-fp" data-action="false_positive" ${locked ? 'disabled' : ''} title="False positive">✗</button>
         <button type="button" class="btn btn-secondary btn-sm btn-review-locate" title="Locate">◎</button>
+        ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">Map</a>` : ''}
       </td>
     `;
     return tr;

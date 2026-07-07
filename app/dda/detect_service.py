@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 from ..auth import get_or_create_guest_user
 from ..database import DATA_DIR
 from ..models import DetectionRun
-from .geo_regions import bounds_from_image_path, enrich_regions_geo
+from ..notifier import send_notification
+from .geo_regions import enrich_regions_geo, resolve_geo_context
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def _serialize_regions(change_regions) -> list:
         {
             "id": int(r["id"]),
             "area": int(r["area"]),
-            "center": {"x": int(r["center"][0]), "y": int(r["center"][1])},
+            "center": {"x": round(float(r["center"][0])), "y": round(float(r["center"][1]))},
             "bbox": {
                 "x": int(r["bbox"][0]),
                 "y": int(r["bbox"][1]),
@@ -79,9 +80,17 @@ def run_detection_and_save(
     notify_email: Optional[str] = None,
     max_size: Optional[int] = None,
     geo_bounds_path: Optional[Path] = None,
+    comparison_file: Optional[Path] = None,
+    base_path: str = "",
     user_id: Optional[int] = None,
+    job_id: Optional[int] = None,
 ) -> dict:
     from ..detection_engine import run_detection
+    from .job_progress import update_job_progress
+
+    def _report(pct: int, stage: str) -> None:
+        if job_id is not None:
+            update_job_progress(job_id, pct, stage)
 
     if user_id:
         from ..auth import get_user_by_id
@@ -94,6 +103,18 @@ def run_detection_and_save(
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))
 
+    def _on_engine_progress(engine_pct: int, stage: str) -> None:
+        # Map engine 0–100% into job 15–78%
+        job_pct = 15 + int(engine_pct * 0.63)
+        _report(job_pct, stage)
+
+    _report(15, "Running detection")
+
+    def _geotiff_path(p: Optional[Path]) -> Optional[str]:
+        if p is not None and str(p).lower().endswith((".tif", ".tiff")):
+            return str(p)
+        return None
+
     change_mask, result_image, stats, change_regions = run_detection(
         before_pil,
         after_pil,
@@ -103,9 +124,12 @@ def run_detection_and_save(
         detection_sensitivity=detection_sensitivity,
         min_region_area=min_region_area,
         max_size=max_size,
+        on_progress=_on_engine_progress,
+        before_path=_geotiff_path(geo_bounds_path),
+        after_path=_geotiff_path(comparison_file),
     )
 
-    # Save before image at detection resolution (matches overlay coordinates for slider)
+    _report(80, "Saving results")
     from ..detection_engine import preprocess_image, get_detection_max_size
 
     before_for_slider = Image.fromarray(
@@ -118,6 +142,21 @@ def run_detection_and_save(
     overlay_path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(result_image).save(overlay_path)
     relative_overlay = f"overlays/{overlay_filename}"
+
+    relative_prob = ""
+    try:
+        from ..detection_config import get_save_prob_map
+        score_map = stats.pop("_score_map", None)
+        if get_save_prob_map() and score_map is not None:
+            import numpy as _np
+            prob_u8 = _np.clip(score_map * 255.0, 0, 255).astype("uint8")
+            prob_img = Image.fromarray(prob_u8)
+            prob_img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            prob_file = OVERLAYS_DIR / f"{base_name}_prob.png"
+            prob_img.save(prob_file)
+            relative_prob = f"overlays/{base_name}_prob.png"
+    except Exception as exc:
+        logger.warning("Probability map export failed: %s", exc)
 
     relative_before_full = ""
     relative_before_thumb = ""
@@ -145,14 +184,44 @@ def run_detection_and_save(
         logger.warning("Failed to save thumbnails: %s", exc)
 
     regions_serializable = _serialize_regions(change_regions)
-    img_w, img_h = before_for_slider.size
-    bounds = bounds_from_image_path(geo_bounds_path) if geo_bounds_path else None
+    det_w = int(stats.get("image_width") or 0)
+    det_h = int(stats.get("image_height") or 0)
+    if det_w <= 0 or det_h <= 0:
+        det_w, det_h = before_for_slider.size
+
+    geo_ctx = None
+    bounds = None
+    if geo_bounds_path:
+        rel_path = (base_path or "").replace("\\", "/").strip().lstrip("/")
+        if not rel_path:
+            try:
+                from .config import get_storage_root
+                rel_path = geo_bounds_path.resolve().relative_to(get_storage_root().resolve()).as_posix()
+            except Exception:
+                rel_path = geo_bounds_path.name
+        geo_ctx = resolve_geo_context(db, rel_path, geo_bounds_path)
+        bounds = geo_ctx.bounds
+
     regions_serializable = enrich_regions_geo(
         regions_serializable,
-        img_width=img_w,
-        img_height=img_h,
+        img_width=det_w,
+        img_height=det_h,
         bounds=bounds,
+        geo=geo_ctx,
     )
+    regions_with_coords = sum(1 for r in regions_serializable if r.get("latLng"))
+    geo_debug = {
+        "source": geo_ctx.source if geo_ctx else "none",
+        "crs": str(geo_ctx.georef.crs) if (geo_ctx and geo_ctx.georef and geo_ctx.georef.crs) else "",
+        "bounds": list(bounds) if bounds else None,
+        "georefWidth": geo_ctx.georef_width if geo_ctx else 0,
+        "georefHeight": geo_ctx.georef_height if geo_ctx else 0,
+        "detectionWidth": det_w,
+        "detectionHeight": det_h,
+        "regionsWithCoords": regions_with_coords,
+        "regionsTotal": len(regions_serializable),
+    }
+    logger.info("Geo debug for run: %s", geo_debug)
     total_px = int(stats["total_pixels"])
     changed_px = int(stats["changed_pixels"])
     change_pct = float(stats["change_percentage"])
@@ -178,10 +247,12 @@ def run_detection_and_save(
     db.commit()
     db.refresh(run)
 
+    _report(90, "Preparing report")
     overlay_b64 = base64.b64encode(overlay_path.read_bytes()).decode("utf-8")
     notification_sent = False
     notification_error = None
     if notify_email and notify_email.strip():
+        _report(95, "Sending notification")
         from .config import IS_DDA_MODE, get_public_base_url
         report_url = f"{get_public_base_url()}/dda/reports/{run.id}" if IS_DDA_MODE else ""
         notification_sent, notification_error = send_notification(
@@ -196,6 +267,8 @@ def run_detection_and_save(
             regions=regions_serializable,
             report_url=report_url,
         )
+
+    _report(100, "Complete")
 
     return {
         "id": run.id,
@@ -212,6 +285,8 @@ def run_detection_and_save(
             "params": stats.get("params", {}),
             "alignmentWarning": stats.get("alignment_warning"),
             "registrationOk": stats.get("params", {}).get("registration_ok"),
+            "geo": geo_debug,
+            "probabilityMapUrl": f"/api/overlay/{relative_prob}" if relative_prob else None,
         },
         "regions": regions_serializable,
         "overlayBase64Png": overlay_b64,

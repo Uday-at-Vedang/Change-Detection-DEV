@@ -6,6 +6,8 @@ SIFT+FLANN registration, tile-based + multi-scale processing, Excess Green
 vegetation index, confidence maps, and improved object classification.
 """
 import logging
+from pathlib import Path
+
 import numpy as np
 import cv2
 from PIL import Image
@@ -22,14 +24,8 @@ _log = logging.getLogger(__name__)
 
 def get_detection_max_size() -> int:
     """Max pixel dimension for detection (override with DETECTION_MAX_SIDE env)."""
-    import os
-    hosted = bool(os.environ.get("SPACE_ID", "").strip())
-    default = "2048" if hosted else "4096"
-    try:
-        value = int(os.environ.get("DETECTION_MAX_SIDE", default))
-    except ValueError:
-        value = int(default)
-    return max(1024, min(8192, value))
+    from .detection_config import get_detection_max_side
+    return get_detection_max_side()
 
 
 def _ensure_rgb_uint8(img_array):
@@ -50,8 +46,13 @@ def _to_float32(img):
     return img.astype(np.float32) / 255.0
 
 
-def preprocess_image(image, max_size=None):
-    """Preprocess image: convert to RGB, limit size, light denoise."""
+def preprocess_image(image, max_size=None, skip_blur=False):
+    """Preprocess image: convert to RGB, limit size, light denoise.
+
+    ``skip_blur`` disables the Gaussian/bilateral denoise so fine change detail
+    is preserved — used by full-resolution tiled inference where the whole point
+    is to keep native sharpness.
+    """
     if max_size is None:
         max_size = get_detection_max_size()
     img_array = np.array(image)
@@ -62,6 +63,9 @@ def preprocess_image(image, max_size=None):
         scale = max_size / max(height, width)
         new_w, new_h = max(1, int(width * scale)), max(1, int(height * scale))
         img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    if skip_blur:
+        return img_array
 
     # Light denoise — smaller kernel preserves fine change detail at high resolution
     blur_ksize = 3 if max_size >= 3000 else 5
@@ -311,8 +315,27 @@ def _register_images_ecc_multiscale(img1, img2):
 # 3. Improved radiometric normalization
 # ---------------------------------------------------------------------------
 
+def _match_histogram(src, ref):
+    """Map ``src`` intensities so its histogram matches ``ref`` (single channel)."""
+    src_u = np.clip(src, 0, 255).astype(np.uint8)
+    ref_u = np.clip(ref, 0, 255).astype(np.uint8)
+    src_hist = np.bincount(src_u.ravel(), minlength=256).astype(np.float64)
+    ref_hist = np.bincount(ref_u.ravel(), minlength=256).astype(np.float64)
+    src_cdf = np.cumsum(src_hist) / max(src_u.size, 1)
+    ref_cdf = np.cumsum(ref_hist) / max(ref_u.size, 1)
+    lut = np.interp(src_cdf, ref_cdf, np.arange(256)).astype(np.float32)
+    return lut[src_u]
+
+
 def normalize_radiometry(img1, img2):
-    """Match after image radiometry to before; symmetric CLAHE on L channel."""
+    """Match after image radiometry to before; symmetric CLAHE on L channel.
+
+    CLAHE and histogram matching are env-toggleable (``DETECTION_CLAHE``,
+    ``DETECTION_HIST_MATCH``) so each technique can be A/B benchmarked before
+    being promoted to a default.
+    """
+    from .detection_config import get_enable_clahe, get_hist_match
+
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
 
@@ -323,11 +346,17 @@ def normalize_radiometry(img1, img2):
         if std2 > 1e-6:
             result[:, :, ch] = (lab2[:, :, ch] - mean2) * (std1 / std2) + mean1
 
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    if get_hist_match():
+        # Stronger than mean/std matching: align the full L-channel distribution
+        result[:, :, 0] = _match_histogram(result[:, :, 0], lab1[:, :, 0])
+
     lab1_u = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB)
     lab2_u = np.clip(result, 0, 255).astype(np.uint8)
-    lab1_u[:, :, 0] = clahe.apply(lab1_u[:, :, 0])
-    lab2_u[:, :, 0] = clahe.apply(lab2_u[:, :, 0])
+
+    if get_enable_clahe():
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        lab1_u[:, :, 0] = clahe.apply(lab1_u[:, :, 0])
+        lab2_u[:, :, 0] = clahe.apply(lab2_u[:, :, 0])
 
     return cv2.cvtColor(lab1_u, cv2.COLOR_LAB2RGB), cv2.cvtColor(lab2_u, cv2.COLOR_LAB2RGB)
 
@@ -506,16 +535,62 @@ def compute_ssim_change_map(img1, img2, win_size=11):
 # ---------------------------------------------------------------------------
 
 def compute_lbp(gray, radius=1, n_points=8):
-    """Compute simplified Local Binary Pattern texture descriptor."""
-    h, w = gray.shape
+    """Compute simplified Local Binary Pattern texture descriptor.
+
+    Uses reflect-padded shifts (not np.roll) so opposite image borders do not
+    wrap into each other and create spurious texture-change along the frame.
+    """
+    pad = max(1, int(radius))
+    padded = cv2.copyMakeBorder(gray, pad, pad, pad, pad, cv2.BORDER_REFLECT)
     lbp = np.zeros_like(gray, dtype=np.float32)
+    h, w = gray.shape
     for i in range(n_points):
         angle = 2 * np.pi * i / n_points
         dx = int(round(radius * np.cos(angle)))
         dy = int(round(-radius * np.sin(angle)))
-        shifted = np.roll(np.roll(gray, dy, axis=0), dx, axis=1)
+        shifted = padded[pad + dy:pad + dy + h, pad + dx:pad + dx + w]
         lbp += (shifted >= gray).astype(np.float32)
     return lbp / n_points
+
+
+def _prob_map_stats(score) -> dict:
+    """Summary stats of a [0,1] probability/score map for threshold tuning."""
+    if score is None or score.size == 0:
+        return {}
+    s = score.astype(np.float32)
+    return {
+        "min": round(float(s.min()), 4),
+        "max": round(float(s.max()), 4),
+        "mean": round(float(s.mean()), 4),
+        "std": round(float(s.std()), 4),
+        "p50": round(float(np.percentile(s, 50)), 4),
+        "p90": round(float(np.percentile(s, 90)), 4),
+        "p99": round(float(np.percentile(s, 99)), 4),
+    }
+
+
+def _hysteresis_threshold(score, high_thr, low_thr):
+    """Two-level (hysteresis) thresholding on a [0,1] score map.
+
+    Keeps every low-threshold connected component that contains at least one
+    high-threshold "seed" pixel, and drops the rest. This recovers complete
+    change blobs (less fragmentation) while removing isolated weak speckle that
+    a single hard threshold would either cut or admit.
+    """
+    score = score.astype(np.float32)
+    high = (score >= high_thr).astype(np.uint8)
+    if int(high.sum()) == 0:
+        return (high * 255).astype(np.uint8)
+    low = (score >= min(low_thr, high_thr)).astype(np.uint8)
+    num, labels = cv2.connectedComponents(low, connectivity=8)
+    if num <= 1:
+        return (high * 255).astype(np.uint8)
+    seed_labels = np.unique(labels[high > 0])
+    seed_labels = seed_labels[seed_labels != 0]
+    if seed_labels.size == 0:
+        return (high * 255).astype(np.uint8)
+    keep = np.isin(labels, seed_labels)
+    return np.where(keep, 255, 0).astype(np.uint8)
 
 
 def compute_texture_change(img1, img2):
@@ -768,7 +843,9 @@ def fuse_dl_and_classical(dl_score, classical_score, img1, img2, sensitivity=0.5
     final_score = np.where(veg_boost, np.maximum(final_score, classical_score), final_score)
 
     fused_thr = 0.45 + (1.0 - sens) * 0.15
-    change_mask = (final_score >= fused_thr).astype(np.uint8) * 255
+    # Hysteresis grow keeps complete blobs while pruning isolated weak responses
+    fused_low = max(0.25, fused_thr - 0.12)
+    change_mask = _hysteresis_threshold(final_score, fused_thr, fused_low)
     change_mask = _clean_mask(change_mask, sensitivity=sens)
 
     debug = {
@@ -777,6 +854,7 @@ def fuse_dl_and_classical(dl_score, classical_score, img1, img2, sensitivity=0.5
         "T_cl_percentile_q": q,
         "T_cl_score": T_cl,
         "fused_threshold": fused_thr,
+        "fused_low_threshold": fused_low,
         "dl_changed_px": int(np.sum(dl_score >= med_dl)),
         "classical_changed_px": int(np.sum(classical_score >= T_cl)),
         "fused_changed_px": int(np.sum(change_mask > 127)),
@@ -791,9 +869,12 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5, registration_ok=True):
 
     sens = float(np.clip(sensitivity, 0.0, 1.0))
     # Looser percentile than gated fusion — keeps recall for multi-region detection
-    q = float(np.clip(0.93 - (sens - 0.5) * 0.06, 0.85, 0.96))
+    q = float(np.clip(0.94 - (sens - 0.5) * 0.06, 0.86, 0.96))
     thr_score = float(np.quantile(classical_score, q))
-    change_mask = (classical_score >= thr_score).astype(np.uint8) * 255
+    # Hysteresis: grow seeds down to a lower percentile to recover full change blobs
+    q_low = float(np.clip(q - 0.06, 0.78, q))
+    low_score = float(np.quantile(classical_score, q_low))
+    change_mask = _hysteresis_threshold(classical_score, thr_score, low_score)
     change_mask = _clean_mask(change_mask, sensitivity=sens)
 
     debug = {
@@ -801,6 +882,8 @@ def _ai_fusion_core(img1, img2, sensitivity=0.5, registration_ok=True):
         "threshold_used": int(thr_score * 255),
         "threshold_percentile_q": q,
         "threshold_score": thr_score,
+        "hysteresis_low_q": q_low,
+        "hysteresis_low_score": low_score,
         "sensitivity": float(sensitivity),
         "channel_weights": {
             "color": round(weights[0], 4),
@@ -823,8 +906,8 @@ def _smart_union_fusion(model_mask, rule_mask, dl_score, classical_score, sensit
     rule_on = rule_mask > 127
     both_agree = model_on & rule_on
 
-    dl_floor = 0.32 + (1.0 - sens) * 0.10
-    cl_q = float(np.clip(0.91 - (sens - 0.5) * 0.03, 0.87, 0.94))
+    dl_floor = 0.36 + (1.0 - sens) * 0.10
+    cl_q = float(np.clip(0.92 - (sens - 0.5) * 0.03, 0.88, 0.94))
     cl_floor = (
         float(np.quantile(classical_score, cl_q))
         if float(classical_score.max()) > 1e-6 else 0.38
@@ -899,20 +982,34 @@ def _resolve_classification(scores, diff, feat_a):
     return best, conf
 
 
-def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
+def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
+                            dl_score_override=None):
     """
     Dual-engine: AdaptFormer + classical fusion with confidence-pruned union.
+
+    ``dl_score_override`` lets callers supply a precomputed deep score map (e.g.
+    full-resolution windowed inference) instead of running AdaptFormer on the
+    working-resolution arrays.
     """
     from .model_inference import is_model_available, predict_change_mask
 
     model_mask = None
     dl_score = None
     model_ok = False
-    threshold = 0.30 + (1.0 - float(np.clip(sensitivity, 0, 1))) * 0.22
+    threshold = 0.32 + (1.0 - float(np.clip(sensitivity, 0, 1))) * 0.22
+    tile_stats: dict = {}
 
-    if is_model_available():
+    if dl_score_override is not None:
+        dl_score = dl_score_override.astype(np.float32)
+        if dl_score.shape != img1.shape[:2]:
+            dl_score = cv2.resize(dl_score, (img1.shape[1], img1.shape[0]),
+                                  interpolation=cv2.INTER_LINEAR)
+        model_mask = (dl_score >= threshold).astype(np.uint8) * 255
+        model_ok = True
+    elif is_model_available():
         try:
-            model_mask, dl_score = predict_change_mask(img1, img2, threshold=threshold)
+            model_mask, dl_score = predict_change_mask(
+                img1, img2, threshold=threshold, tile_stats=tile_stats)
             model_ok = dl_score is not None
         except Exception as e:
             _log.warning("AdaptFormer inference failed: %s", e)
@@ -923,18 +1020,34 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
     if model_ok and dl_score is not None:
         if model_mask is None:
             model_mask = (dl_score >= threshold).astype(np.uint8) * 255
-        combined = _smart_union_fusion(
-            model_mask, rule_mask, dl_score, classical_score, sensitivity=sensitivity)
-        combined = _clean_mask(combined, sensitivity=sensitivity)
+
+        from .detection_config import get_fusion_mode
+        fusion_mode = get_fusion_mode()
+        if fusion_mode == "hysteresis":
+            # Confidence-gated hysteresis fusion keeps complete change blobs
+            # while pruning isolated weak responses (better recall on big blobs).
+            combined, final_score, fuse_dbg = fuse_dl_and_classical(
+                dl_score, classical_score, img1, img2, sensitivity=sensitivity)
+        else:
+            combined = _smart_union_fusion(
+                model_mask, rule_mask, dl_score, classical_score, sensitivity=sensitivity)
+            combined = _clean_mask(combined, sensitivity=sensitivity)
+            final_score = np.maximum(dl_score, classical_score)
+            fuse_dbg = {}
         debug = {
             "method": "AI-Based Deep Learning (AdaptFormer + confidence union)",
             "model": "adaptformer-levir-cd",
-            "fusion": "smart_union",
+            "fusion": fusion_mode,
             "threshold_used": int(threshold * 255),
             "sensitivity": float(sensitivity),
             "model_changed_px": int(np.sum(model_mask > 127)),
             "rule_changed_px": int(np.sum(rule_mask > 127)),
             "combined_changed_px": int(np.sum(combined > 127)),
+            "fusion_debug": fuse_dbg,
+            "dl_score_source": "windowed_fullres" if dl_score_override is not None else "tiled",
+            "probabilityMapStats": _prob_map_stats(final_score),
+            "tileSkip": tile_stats or None,
+            "_score_map": final_score.astype(np.float32),
         }
         return combined, debug
 
@@ -948,19 +1061,17 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True):
 
 
 def hybrid_method(img1, img2, sensitivity=0.5, registration_ok=True):
-    """Hybrid: weighted fusion of all methods with confidence-based merging."""
+    """Hybrid: feature-based + AI fusion (image-difference path removed)."""
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    diff_mask, diff_debug = image_difference_method(img1, img2, sensitivity=sensitivity)
     feature_mask = feature_based_method(img1, img2, sensitivity=sensitivity)
     ai_mask, ai_debug = ai_deep_learning_method(
         img1, img2, sensitivity=sensitivity, registration_ok=registration_ok)
 
     combined = (
-        0.2 * diff_mask.astype(np.float32) +
-        0.3 * feature_mask.astype(np.float32) +
-        0.5 * ai_mask.astype(np.float32)
+        0.30 * feature_mask.astype(np.float32) +
+        0.70 * ai_mask.astype(np.float32)
     )
 
     base_thr = 98
@@ -973,7 +1084,7 @@ def hybrid_method(img1, img2, sensitivity=0.5, registration_ok=True):
         "threshold_used": int(hybrid_thr),
         "sensitivity": float(sensitivity),
         "sub_methods": {
-            "image_difference": diff_debug,
+            "feature_based": {"method": "Feature-Based"},
             "ai_deep_learning": ai_debug,
         },
     }
@@ -1065,7 +1176,7 @@ def hybrid_ai_method(img1, img2, sensitivity=0.5, registration_ok=True):
         conf_boost = np.clip(conf_map * 1.5, 0, 1)
         fused = fused * (0.6 + 0.4 * conf_boost)
 
-    fused_thr = max(80, int(128 - (sensitivity - 0.5) * 60))
+    fused_thr = max(88, int(132 - (sensitivity - 0.5) * 55))
     _, final_mask = cv2.threshold(fused.astype(np.uint8), fused_thr, 255, cv2.THRESH_BINARY)
     final_mask = _clean_mask(final_mask, sensitivity=sensitivity)
 
@@ -1091,7 +1202,7 @@ ALIGNMENT_WARNING_MSG = (
 # 11. Robust post-processing
 # ---------------------------------------------------------------------------
 
-def _clean_mask(mask, sensitivity=0.5, border_margin=12):
+def _clean_mask(mask, sensitivity=0.5, border_margin=None):
     """
     Robust morphological cleaning:
     1. Zero-out border pixels (registration artifacts)
@@ -1101,7 +1212,13 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     5. Fill holes inside regions
     6. Erode-then-dilate to break thin noise bridges
     7. Connected-component area + circularity filtering
+
+    ``border_margin`` defaults to the env-configured value (smaller in full-res
+    mode so genuine edge changes are not discarded).
     """
+    if border_margin is None:
+        from .detection_config import get_border_margin
+        border_margin = get_border_margin()
     mask = mask.copy()
     h, w = mask.shape[:2]
 
@@ -1134,7 +1251,7 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=12):
     filled = cv2.dilate(filled, k_break, iterations=1)
 
     # 7. Component-level filtering: remove tiny survivors and elongated noise
-    min_component_px = max(80, int(h * w * 0.000035))
+    min_component_px = max(120, int(h * w * 0.00005))
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(filled, connectivity=8)
     clean = np.zeros_like(filled)
     for i in range(1, num_labels):
@@ -1331,28 +1448,217 @@ def extract_advanced_features(region):
     }
 
 
-def _is_transient_object(area, w, h, features):
+def _permanent_change_evidence(diff, feat_a, area, w, h, fill_ratio=0.5):
+    """Score how likely a region is a permanent structural/ground change (not a car)."""
+    if diff is None or feat_a is None:
+        return 0.0
+    score = 0.0
+    d_lines = abs(int(diff.get("delta_lines", 0)))
+    d_corners = abs(int(diff.get("delta_corners", 0)))
+    if d_lines >= 5:
+        score += 0.22
+    if d_corners >= 7:
+        score += 0.22
+    if abs(diff.get("delta_edge_density", 0)) >= 12:
+        score += 0.18
+    # Rectangular blobs (cars included) need new structure, not silhouette alone.
+    if diff.get("hull_ratio_after", 0) >= 0.52 and area >= 2500:
+        if d_lines >= 4 or d_corners >= 6:
+            score += 0.14
+    if diff.get("ssim", 1.0) < 0.55 and (d_lines >= 3 or d_corners >= 4):
+        score += 0.14
+    if area >= 12000 and fill_ratio >= 0.35:
+        score += 0.10
+    if feat_a.get("orientation_entropy", 3.0) < 2.2 and diff.get("lines_after", 0) >= 8:
+        score += 0.10
+    return min(1.0, score)
+
+
+def _is_radiometric_transient(diff, area, w, h, features, img_area=None):
+    """
+    Detect appeared/disappeared objects (cars, trucks) from color/texture shift
+    without meaningful new structure. Robust even when bbox padding adds edges.
+    """
+    if diff is None or features is None:
+        return False
+    max_car = _max_vehicle_area(img_area)
+    if area < 180 or area > max_car * 2.5:
+        return False
+    aspect = max(w, h) / max(min(w, h), 1)
+    if aspect > 9.0:
+        return False
+    ndvi = float(features.get("ndvi", 0))
+    if ndvi > 0.22:
+        return False
+    lab_d = float(diff.get("lab_color_distance", 0))
+    d_lines = abs(int(diff.get("delta_lines", 0)))
+    d_corners = abs(int(diff.get("delta_corners", 0)))
+    structural = d_lines + d_corners
+    ssim = float(diff.get("ssim", 1.0))
+    if lab_d < 8 and ssim > 0.72:
+        return False
+    if area <= max_car and 1.0 <= aspect <= 8.0 and ndvi < 0.20:
+        if lab_d >= 10 and structural <= 20:
+            return True
+        if ssim < 0.65 and structural <= 16:
+            return True
+    return False
+
+
+def _max_vehicle_area(img_area=None):
+    """Scale-aware upper bound for a single-vehicle footprint in pixels."""
+    if not img_area or img_area <= 0:
+        return 35000
+    return int(max(6000, min(50000, img_area * 0.00028)))
+
+
+def _is_vehicle_like(area, w, h, features, diff=None, feat_b=None, img_area=None):
+    """
+    Detect parked/moving cars and similar transient vehicles on aerial imagery.
+    These are not permanent ground changes and should be excluded from reports.
+    """
+    aspect = max(w, h) / max(min(w, h), 1)
+    max_car = _max_vehicle_area(img_area)
+
+    if area < 200:
+        return True
+    if area > max_car * 3:
+        return False
+
+    if _is_radiometric_transient(diff, area, w, h, features, img_area=img_area):
+        return True
+
+    edge = float(features.get("edge_density", 0))
+    ndvi = float(features.get("ndvi", 0))
+    entropy = float(features.get("orientation_entropy", 3.0))
+    homogeneity = float(features.get("color_homogeneity", 0))
+    brightness = float(features.get("brightness", 50))
+
+    lines = int(diff.get("lines_after", 0)) if diff else 0
+    corners = int(diff.get("corners_after", 0)) if diff else 0
+    hull = float(diff.get("hull_ratio_after", 0.5)) if diff else 0.5
+    structural = lines + corners
+    perm = _permanent_change_evidence(diff, features, area, w, h)
+
+    # Strong permanent structural change — keep (building, road work, clearing)
+    if perm >= 0.42 and area >= 4000:
+        return False
+
+    # Typical car / van footprint
+    if area <= max_car and 1.05 <= aspect <= 8.0 and ndvi < 0.16:
+        if perm < 0.35:
+            return True
+        if edge > 10 and structural < 20 and hull < 0.72:
+            return True
+        if homogeneity < 35 and edge > 14 and perm < 0.40:
+            return True
+
+    # Appeared / disappeared vehicle: localized radiometric change, no new structure
+    if diff and area <= max_car and ndvi < 0.14:
+        d_lines = abs(int(diff.get("delta_lines", 0)))
+        d_corners = abs(int(diff.get("delta_corners", 0)))
+        lab_d = float(diff.get("lab_color_distance", 0))
+        if d_lines <= 12 and d_corners <= 16 and perm < 0.34:
+            if lab_d > 6 and 1.0 <= aspect <= 7.5:
+                return True
+        # One timestamp has vehicle-like edges, the other is open pavement
+        if feat_b is not None:
+            eb = float(feat_b.get("edge_density", 0))
+            if abs(edge - eb) > 8 and structural < 18 and perm < 0.36:
+                if 1.1 <= aspect <= 6.5 and 25 <= brightness <= 110:
+                    return True
+
+    # Elongated vehicle on pavement (often mis-tagged as road change)
+    if 1.8 <= aspect <= 7.0 and 300 <= area <= max_car:
+        if edge > 14 and structural < 14 and ndvi < 0.12 and perm < 0.32:
+            return True
+
+    return False
+
+
+def _should_suppress_transient_region(area, w, h, feat_a, diff=None, feat_b=None,
+                                      img_area=None, fill_ratio=1.0):
+    """True when a region should be dropped (vehicles + other non-permanent clutter)."""
+    if feat_a is None:
+        return area < 500
+    if _is_vehicle_like(area, w, h, feat_a, diff=diff, feat_b=feat_b, img_area=img_area):
+        return True
+    if _is_radiometric_transient(diff, area, w, h, feat_a, img_area=img_area):
+        return True
+    max_transient = _max_vehicle_area(img_area) * 2
+    aspect = max(w, h) / max(min(w, h), 1)
+    perm = _permanent_change_evidence(diff, feat_a, area, w, h, fill_ratio)
+    if area <= max_transient and perm < 0.26 and aspect < 9.0:
+        if float(feat_a.get("ndvi", 0)) < 0.20:
+            return True
+    return False
+
+
+def strip_transient_from_mask(change_mask, before_img, after_img):
+    """Erase vehicle / fleeting-object components from a binary change mask."""
+    if before_img is None or after_img is None or change_mask is None:
+        return change_mask
+    out = change_mask.copy()
+    img_h, img_w = out.shape[:2]
+    img_area = img_h * img_w
+    binary = (out > 127).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    removed = 0
+    for i in range(1, num_labels):
+        raw_area = int(stats[i, cv2.CC_STAT_AREA])
+        x = int(stats[i, cv2.CC_STAT_LEFT])
+        y = int(stats[i, cv2.CC_STAT_TOP])
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        # Minimal context — large pads inflate edge/structure scores on car blobs.
+        pad = 2
+        y1, y2 = max(0, y - pad), min(img_h, y + h + pad)
+        x1, x2 = max(0, x - pad), min(img_w, x + w + pad)
+        a_crop = after_img[y1:y2, x1:x2]
+        b_crop = before_img[y1:y2, x1:x2]
+        if a_crop.size == 0:
+            continue
+        feat_a = extract_advanced_features(a_crop)
+        if feat_a is None:
+            continue
+        feat_b = extract_advanced_features(b_crop) if b_crop.size > 0 else None
+        diff = _extract_differential_features(b_crop, a_crop) if b_crop.size > 0 else None
+        fill = raw_area / max(w * h, 1)
+        if _should_suppress_transient_region(
+                raw_area, w, h, feat_a, diff=diff, feat_b=feat_b,
+                img_area=img_area, fill_ratio=fill):
+            out[labels == i] = 0
+            removed += 1
+    if removed:
+        _log.info("Stripped %d transient/vehicle component(s) from change mask", removed)
+    return out
+
+
+def _is_transient_object(area, w, h, features, diff=None, feat_b=None, img_area=None):
     """
     Filter out transient objects (people, cars, animals, shadows, etc.)
     that are NOT permanent ground/structural changes.
     Returns True if the region is likely transient and should be excluded.
     """
+    if _is_vehicle_like(area, w, h, features, diff=diff, feat_b=feat_b, img_area=img_area):
+        return True
+
     aspect_ratio = max(w, h) / max(min(w, h), 1)
 
     # Very small regions are likely noise, people, or small vehicles
-    if area < 300:
+    if area < 550:
         return True
 
     # Tall narrow regions (aspect > 4) are likely people or poles
-    if aspect_ratio > 5.0 and area < 2000:
+    if aspect_ratio > 5.0 and area < 3000:
         return True
 
     # Very high edge density + small area = likely a person or vehicle
-    if features["edge_density"] > 80 and area < 1500:
+    if features["edge_density"] > 70 and area < 2800:
         return True
 
     # Extremely high texture variance in small area = likely transient clutter
-    if features["texture_std"] > 60 and area < 1000:
+    if features["texture_std"] > 50 and area < 1800:
         return True
 
     return False
@@ -1484,14 +1790,9 @@ def classify_object_type(image_region, bbox, before_region=None):
         return "Unclassified", 0.0
 
     area = w * h
-    if _is_transient_object(area, w, h, feat_a):
-        return None, 0.0
-
-    aspect_ratio = max(w, h) / max(min(w, h), 1)
-    compactness = (4 * np.pi * area) / ((2 * (w + h)) ** 2 + 1e-6)
-
-    # --- Differential classification when before image is available ---
+    img_area = int(image_region.shape[0] * image_region.shape[1])
     diff = None
+    feat_b = None
     if before_region is not None:
         by1 = max(0, y - pad)
         by2 = min(before_region.shape[0], y + h + pad)
@@ -1500,7 +1801,15 @@ def classify_object_type(image_region, bbox, before_region=None):
         before_crop = before_region[by1:by2, bx1:bx2]
         if before_crop.size > 0 and before_crop.shape[0] >= 3 and before_crop.shape[1] >= 3:
             diff = _extract_differential_features(before_crop, after_crop)
+            feat_b = extract_advanced_features(before_crop)
 
+    if _is_transient_object(area, w, h, feat_a, diff, feat_b=feat_b, img_area=img_area):
+        return None, 0.0
+
+    aspect_ratio = max(w, h) / max(min(w, h), 1)
+    compactness = (4 * np.pi * area) / ((2 * (w + h)) ** 2 + 1e-6)
+
+    # --- Differential classification when before image is available ---
     scores = {}
 
     # ---- Water Body Change ----
@@ -1607,11 +1916,13 @@ def classify_object_type(image_region, bbox, before_region=None):
         # Brightness increase (concrete/roofing vs bare ground)
         if diff["delta_brightness"] > 8:
             bld += 0.06
-        # Rectangular shape in after image
+        # Rectangular shape in after image (needs structural support — cars are rectangular too)
         if diff["hull_ratio_after"] > 0.50:
-            bld += 0.10
+            if diff["delta_lines"] > 2 or diff["delta_corners"] > 3:
+                bld += 0.10
         elif diff["hull_ratio_after"] > 0.35:
-            bld += 0.05
+            if diff["delta_lines"] > 1 or diff["delta_corners"] > 2:
+                bld += 0.05
         # After image has structural features even if delta is modest
         if diff["lines_after"] > 4 and diff["corners_after"] > 6:
             bld += 0.08
@@ -1659,6 +1970,11 @@ def classify_object_type(image_region, bbox, before_region=None):
         if area > 600:
             bld += 0.05
     scores["New Construction/Building"] = bld
+    if area < _max_vehicle_area(img_area):
+        if _is_radiometric_transient(diff, area, w, h, feat_a, img_area=img_area):
+            scores["New Construction/Building"] *= 0.15
+        elif _permanent_change_evidence(diff, feat_a, area, w, h) < 0.34:
+            scores["New Construction/Building"] *= 0.25
 
     # ---- Demolition/Clearing ----
     demo = 0.0
@@ -1725,27 +2041,33 @@ def classify_object_type(image_region, bbox, before_region=None):
 
     # ---- Road/Pavement Change ----
     road = 0.0
-    if aspect_ratio > 2.5:
-        road += 0.22
-    if feat_a["color_homogeneity"] < 22:
-        road += 0.18
-    if feat_a["texture_std"] < 32:
-        road += 0.15
-    if feat_a["saturation"] < 65:
-        road += 0.12
-    if feat_a["orientation_entropy"] < 2.0:
-        road += 0.15
-    if 35 <= feat_a["brightness"] <= 75:
-        road += 0.10
-    if compactness < 0.3:
-        road += 0.05
-    if area > 600:
-        road += 0.03
-    scores["Road/Pavement Change"] = road
+    # Car-sized elongated blobs often score as road — skip for sub-building footprints
+    if area < _max_vehicle_area(img_area) and aspect_ratio < 6.5:
+        scores["Road/Pavement Change"] = 0.0
+    else:
+        if aspect_ratio > 2.5:
+            road += 0.22
+        if feat_a["color_homogeneity"] < 22:
+            road += 0.18
+        if feat_a["texture_std"] < 32:
+            road += 0.15
+        if feat_a["saturation"] < 65:
+            road += 0.12
+        if feat_a["orientation_entropy"] < 2.0:
+            road += 0.15
+        if 35 <= feat_a["brightness"] <= 75:
+            road += 0.10
+        if compactness < 0.3:
+            road += 0.05
+        if area > 600:
+            road += 0.03
+        scores["Road/Pavement Change"] = road
 
     # ---- Temporary Structure (sheds, tents, makeshift) ----
     tmp = 0.0
-    if diff:
+    if area < _max_vehicle_area(img_area) and aspect_ratio < 5.0:
+        scores["Temporary Structure"] = 0.0
+    elif diff:
         ded_t = diff["delta_edge_density"]
         if 3 < ded_t < 20:
             tmp += 0.16
@@ -1802,6 +2124,10 @@ def classify_object_type(image_region, bbox, before_region=None):
     scores["Bare Land/Soil Change"] = soil
 
     best, conf = _resolve_classification(scores, diff, feat_a)
+
+    if _should_suppress_transient_region(
+            area, w, h, feat_a, diff=diff, feat_b=feat_b, img_area=img_area):
+        return None, 0.0
 
     if conf < 0.28:
         return "Unclassified", conf
@@ -2495,6 +2821,11 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
     if min_area is None:
         min_area = int(max(250, min(1000, img_area * 0.00009)))
 
+    # Poor registration → residual misalignment shows up as many small false
+    # positives. Raise the size floor to keep only confident, larger changes.
+    if not registration_ok:
+        min_area = int(min_area * 1.4)
+
     for i in range(1, num_labels):
         raw_area = stats[i, cv2.CC_STAT_AREA]
         if raw_area < min_area:
@@ -2528,6 +2859,25 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
                 confidence = max(0.2, min(0.5, fill_ratio))
             else:
                 continue
+
+        # Drop vehicles and other non-permanent clutter (any label)
+        pad = 2
+        ry1, ry2 = max(0, y - pad), min(image.shape[0], y + h + pad)
+        rx1, rx2 = max(0, x - pad), min(image.shape[1], x + w + pad)
+        crop = image[ry1:ry2, rx1:rx2]
+        feat_chk = extract_advanced_features(crop) if crop.size > 0 else None
+        diff_chk = feat_b_chk = None
+        if before_img is not None and feat_chk is not None:
+            by1, by2 = max(0, y - pad), min(before_img.shape[0], y + h + pad)
+            bx1, bx2 = max(0, x - pad), min(before_img.shape[1], x + w + pad)
+            b_crop = before_img[by1:by2, bx1:bx2]
+            if b_crop.size > 0:
+                diff_chk = _extract_differential_features(b_crop, crop)
+                feat_b_chk = extract_advanced_features(b_crop)
+        if feat_chk and _should_suppress_transient_region(
+                raw_area, w, h, feat_chk, diff=diff_chk, feat_b=feat_b_chk,
+                img_area=img_area, fill_ratio=fill_ratio):
+            continue
 
         if confidence < 0.24 and raw_area < min_area * 3:
             continue
@@ -2596,33 +2946,106 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
                   enable_registration=True, enable_normalization=True,
                   detection_sensitivity=0.5, min_region_area=None,
-                  max_size=None):
+                  max_size=None, on_progress=None,
+                  before_path=None, after_path=None):
     """Run full detection pipeline; returns change_mask, result_image, stats, regions."""
-    ms = max_size or get_detection_max_size()
-    before_array = preprocess_image(before_pil, max_size=ms)
-    after_array = preprocess_image(after_pil, max_size=ms)
+    from .detection_config import (
+        get_inference_mode, get_load_max_side, get_skip_preblur,
+        get_windowed_threshold, get_tile_size, get_tile_overlap,
+    )
+
+    def _prog(pct, stage):
+        if on_progress:
+            on_progress(int(pct), stage)
+
+    inference_mode = get_inference_mode()
+    skip_blur = get_skip_preblur()
+
+    # Decide whether to stream the deep score from native GeoTIFF windows.
+    # Triggered for very large rasters (native side > threshold) or when loading
+    # the full-res array would blow the memory budget, so peak RAM stays bounded
+    # while the model still sees full-resolution detail.
+    windowed = False
+    if inference_mode == "fullres_tiled" and before_path and after_path:
+        try:
+            from .dda.geotiff_io import read_native_size
+            from .detection_config import get_tile_memory_budget_mb
+            thr = get_windowed_threshold()
+            na = read_native_size(Path(before_path))
+            nb = read_native_size(Path(after_path))
+            if na and nb and na == nb:
+                cap = get_load_max_side()
+                long_side = min(max(na), cap)
+                # ~3 bytes/px/array, two timestamps held in memory at once
+                est_mb = (long_side * long_side * 3 * 2) / (1024 * 1024)
+                budget = get_tile_memory_budget_mb()
+                over_threshold = bool(thr and max(na) > thr)
+                over_budget = bool(budget and est_mb > budget)
+                if over_threshold or over_budget:
+                    windowed = True
+        except Exception as exc:
+            _log.warning("Windowed-size probe failed: %s", exc)
+
+    if inference_mode == "fullres_tiled" and not windowed:
+        # Keep full imagery at the full-res cap and skip denoise.
+        ms = max_size if (max_size and max_size > get_detection_max_size()) else get_load_max_side()
+    else:
+        # Windowed mode keeps the in-memory arrays bounded (registration +
+        # classical run on the preview); detail comes from the streamed score.
+        ms = max_size or get_detection_max_size()
+
+    _prog(5, "Preprocessing images")
+    before_array = preprocess_image(before_pil, max_size=ms, skip_blur=skip_blur)
+    after_array = preprocess_image(after_pil, max_size=ms, skip_blur=skip_blur)
 
     registration_ok = False
     reg_meta = {}
     if enable_registration:
+        _prog(20, "Registering images")
         before_array, after_array, registration_ok, reg_meta = register_images(
             before_array, after_array)
     if enable_normalization:
+        _prog(35, "Normalizing radiometry")
         before_array, after_array = normalize_radiometry(before_array, after_array)
 
     alignment_warning = None
     if enable_registration and not registration_ok:
         alignment_warning = ALIGNMENT_WARNING_MSG
 
+    dl_score_override = None
+    if windowed and method in ("AI-Based Deep Learning", "Hybrid AI"):
+        try:
+            from .model_inference import is_model_available, predict_change_score_windowed
+            if is_model_available():
+                _prog(45, "Full-res tiled inference")
+                out_h, out_w = before_array.shape[:2]
+
+                def _win_prog(frac):
+                    _prog(45 + int(frac * 5), "Full-res tiled inference")
+
+                dl_score_override = predict_change_score_windowed(
+                    before_path, after_path, out_h, out_w,
+                    tile_size=get_tile_size(), overlap=get_tile_overlap(),
+                    on_progress=_win_prog,
+                )
+        except Exception as exc:
+            _log.warning("Windowed inference failed, falling back to in-memory: %s", exc)
+            dl_score_override = None
+
+    _prog(50, f"Running {method}")
+
+    # Image Difference removed from the product; map legacy requests to AI path.
+    if method == "Image Difference":
+        method = "AI-Based Deep Learning"
+        _log.info("Image Difference is deprecated; using AI-Based Deep Learning")
+
     if method == "AI-Based Deep Learning":
         change_mask, threshold_debug = ai_deep_learning_method(
             before_array, after_array,
             sensitivity=detection_sensitivity,
             registration_ok=registration_ok,
+            dl_score_override=dl_score_override,
         )
-    elif method == "Image Difference":
-        change_mask, threshold_debug = image_difference_method(
-            before_array, after_array, sensitivity=detection_sensitivity)
     elif method == "Feature-Based":
         change_mask = feature_based_method(
             before_array, after_array, sensitivity=detection_sensitivity)
@@ -2645,11 +3068,30 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             registration_ok=registration_ok,
         )
 
+    # Pull the (numpy) probability map out of the debug dict so the returned
+    # threshold_debug stays JSON-serializable; stash it privately in stats for
+    # optional probability-PNG export downstream.
+    score_map = None
+    if isinstance(threshold_debug, dict):
+        score_map = threshold_debug.pop("_score_map", None)
+        from .detection_config import (
+            get_tile_size as _gts, get_tile_overlap as _gto,
+            get_multiscale_scales as _gms, get_fusion_mode as _gfm,
+        )
+        threshold_debug["inferenceMode"] = inference_mode
+        threshold_debug["windowed"] = bool(windowed)
+        threshold_debug["fusionMode"] = _gfm()
+        threshold_debug["tileConfig"] = {"tileSize": _gts(), "overlap": _gto(),
+                                         "multiscale": _gms()}
+
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
     changed_pixels_ratio = (
         float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
     )
 
+    change_mask = strip_transient_from_mask(change_mask, before_array, after_array)
+
+    _prog(65, "Analyzing change regions")
     change_regions = analyze_change_regions(
         change_mask,
         after_array,
@@ -2664,29 +3106,30 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         and registration_ok
         and changed_pixels_ratio == 0.0
     ):
-        diff_mask, diff_debug = image_difference_method(
+        fb_mask = feature_based_method(
             before_array, after_array, sensitivity=detection_sensitivity)
-        diff_regions = analyze_change_regions(
-            diff_mask, after_array, min_area=min_region_area,
+        change_mask = strip_transient_from_mask(fb_mask, before_array, after_array)
+        fb_regions = analyze_change_regions(
+            change_mask, after_array, min_area=min_region_area,
             before_img=before_array, registration_ok=registration_ok,
         )
-        if len(diff_regions) > 0:
-            change_mask = diff_mask
-            change_regions = diff_regions
+        if len(fb_regions) > 0:
+            change_regions = fb_regions
             threshold_debug = {
-                "method": f"{method} (fallback->Image Difference)",
+                "method": f"{method} (fallback->Feature-Based)",
                 "fallback_used": True,
-                "diff_debug": diff_debug,
                 "sensitivity": float(detection_sensitivity),
             }
 
     total_pixels = int(change_mask.shape[0] * change_mask.shape[1])
+    _prog(85, "Building visualization")
     result_image = visualize_changes(
         before_array, after_array, change_mask,
         regions=change_regions, total_pixels=total_pixels,
     )
     changed_pixels = int(np.sum(change_mask > 127))
     change_pct = (changed_pixels / total_pixels * 100.0) if total_pixels else 0.0
+    _prog(95, "Finalizing results")
 
     stats = {
         "total_pixels": total_pixels,
@@ -2704,7 +3147,12 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             "enable_normalization": bool(enable_normalization),
             "registration_ok": bool(registration_ok),
             "registration": reg_meta,
+            "inference_mode": inference_mode,
+            "windowed": bool(windowed),
+            "working_resolution": [int(before_array.shape[1]), int(before_array.shape[0])],
         },
     }
+    if score_map is not None:
+        stats["_score_map"] = score_map  # numpy; not serialized, consumed downstream
 
     return change_mask, result_image, stats, change_regions

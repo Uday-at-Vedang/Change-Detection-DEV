@@ -35,6 +35,14 @@ def main():
     if here not in sys.path:
         sys.path.insert(0, here)
 
+    # Load .env before anything else reads os.environ (DATABASE_URL, SECRET_KEY,
+    # DETECTION_* tuning knobs, etc. are otherwise silently ignored).
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(here, ".env"))
+    except ImportError:
+        pass
+
     # Local runs use DDA dev UI + folder library unless already set
     os.environ.setdefault("APP_MODE", "dda")
 

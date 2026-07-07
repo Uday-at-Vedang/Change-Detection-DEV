@@ -55,15 +55,16 @@ function formatBytes(n) {
 }
 
 let ddaConfig = null;
-let localYears = [];
-let selectedYear = null;
+const selectedNode = { id: null, path: '' };
 
 window.ddaState = {
   get config() { return ddaConfig; },
   get localCfg() { return window._localCfg; },
-  get years() { return localYears; },
-  get selectedYear() { return selectedYear; },
-  setYear(year) { selectedYear = year; },
+  get selectedNode() { return { ...selectedNode }; },
+  get userRole() { return window._ddaUserRole || 'analyst'; },
+  set userRole(r) { window._ddaUserRole = r; },
+  setNode(n) { selectedNode.id = n.id; selectedNode.path = n.path || ''; },
+  clearNode() { selectedNode.id = null; selectedNode.path = ''; },
   refreshImages: () => loadLibraryImages(),
   rescan: () => rescanLibrary(),
 };
@@ -83,103 +84,75 @@ document.querySelectorAll('.dda-tab').forEach((btn) => {
 
 async function rescanLibrary() {
   const data = await ddaApi('POST', '/api/dda/local/rescan');
-  localYears = data.years || [];
-  if (typeof renderYearTree === 'function') renderYearTree(localYears);
+  if (typeof renderAllTrees === 'function') renderAllTrees({ tree: data.tree }, []);
+  else if (typeof renderTree === 'function') renderTree({ tree: data.tree }, []);
+  if (typeof populateManageNodeSelect === 'function') populateManageNodeSelect();
   await loadLibraryImages();
+  if (typeof loadCompareLibraryGrid === 'function') await loadCompareLibraryGrid();
   return data;
 }
 
 async function initDda() {
   hideDdaError();
   try {
+    try {
+      const me = await ddaApi('GET', '/api/dda/me');
+      window.ddaState.userRole = me.role || 'analyst';
+    } catch (_) {
+      window.ddaState.userRole = 'analyst';
+    }
+
     ddaConfig = await ddaApi('GET', '/api/dda/config');
     const localCfg = await ddaApi('GET', '/api/dda/local/config');
     window._localCfg = localCfg;
 
+    document.getElementById('btn-manage-library')?.classList.toggle('hidden', window.ddaState.userRole !== 'admin');
+
     const hint = document.getElementById('lib-config-hint');
-    if (hint) {
-      hint.textContent = localCfg.geotiffEnabled ? 'GeoTIFF ready' : 'GeoTIFF limited';
-    }
-    const paths = (localCfg.rootPaths || []).filter(Boolean);
+    if (hint) hint.textContent = localCfg.geotiffEnabled ? 'GeoTIFF ready' : 'GeoTIFF limited';
+
     const pathEl = document.getElementById('lib-path-display');
     if (pathEl) {
       pathEl.textContent = [
-        localCfg.isHosted ? 'HF writable storage:' : 'Local folders:',
-        localCfg.writablePath || paths[0] || '',
-        ...paths.filter((p) => p !== localCfg.writablePath),
+        'Storage root:',
+        localCfg.storageRoot || localCfg.writablePath || '',
+        'Layout: {zone}/{area}/…/Images/file.tif',
       ].filter(Boolean).join('\n');
     }
+
     const folderPath = document.getElementById('lib-folder-path');
     if (folderPath) {
       folderPath.textContent = localCfg.isHosted
-        ? 'Hugging Face — upload files below'
-        : (paths[0] ? `Scanning: ${paths[0]}` : '');
+        ? 'Hugging Face — tree library'
+        : `Storage: ${localCfg.storageRoot || ''}`;
     }
+
     const instr = document.getElementById('lib-instructions');
     if (instr && localCfg.instructions) instr.textContent = localCfg.instructions;
 
-    const hfUpload = document.getElementById('hf-upload-card');
-    if (hfUpload) hfUpload.classList.toggle('hidden', !localCfg.isHosted);
+    const uploadLimit = document.getElementById('upload-limit-hint');
+    if (uploadLimit && localCfg.maxUploadGb) {
+      uploadLimit.textContent = `Select a tree node and image type. Max ${localCfg.maxUploadGb} GB per file.`;
+    }
 
     const resHint = document.getElementById('dda-detect-res-hint');
     if (resHint && localCfg.detectionMaxSide) {
-      resHint.textContent = `Detection runs at up to ${localCfg.detectionMaxSide}px per side for sharper results (set DETECTION_MAX_SIDE to change).`;
-    }
-
-    const uploadLimit = document.getElementById('hf-upload-limit');
-    if (uploadLimit && localCfg.maxUploadGb) {
-      uploadLimit.textContent = `Files on your computer are not on the server. Upload .tif images here (up to ${localCfg.maxUploadGb} GB each).`;
-    }
-
-    const appMode = ddaConfig.appMode || ddaConfig.mode || localCfg.appMode || 'dda';
-    if (!localCfg.isHosted && appMode !== 'dda') {
-      showDdaError('DDA mode is off. Run locally with: python run.py');
+      resHint.textContent = `Detection runs at up to ${localCfg.detectionMaxSide}px per side.`;
     }
 
     const urlTab = new URLSearchParams(window.location.search).get('tab');
-    if (urlTab) {
-      document.querySelector(`.dda-tab[data-tab="${urlTab}"]`)?.click();
-    }
+    if (urlTab) document.querySelector(`.dda-tab[data-tab="${urlTab}"]`)?.click();
 
-    const yearsData = await ddaApi('GET', '/api/dda/local/years');
-    localYears = yearsData.years || [];
-    if (typeof renderYearTree === 'function') renderYearTree(localYears);
+    if (typeof loadTree === 'function') await loadTree();
     await loadLibraryImages();
-    await loadHierarchyTree();
   } catch (err) {
     showDdaError(err.message || 'Failed to load library');
   }
 }
 
-async function loadHierarchyTree() {
-  const el = document.getElementById('lib-hierarchy');
-  if (!el) return;
-  try {
-    const data = await ddaApi('GET', '/api/dda/hierarchy');
-    const zones = data.zones || [];
-    if (!zones.length) {
-      el.innerHTML = '<p class="dim">No zones seeded.</p>';
-      return;
-    }
-    el.innerHTML = `<p class="dim" style="margin-bottom:0.5rem">DB hierarchy (upload API). Local library uses year folders.</p>` +
-      zones.map((z) => {
-      const villages = z.villages || [];
-      const zoneCount = villages.reduce((s, v) => s + (v.imageCount || 0), 0);
-      const villageItems = villages.map((v) =>
-        `<li class="dda-hierarchy-village">${v.name}${v.imageCount ? ` <span class="dim">(${v.imageCount})</span>` : ''}</li>`
-      ).join('');
-      return `
-        <details class="dda-hierarchy-zone" open>
-          <summary>${z.name}${zoneCount ? ` <span class="dim">(${zoneCount})</span>` : ''}</summary>
-          <ul class="dda-hierarchy-list">${villageItems || '<li class="dim">No villages</li>'}</ul>
-        </details>`;
-    }).join('');
-  } catch (_) {
-    el.innerHTML = '<p class="dim">Zone tree unavailable.</p>';
-  }
+function selectionTitle() {
+  return selectedNode.path || 'All images';
 }
-
-window.loadHierarchyTree = loadHierarchyTree;
 
 async function loadLibraryImages() {
   const grid = document.getElementById('lib-grid');
@@ -187,39 +160,32 @@ async function loadLibraryImages() {
   if (!grid) return;
   const q = document.getElementById('lib-filter')?.value?.trim() || '';
   const params = new URLSearchParams();
-  if (selectedYear) params.set('year', String(selectedYear));
+  if (selectedNode.id) params.set('node_id', String(selectedNode.id));
   if (q) params.set('q', q);
-  if (title) {
-    title.textContent = selectedYear ? `Images — ${selectedYear}` : 'Images — all years';
-  }
+  if (title) title.textContent = `Images — ${selectionTitle()}`;
+
   try {
     const items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
     window.ddaState.libraryItems = items;
     if (!items.length) {
-      const hf = window.ddaState?.localCfg?.isHosted;
-      grid.innerHTML = hf
-        ? `<p class="dim">No images on this Space yet. Use <strong>Upload to Space storage</strong> above (2025 / 2026), then click Refresh.</p>`
-        : `<p class="dim">No images in ${selectedYear || 'library_sources'}. Copy .tif files into <code>library_sources/${selectedYear || 'YEAR'}/</code> and click Refresh.</p>`;
+      grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(selectionTitle())}</strong>. Select a node and upload, or use Manage to create folders.</p>`;
       return;
     }
     grid.innerHTML = items.map((img) => {
-      const thumb = img.thumbUrl ? img.thumbUrl.replace(/path=[^&]+/, 'path=' + encodeURIComponent(img.path)) : '';
+      const thumb = img.thumbUrl || '';
+      const crumb = img.breadcrumb || img.nodePath || img.filename;
+      const encPath = encodeURIComponent(img.path);
       return `
-      <div class="dda-card-img" draggable="true" data-image-path="${img.path.replace(/"/g, '&quot;')}" title="${escapeHtml(img.filename)}">
+      <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
+        <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image">×</button>
         ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
         <div class="meta">
-          <strong>${escapeHtml(String(img.year))}</strong><br/>
-          ${escapeHtml(img.filename)}<br/>
-          <span class="dim">${formatBytes(img.fileSizeBytes)}</span>
+          <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
+          <span class="dim">${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
         </div>
       </div>`;
     }).join('');
-    grid.querySelectorAll('.dda-card-img').forEach((card) => {
-      card.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('application/x-dda-image-path', card.dataset.imagePath);
-        e.dataTransfer.setData('text/plain', card.dataset.imagePath);
-      });
-    });
+    if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
     if (typeof loadCompareLibraryGrid === 'function') loadCompareLibraryGrid();
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
@@ -236,7 +202,11 @@ document.getElementById('btn-refresh-lib')?.addEventListener('click', async () =
   btn.disabled = true;
   try {
     const data = await rescanLibrary();
-    showDdaSuccess(`Library refreshed — ${data.totalImages || 0} image(s) found.`);
+    const sync = data.sync || {};
+    const parts = [`${data.totalImages || 0} image(s)`];
+    if (sync.nodesCreated) parts.push(`${sync.nodesCreated} folder(s) imported`);
+    if (sync.imagesIndexed) parts.push(`${sync.imagesIndexed} image(s) indexed`);
+    showDdaSuccess(`Library synced — ${parts.join(', ')}.`);
   } catch (err) {
     showDdaError(err.message);
   } finally {
