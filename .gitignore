@@ -15,3 +15,4 @@ library_sources/**/*.TIFF
 *.egg-info/
 dist/
 build/
+venv/
