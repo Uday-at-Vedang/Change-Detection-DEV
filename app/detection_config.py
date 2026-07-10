@@ -18,6 +18,11 @@ DETECTION_SKIP_PREBLUR    ``true`` | ``false`` (auto: on for fullres_tiled).
 DETECTION_TTA             ``off`` | ``hflip`` | ``full`` | ``auto`` (model_inference).
 DETECTION_SKIP_UNCHANGED_THRESHOLD  Worst-cell LAB tile-signature distance below
                           which a tile skips the deep model (0/unset = off).
+DETECTION_KPCA_PATCH_SIZE      Patch side (px) for the KPCA method (default 5).
+DETECTION_KPCA_N_COMPONENTS    KPCA output feature-vector length (default 8).
+DETECTION_KPCA_GAMMA           RBF kernel gamma for KernelPCA (default 5e-4).
+DETECTION_KPCA_N_TRAIN_PATCHES Patches used to fit KPCA filters (default 300).
+DETECTION_KPCA_MAX_SIDE        Max processed resolution for KPCA (default 2048).
 """
 from __future__ import annotations
 
@@ -229,6 +234,61 @@ def get_border_margin() -> int:
     return 4 if get_inference_mode() == "fullres_tiled" else 12
 
 
+def get_kpca_patch_size() -> int:
+    """Patch side (px) sampled/scored for the unsupervised KPCA method."""
+    raw = _env("DETECTION_KPCA_PATCH_SIZE", "5")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 5
+    if value % 2 == 0:
+        value += 1
+    return max(3, min(15, value))
+
+
+def get_kpca_n_components() -> int:
+    """Number of KPCA output components (feature-vector length per pixel)."""
+    raw = _env("DETECTION_KPCA_N_COMPONENTS", "8")
+    try:
+        return max(1, min(32, int(raw)))
+    except ValueError:
+        return 8
+
+
+def get_kpca_gamma() -> float:
+    """RBF kernel gamma for KernelPCA."""
+    raw = _env("DETECTION_KPCA_GAMMA", "5e-4")
+    try:
+        return float(raw)
+    except ValueError:
+        return 5e-4
+
+
+def get_kpca_n_train_patches() -> int:
+    """Total patches (split across both images) used to fit the KPCA filters.
+
+    Transform cost scales with n_query_patches x n_train_patches, so this is
+    the main speed/quality knob — higher gives a better-fit filter bank at
+    proportionally higher cost.
+    """
+    raw = _env("DETECTION_KPCA_N_TRAIN_PATCHES", "300")
+    try:
+        return max(20, min(4000, int(raw)))
+    except ValueError:
+        return 300
+
+
+def get_kpca_max_side() -> int:
+    """Max processed resolution for the KPCA method (independent of the deep
+    model's resolution cap — measured ~2 min at 2048px vs. AdaptFormer's ~14
+    min at the same resolution, so this can reasonably run higher)."""
+    raw = _env("DETECTION_KPCA_MAX_SIDE", "2048")
+    try:
+        return max(128, min(8192, int(raw)))
+    except ValueError:
+        return 2048
+
+
 def summary() -> dict:
     """Snapshot of effective detection config (for logs and debug output)."""
     return {
@@ -242,4 +302,11 @@ def summary() -> dict:
         "skipPreblur": get_skip_preblur(),
         "borderMargin": get_border_margin(),
         "skipUnchangedThreshold": get_skip_unchanged_threshold(),
+        "kpca": {
+            "patchSize": get_kpca_patch_size(),
+            "nComponents": get_kpca_n_components(),
+            "gamma": get_kpca_gamma(),
+            "nTrainPatches": get_kpca_n_train_patches(),
+            "maxSide": get_kpca_max_side(),
+        },
     }

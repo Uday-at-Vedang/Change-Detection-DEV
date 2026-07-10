@@ -745,6 +745,49 @@ def feature_based_method(img1, img2, num_clusters=4, sensitivity=0.5):
     return change_mask
 
 
+def kpca_method(img1, img2, sensitivity=0.5):
+    """
+    Unsupervised change detection via Kernel PCA convolutional mapping
+    (KPCAMNet-inspired, see app/cd_models/kpca_method.py). No labels needed —
+    filters are fit directly on patches sampled from this image pair. CPU-cheap
+    relative to the deep model: ~2 min at 2048px vs. AdaptFormer's ~14 min in
+    real testing, at the cost of being a coarser, single-channel-intensity
+    signal (no color/texture/edge fusion).
+    """
+    if img1.shape != img2.shape:
+        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+
+    from .detection_config import (
+        get_kpca_patch_size, get_kpca_n_components, get_kpca_gamma,
+        get_kpca_n_train_patches, get_kpca_max_side,
+    )
+    from .cd_models.kpca_method import kpca_change_mask
+
+    magnitude, kpca_debug = kpca_change_mask(
+        img1, img2,
+        patch_size=get_kpca_patch_size(),
+        n_components=get_kpca_n_components(),
+        gamma=get_kpca_gamma(),
+        n_train_patches=get_kpca_n_train_patches(),
+        max_side=get_kpca_max_side(),
+    )
+    mag_uint8 = (np.clip(magnitude, 0, 1) * 255).astype(np.uint8)
+    change_mask, used_thr, otsu_val, noise_floor = _adaptive_binary_threshold(
+        mag_uint8, min_floor=25, sensitivity=sensitivity
+    )
+    change_mask = _clean_mask(change_mask, sensitivity=sensitivity)
+
+    debug = {
+        "method": "KPCA (Unsupervised)",
+        "threshold_used": int(used_thr),
+        "otsu": float(otsu_val),
+        "noise_floor": float(noise_floor),
+        "sensitivity": float(sensitivity),
+        **kpca_debug,
+    }
+    return change_mask, debug
+
+
 def _snr_weight(channel):
     """
     Signal-to-noise ratio weight: signal = mean of top 5% values,
@@ -3055,6 +3098,9 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             "note": "KMeans clustering path does not use binary threshold.",
             "sensitivity": float(detection_sensitivity),
         }
+    elif method == "KPCA (Unsupervised)":
+        change_mask, threshold_debug = kpca_method(
+            before_array, after_array, sensitivity=detection_sensitivity)
     elif method == "Hybrid AI":
         change_mask, threshold_debug = hybrid_ai_method(
             before_array, after_array,

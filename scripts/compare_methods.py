@@ -38,7 +38,8 @@ except ImportError:
 from app.detection_engine import run_detection  # noqa: E402
 from app.evaluation.metrics import binary_metrics  # noqa: E402
 
-ALL_METHODS = ["AI-Based Deep Learning", "Feature-Based", "Hybrid Approach", "Hybrid AI"]
+ALL_METHODS = ["AI-Based Deep Learning", "Feature-Based", "Hybrid Approach", "Hybrid AI",
+              "KPCA (Unsupervised)"]
 FUSION_CAPABLE = {"AI-Based Deep Learning", "Hybrid AI"}
 
 
