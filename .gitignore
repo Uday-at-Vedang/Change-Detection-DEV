@@ -16,3 +16,7 @@ library_sources/**/*.TIFF
 dist/
 build/
 venv/
+# Generated eval/calibration outputs (masks, leaderboards, metrics)
+runs/
+# WHU reference dataset (real-data pipeline test set, not Delhi imagery — see docs/whu_reference/)
+data/whu_reference/
