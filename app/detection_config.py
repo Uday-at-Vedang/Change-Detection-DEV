@@ -23,6 +23,13 @@ DETECTION_KPCA_N_COMPONENTS    KPCA output feature-vector length (default 8).
 DETECTION_KPCA_GAMMA           RBF kernel gamma for KernelPCA (default 5e-4).
 DETECTION_KPCA_N_TRAIN_PATCHES Patches used to fit KPCA filters (default 300).
 DETECTION_KPCA_MAX_SIDE        Max processed resolution for KPCA (default 2048).
+DETECTION_DL_FLOOR_BASE   Base DL confidence floor for smart_union fusion
+                          (default 0.36; sensitivity shifts +/-0.10 around it).
+                          Calibration knob — lower lets a weaker/out-of-domain
+                          model's evidence count for more.
+DETECTION_CL_Q_BASE       Base classical-score percentile floor for smart_union
+                          fusion (default 0.92; sensitivity shifts it slightly).
+                          Calibration knob for the rule-based channel.
 """
 from __future__ import annotations
 
@@ -276,6 +283,31 @@ def get_kpca_n_train_patches() -> int:
         return max(20, min(4000, int(raw)))
     except ValueError:
         return 300
+
+
+def get_dl_floor_base() -> float:
+    """Base DL confidence floor for smart_union fusion (see module docstring).
+
+    Calibration knob: lower it if the DL model's evidence is being dropped
+    too aggressively (e.g. a pretrained model that's out-of-domain for the
+    target imagery and rarely crosses the default floor).
+    """
+    raw = _env("DETECTION_DL_FLOOR_BASE", "0.36")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.36
+    return max(0.0, min(1.0, value))
+
+
+def get_cl_q_base() -> float:
+    """Base classical-score percentile floor for smart_union fusion."""
+    raw = _env("DETECTION_CL_Q_BASE", "0.92")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.92
+    return max(0.5, min(0.99, value))
 
 
 def get_kpca_max_side() -> int:

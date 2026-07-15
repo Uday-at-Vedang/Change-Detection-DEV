@@ -944,13 +944,15 @@ def _smart_union_fusion(model_mask, rule_mask, dl_score, classical_score, sensit
     Union with confidence pruning: keep pixels where at least one engine is
     confident, or both agree. Drops weak single-engine speckle (hallucinations).
     """
+    from .detection_config import get_dl_floor_base, get_cl_q_base
+
     sens = float(np.clip(sensitivity, 0.0, 1.0))
     model_on = model_mask > 127
     rule_on = rule_mask > 127
     both_agree = model_on & rule_on
 
-    dl_floor = 0.36 + (1.0 - sens) * 0.10
-    cl_q = float(np.clip(0.92 - (sens - 0.5) * 0.03, 0.88, 0.94))
+    dl_floor = get_dl_floor_base() + (1.0 - sens) * 0.10
+    cl_q = float(np.clip(get_cl_q_base() - (sens - 0.5) * 0.03, 0.50, 0.99))
     cl_floor = (
         float(np.quantile(classical_score, cl_q))
         if float(classical_score.max()) > 1e-6 else 0.38
