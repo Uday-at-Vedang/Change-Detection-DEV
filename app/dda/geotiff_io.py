@@ -406,6 +406,110 @@ def read_georef(path: Path) -> Optional[GeorefInfo]:
     return None
 
 
+def read_gsd_meters(path: Path) -> Optional[float]:
+    """Ground sample distance (meters/pixel) from the raster's georeferencing.
+
+    For geographic CRS (degrees) the pixel size is converted to meters at the
+    raster's center latitude. Returns None when no usable georef exists.
+    """
+    info = read_georef(path)
+    if info is None or info.transform is None:
+        return None
+    try:
+        px_x = abs(float(info.transform.a))
+        px_y = abs(float(info.transform.e))
+        if px_x <= 0 or px_y <= 0:
+            return None
+        gsd = (px_x + px_y) / 2.0
+        crs = info.crs
+        is_geographic = False
+        try:
+            is_geographic = bool(crs is not None and crs.is_geographic)
+        except Exception:
+            is_geographic = bool(crs is not None and "4326" in str(crs))
+        if is_geographic:
+            import math
+            lat = 0.0
+            if info.bounds_wgs84:
+                lat = (info.bounds_wgs84[1] + info.bounds_wgs84[3]) / 2.0
+            meters_per_deg = 111320.0 * max(0.2, math.cos(math.radians(lat)))
+            gsd *= meters_per_deg
+        return float(gsd) if gsd > 0 else None
+    except Exception as exc:
+        logger.warning("read_gsd_meters failed for %s: %s", path.name, exc)
+        return None
+
+
+def harmonize_pair_gsd(
+    before_pil: Image.Image,
+    after_pil: Image.Image,
+    before_path: Path,
+    after_path: Path,
+):
+    """Resample a loaded image pair to a common (coarser) ground resolution.
+
+    SRCDNet motivation: when the two acquisitions have different GSDs, naive
+    pixel-grid alignment upsamples the coarser image and the interpolated
+    texture produces spurious "changes". Downsampling BOTH to the coarser GSD
+    (area-weighted) avoids hallucinated texture diffs.
+
+    Accounts for any load-time downscaling by scaling each file's native GSD
+    with its loaded/native width ratio. Returns ``(before, after, debug)``
+    where debug is None when harmonization was skipped or not needed.
+    """
+    from ..detection_config import get_gsd_harmonize, get_gsd_tolerance
+
+    if not get_gsd_harmonize():
+        return before_pil, after_pil, None
+    try:
+        gsd_b = read_gsd_meters(before_path)
+        gsd_a = read_gsd_meters(after_path)
+        if not gsd_b or not gsd_a:
+            return before_pil, after_pil, None
+
+        native_b = read_native_size(before_path)
+        native_a = read_native_size(after_path)
+        if not native_b or not native_a:
+            return before_pil, after_pil, None
+
+        # Effective GSD of the in-memory image after load-time downscaling
+        eff_b = gsd_b * (native_b[0] / float(before_pil.size[0]))
+        eff_a = gsd_a * (native_a[0] / float(after_pil.size[0]))
+
+        rel_diff = abs(eff_b - eff_a) / max(eff_b, eff_a)
+        tolerance = get_gsd_tolerance()
+        debug = {
+            "gsdBefore": round(eff_b, 4),
+            "gsdAfter": round(eff_a, 4),
+            "relDiff": round(rel_diff, 4),
+            "tolerance": tolerance,
+            "harmonized": False,
+        }
+        if rel_diff <= tolerance:
+            return before_pil, after_pil, debug
+
+        target = max(eff_b, eff_a)  # coarser resolution wins
+        out = []
+        for img, eff in ((before_pil, eff_b), (after_pil, eff_a)):
+            scale = eff / target
+            if scale < 0.999:
+                new_size = (max(64, round(img.size[0] * scale)),
+                            max(64, round(img.size[1] * scale)))
+                # BOX = area-weighted downsample (no hallucinated texture)
+                img = img.resize(new_size, Image.Resampling.BOX)
+            out.append(img)
+        debug["harmonized"] = True
+        debug["targetGsd"] = round(target, 4)
+        debug["sizeBefore"] = list(out[0].size)
+        debug["sizeAfter"] = list(out[1].size)
+        logger.info("GSD harmonized to %.3f m/px (before %.3f, after %.3f)",
+                    target, eff_b, eff_a)
+        return out[0], out[1], debug
+    except Exception as exc:
+        logger.warning("GSD harmonization failed: %s", exc)
+        return before_pil, after_pil, None
+
+
 def pixel_to_geo_wgs84(
     x: float,
     y: float,

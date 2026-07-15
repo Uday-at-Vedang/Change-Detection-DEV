@@ -31,16 +31,27 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
-def _load_pair(base_path: str, comparison_path: str) -> tuple[Image.Image, Image.Image, Path]:
+def _load_pair(
+    base_path: str, comparison_path: str,
+) -> tuple[Image.Image, Image.Image, Path, Optional[dict]]:
     from ..detection_config import get_load_max_side
     base_file = safe_resolve(base_path)
     comp_file = safe_resolve(comparison_path)
     max_side = get_load_max_side()
     before_pil = load_rgb_pil(base_file, max_side=max_side)
     after_pil = load_rgb_pil(comp_file, max_side=max_side)
+
+    gsd_debug = None
+    try:
+        from .geotiff_io import harmonize_pair_gsd
+        before_pil, after_pil, gsd_debug = harmonize_pair_gsd(
+            before_pil, after_pil, base_file, comp_file)
+    except Exception as exc:
+        logger.warning("GSD harmonization skipped: %s", exc)
+
     if before_pil.size != after_pil.size:
         after_pil = after_pil.resize(before_pil.size, Image.Resampling.LANCZOS)
-    return before_pil, after_pil, base_file
+    return before_pil, after_pil, base_file, gsd_debug
 
 
 def _parse_params(job: DetectionJob) -> Dict[str, Any]:
@@ -71,7 +82,7 @@ def _run_job_sync(job_id: int) -> None:
             raise ValueError("Job missing base_path or comparison_path in params_json")
 
         update_job_progress(job_id, 8, "Loading images")
-        before_pil, after_pil, base_file = _load_pair(base_path, comparison_path)
+        before_pil, after_pil, base_file, gsd_debug = _load_pair(base_path, comparison_path)
         comp_file = safe_resolve(comparison_path)
         update_job_progress(job_id, 12, "Images loaded")
         title = params.get("title") or f"{Path(base_path).name} vs {Path(comparison_path).name}"
@@ -94,6 +105,7 @@ def _run_job_sync(job_id: int) -> None:
             base_path=base_path,
             user_id=job.created_by,
             job_id=job_id,
+            gsd_debug=gsd_debug,
         )
 
         update_job_progress(job_id, 100, "Complete")

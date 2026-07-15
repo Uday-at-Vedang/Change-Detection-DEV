@@ -237,6 +237,14 @@ async def detect_from_library(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not load images: {exc}") from exc
 
+    gsd_debug = None
+    try:
+        from .geotiff_io import harmonize_pair_gsd
+        before_pil, after_pil, gsd_debug = harmonize_pair_gsd(
+            before_pil, after_pil, base_file, comp_file)
+    except Exception as exc:
+        logger.warning("GSD harmonization skipped: %s", exc)
+
     if before_pil.size != after_pil.size:
         after_pil = after_pil.resize(before_pil.size, Image.Resampling.LANCZOS)
 
@@ -262,6 +270,7 @@ async def detect_from_library(
             comparison_file=comp_file,
             base_path=base_norm,
             user_id=user.id,
+            gsd_debug=gsd_debug,
         )
     except Exception as exc:
         logger.exception("Library detection failed for %s vs %s", base_norm, comp_norm)

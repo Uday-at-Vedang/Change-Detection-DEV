@@ -107,7 +107,7 @@ def get_model_status() -> dict:
         available = is_model_available()
         mode = "adaptformer_smart_union" if available else "classical_fallback"
 
-    return {
+    status = {
         "modelId": _MODEL_ID,
         "available": available,
         "detectionMode": mode,
@@ -115,6 +115,13 @@ def get_model_status() -> dict:
         "tta": [op or "identity" for op in _resolve_tta_ops()],
         "error": _LOAD_ERROR,
     }
+    try:
+        from .detection_config import get_ensemble_mode
+        from .cd_models.bit_cd import bit_status
+        status["ensemble"] = {"enabled": get_ensemble_mode(), **bit_status()}
+    except Exception:
+        pass
+    return status
 
 
 def _logits_to_change_prob(logits, torch):
@@ -366,5 +373,31 @@ def predict_change_mask(img1, img2, threshold=0.5, tile_stats=None):
             fused = score if fused is None else np.maximum(fused, score)
         avg_score = fused
 
+    avg_score = _maybe_ensemble_bit(img1, img2, avg_score)
     mask = (avg_score >= threshold).astype(np.uint8) * 255
     return mask, avg_score
+
+
+def _maybe_ensemble_bit(img1, img2, adaptformer_score):
+    """Average with BIT_CD when DETECTION_ENSEMBLE=on and its weights exist."""
+    try:
+        from .detection_config import get_ensemble_mode
+        if not get_ensemble_mode():
+            return adaptformer_score
+        from .cd_models.bit_cd import bit_score_map, weights_available
+        if not weights_available():
+            return adaptformer_score
+        bit_score = bit_score_map(img1, img2)
+        if bit_score is None:
+            return adaptformer_score
+        if bit_score.shape != adaptformer_score.shape:
+            bit_score = cv2.resize(
+                bit_score,
+                (adaptformer_score.shape[1], adaptformer_score.shape[0]),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        logger.info("Ensembling AdaptFormer + BIT_CD score maps")
+        return 0.5 * adaptformer_score + 0.5 * bit_score
+    except Exception as exc:
+        logger.warning("BIT_CD ensemble skipped: %s", exc)
+        return adaptformer_score

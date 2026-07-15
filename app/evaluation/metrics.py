@@ -66,6 +66,17 @@ def binary_metrics(pred: np.ndarray, gt: np.ndarray) -> dict:
     fpr = _safe_div(fp, fp + tn)
     fnr = _safe_div(fn, fn + tp)
 
+    # Cohen's kappa: agreement beyond chance (standard CD-benchmark metric)
+    total = tp + fp + fn + tn
+    if total:
+        p_obs = (tp + tn) / total
+        p_yes = ((tp + fp) / total) * ((tp + fn) / total)
+        p_no = ((fn + tn) / total) * ((fp + tn) / total)
+        p_exp = p_yes + p_no
+        kappa = _safe_div(p_obs - p_exp, 1.0 - p_exp) if p_exp < 1.0 else 1.0
+    else:
+        kappa = 0.0
+
     return {
         "iou": round(iou, 4),
         "dice": round(dice, 4),
@@ -73,6 +84,7 @@ def binary_metrics(pred: np.ndarray, gt: np.ndarray) -> dict:
         "precision": round(precision, 4),
         "recall": round(recall, 4),
         "pixelAccuracy": round(accuracy, 4),
+        "kappa": round(kappa, 4),
         "falsePositiveRate": round(fpr, 4),
         "falseNegativeRate": round(fnr, 4),
         "counts": asdict(c),

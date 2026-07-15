@@ -84,6 +84,7 @@ def run_detection_and_save(
     base_path: str = "",
     user_id: Optional[int] = None,
     job_id: Optional[int] = None,
+    gsd_debug: Optional[dict] = None,
 ) -> dict:
     from ..detection_engine import run_detection
     from .job_progress import update_job_progress
@@ -128,6 +129,9 @@ def run_detection_and_save(
         before_path=_geotiff_path(geo_bounds_path),
         after_path=_geotiff_path(comparison_file),
     )
+
+    if gsd_debug and isinstance(stats.get("threshold_debug"), dict):
+        stats["threshold_debug"]["gsdHarmonization"] = gsd_debug
 
     _report(80, "Saving results")
     from ..detection_engine import preprocess_image, get_detection_max_size
