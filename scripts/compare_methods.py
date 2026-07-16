@@ -87,7 +87,8 @@ def _run_one(before, after, method, sensitivity, fusion, gt, before_path=None, a
     return row, mask
 
 
-def run_manifest(manifest_path: Path, methods, sensitivities, fusions, out_dir):
+def run_manifest(manifest_path: Path, methods, sensitivities, fusions, out_dir,
+                 save_masks: bool = True):
     """Batch mode: run every pair listed in a Delhi eval manifest.json end-to-end.
 
     Pairs without a labeled gt_mask still run (change%/regions only) so this can
@@ -142,7 +143,7 @@ def run_manifest(manifest_path: Path, methods, sensitivities, fusions, out_dir):
                         if k not in ("method", "sensitivity", "fusion", "pair_id")
                     )
                     print(f"  {tag:60s} {extra}")
-                    if out_dir:
+                    if out_dir and save_masks:
                         Image.fromarray(mask).save(out_dir / f"{tag}_mask.png")
 
     if out_dir:
@@ -174,6 +175,8 @@ def main():
                         help="comma list e.g. smart_union,hysteresis (AI methods only); "
                              "blank = use current DETECTION_FUSION env/default only")
     parser.add_argument("--out", default="", help="dir to save per-config mask PNGs + report JSON")
+    parser.add_argument("--report-only", action="store_true",
+                        help="manifest/batch mode: write JSON report only, skip mask PNGs")
     args = parser.parse_args()
 
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
@@ -184,7 +187,8 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.manifest:
-        run_manifest(Path(args.manifest), methods, sensitivities, fusions, out_dir)
+        run_manifest(Path(args.manifest), methods, sensitivities, fusions, out_dir,
+                     save_masks=not args.report_only)
         return
 
     if not args.before or not args.after:

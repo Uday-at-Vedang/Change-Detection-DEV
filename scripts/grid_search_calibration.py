@@ -49,15 +49,17 @@ except ImportError:
     pass
 
 from app.detection_engine import run_detection  # noqa: E402
+from app.evaluation.delhi_eval import iter_delhi_pairs  # noqa: E402
 from app.evaluation.metrics import binary_metrics  # noqa: E402
 
 
 def _load_rgb(path: Path):
-    if path.suffix.lower() in (".tif", ".tiff"):
-        import rasterio
-        with rasterio.open(path) as ds:
-            return np.transpose(ds.read([1, 2, 3]), (1, 2, 0))
-    return np.array(Image.open(path).convert("RGB"))
+    """Load RGB like compare_methods — GeoTIFFs via decimated rasterio read."""
+    full = ROOT / path if not path.is_absolute() else path
+    if full.suffix.lower() in (".tif", ".tiff"):
+        from app.dda.geotiff_io import load_rgb_pil
+        return np.array(load_rgb_pil(full))
+    return np.array(Image.open(full).convert("RGB"))
 
 
 def main():
@@ -74,11 +76,24 @@ def main():
     args = parser.parse_args()
 
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
-    pairs = [p for p in manifest["pairs"] if p.get("gt_mask")]
     if args.pair_ids:
         wanted = set(args.pair_ids.split(","))
-        pairs = [p for p in pairs if p["pair_id"] in wanted]
-    if not pairs:
+        pairs = [p for p in manifest["pairs"] if p["pair_id"] in wanted]
+        loaded = []
+        for pair in pairs:
+            gt_rel = pair.get("gt_mask")
+            if not gt_rel:
+                continue
+            before = _load_rgb(ROOT / pair["before_path"])
+            after = _load_rgb(ROOT / pair["after_path"])
+            gt = np.array(Image.open(ROOT / gt_rel).convert("L"))
+            loaded.append((pair["pair_id"], before, after, gt))
+    else:
+        loaded = []
+        for before, after, gt, pair_id, _bp, _ap in iter_delhi_pairs(args.manifest, require_gt=True):
+            loaded.append((pair_id, before, after, gt))
+
+    if not loaded:
         raise SystemExit("No labeled pairs matched — nothing to grid-search.")
 
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
@@ -86,14 +101,6 @@ def main():
     fusions = [f.strip() for f in args.fusions.split(",") if f.strip()]
     dl_floors = [f.strip() for f in args.dl_floors.split(",") if f.strip()] or [None]
     cl_qs = [f.strip() for f in args.cl_qs.split(",") if f.strip()] or [None]
-
-    # Preload images once — reused across every config in the sweep.
-    loaded = []
-    for pair in pairs:
-        before = _load_rgb(ROOT / pair["before_path"])
-        after = _load_rgb(ROOT / pair["after_path"])
-        gt = np.array(Image.open(ROOT / pair["gt_mask"]).convert("L"))
-        loaded.append((pair["pair_id"], before, after, gt))
 
     configs = list(product(methods, sensitivities, fusions, dl_floors, cl_qs))
     print(f"{len(configs)} config(s) x {len(loaded)} pair(s) = {len(configs) * len(loaded)} detection run(s)\n")
@@ -148,6 +155,22 @@ def main():
 
     print(f"\nWrote {len(rows)} row(s) to {out_path}")
     print(f"Best this run: {rows[0]}")
+
+    best = rows[0]
+    best_params = {
+        "method": best["method"],
+        "sensitivity": best["sensitivity"],
+        "fusion": best["fusion"],
+        "dl_floor_base": best["dl_floor_base"],
+        "cl_q_base": best["cl_q_base"],
+        "mean_iou": best["mean_iou"],
+        "mean_f1": best["mean_f1"],
+        "n_pairs": best["n_pairs"],
+        "source": "grid_search_calibration.py",
+    }
+    best_path = out_path.parent / "best_params.json"
+    best_path.write_text(json.dumps(best_params, indent=2), encoding="utf-8")
+    print(f"Wrote {best_path}")
 
 
 if __name__ == "__main__":

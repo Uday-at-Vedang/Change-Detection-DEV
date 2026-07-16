@@ -28,8 +28,13 @@ DETECTION_DL_FLOOR_BASE   Base DL confidence floor for smart_union fusion
                           Calibration knob — lower lets a weaker/out-of-domain
                           model's evidence count for more.
 DETECTION_CL_Q_BASE       Base classical-score percentile floor for smart_union
-                          fusion (default 0.92; sensitivity shifts it slightly).
-                          Calibration knob for the rule-based channel.
+                          fusion (default 0.90 as of the Day 4/5/6 Delhi-eval
+                          calibration pass; sensitivity shifts it slightly).
+                          Calibration knob for the rule-based channel. See
+                          runs/calibration/best_params.json for how this
+                          default was chosen and what was rejected (0.75-0.85
+                          gave a bigger Delhi F1 lift but broke the mandatory
+                          car-FP regression gate).
 """
 from __future__ import annotations
 
@@ -301,12 +306,18 @@ def get_dl_floor_base() -> float:
 
 
 def get_cl_q_base() -> float:
-    """Base classical-score percentile floor for smart_union fusion."""
-    raw = _env("DETECTION_CL_Q_BASE", "0.92")
+    """Base classical-score percentile floor for smart_union fusion.
+
+    0.90 as of the Day 4/5/6 Delhi-eval calibration pass (was 0.92) — verified
+    to lift Delhi mean F1 by ~53% (0.036 -> 0.055 on the 16-pair labeled set)
+    while passing the full synthetic regression suite unchanged, including the
+    mandatory car-FP gate. See runs/calibration/best_params.json.
+    """
+    raw = _env("DETECTION_CL_Q_BASE", "0.90")
     try:
         value = float(raw)
     except ValueError:
-        value = 0.92
+        value = 0.90
     return max(0.5, min(0.99, value))
 
 

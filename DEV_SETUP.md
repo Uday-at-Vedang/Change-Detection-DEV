@@ -213,3 +213,70 @@ Do **not** push `master` to production `satdetect` without explicit sign-off.
 | GET | `/api/dda/reports/{id}/pdf` | PDF export |
 | GET | `/dda/reports/{id}` | Browser report page |
 | GET | `/api/history` | Detection run history |
+
+---
+
+## 11. Delhi evaluation workflow (accuracy calibration)
+
+Full end-to-end reproduction of the Delhi accuracy-improvement sprint (see `Accuracy_Improvement_Plan.xlsx`). Every command below runs from the repo root.
+
+### 11.1 Curate real Delhi pairs
+
+`library_sources/` ships empty (real imagery isn't committed — see `library_sources/README.md`). Two ways to populate it:
+
+```bash
+# Free, openly-licensed Sentinel-2 imagery (10m GSD — good for large land-use
+# change, vegetation, water bodies; not reliable for individual buildings/roads)
+python scripts/build_delhi_pairs_sentinel2.py --count 32
+
+# Or, once you have your own imagery (DDA-provided GeoTIFFs, drone, etc.) in
+# library_sources/<year>/:
+python scripts/build_delhi_manifest.py --scan      # see what's available
+python scripts/build_delhi_manifest.py --add --before library_sources/2024/x.tif \
+    --after library_sources/2026/x.tif --zone "..." --change-types building,road
+python scripts/build_delhi_manifest.py --validate  # check coverage (>=30 pairs, all 4 change types)
+```
+
+### 11.2 Label ground-truth masks
+
+```bash
+# Semi-automated candidate generation (CVA + adaptive threshold + blob filter)
+python scripts/generate_candidate_masks.py
+
+# Review docs/delhi_eval/labels/candidates/previews/*.png (before | after | mask | overlay),
+# then promote or reject each one:
+python scripts/accept_candidate_mask.py --pair-id delhi_0001
+python scripts/accept_candidate_mask.py --reject --pair-id delhi_0002
+```
+Candidate masks are a starting point, not ground truth — always eyeball the preview before promoting. See `docs/delhi_eval/manifest.json` notes per pair for known limitations found during review (e.g. diffuse changes needing hand-drawn rough polygons instead).
+
+### 11.3 Run the detection harness against the labeled set
+
+```bash
+python scripts/compare_methods.py --manifest docs/delhi_eval/manifest.json \
+    --methods "AI-Based Deep Learning,Feature-Based,Hybrid Approach" --sensitivities 0.5 \
+    --out runs/delhi_baseline
+```
+Reports per-pair IoU/F1/precision/recall for every labeled pair (unlabeled pairs run without ground-truth scoring).
+
+### 11.4 Grid-search calibration
+
+```bash
+python scripts/grid_search_calibration.py --methods "AI-Based Deep Learning" \
+    --sensitivities 0.5 --cl-qs 0.80,0.85,0.90,0.92 --manifest docs/delhi_eval/manifest.json
+```
+Sweeps `sensitivity` / `DETECTION_FUSION` / `DETECTION_DL_FLOOR_BASE` / `DETECTION_CL_Q_BASE` and ranks configs by mean F1 in `runs/calibration/leaderboard.csv`. **Always verify a promising config against the synthetic regression suite (11.5) before promoting it** — the highest Delhi F1 isn't automatically safe; see `runs/calibration/best_params.json` for a real example of a config that won on Delhi but broke a regression gate.
+
+### 11.5 Synthetic regression gate (mandatory before promoting any default)
+
+```bash
+python scripts/validate_detection.py --benchmark --method "AI-Based Deep Learning" \
+    --sensitivity 0.5 --out runs/synthetic_check
+```
+Four cases: `inserted_buildings`, `brightness_only`, `misaligned_change`, `parked_cars` (the mandatory car/transient-FP guard — must stay F1=1.0). Pass `--method`/`--sensitivity` to test any calibrated config; set the relevant `DETECTION_*` env vars first to test non-default fusion parameters.
+
+**Known gap:** the plan also references a LEVIR-CD regression case and a kappa statistic (Phase 0, marked "Complete"). Neither actually exists in this codebase as of the Day 5/6 calibration pass — only the 4 synthetic cases above are real, runnable gates. Treat any claim of "LEVIR-CD gate passing" as unverified until that harness is actually built.
+
+### 11.6 Promote a verified config to production defaults
+
+Once a config passes 11.5 unchanged, hardcode it as the new default in `app/detection_config.py` (e.g. `get_cl_q_base()`'s fallback value), then re-run 11.3 and 11.5 **with no env var set** to confirm the new default behaves identically to what was verified.

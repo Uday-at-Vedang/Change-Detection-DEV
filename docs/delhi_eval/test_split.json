@@ -1,0 +1,69 @@
+{
+  "purpose": "Separates pairs used to TUNE calibration (Day 4-6 grid search) from pairs held out for Day 7-8 final evaluation, per the plan Risks sheet mitigation: \"Hold out 20% test pairs never used in grid-search\" (this mitigation was NOT followed during Day 4-6 -- all 16 labeled pairs at the time were used for both tuning AND reported metrics, an in-sample result. This split fixes that going forward.)",
+  "calibration_set": {
+    "pair_ids": [
+      "delhi_0001",
+      "delhi_0003",
+      "delhi_0004",
+      "delhi_0005",
+      "delhi_0009",
+      "delhi_0011",
+      "delhi_0012",
+      "delhi_0016",
+      "delhi_0017",
+      "delhi_0018",
+      "delhi_0020",
+      "delhi_0026",
+      "delhi_0027",
+      "delhi_0030",
+      "delhi_0031",
+      "delhi_0032"
+    ],
+    "count": 16,
+    "description": "Used in Day 4 grid search and Day 5/6 verification. The reported +53% F1 lift (0.036 -> 0.055) is measured on THIS set -- in-sample, not a held-out estimate. Do not use for final go/no-go accuracy claims."
+  },
+  "held_out_test_set": {
+    "pair_ids": [
+      "delhi_0002",
+      "delhi_0006",
+      "delhi_0007",
+      "delhi_0008",
+      "delhi_0010",
+      "delhi_0013",
+      "delhi_0014",
+      "delhi_0015"
+    ],
+    "count": 8,
+    "description": "Labeled Day 7, specifically to never be used in any calibration/grid-search step. All 8 have EMPTY (all-zero) ground truth -- confirmed via visual review (Day 2/3 contact-sheet inspection, re-spot-checked Day 7) as seasonal/crop-texture variation with no real structural change. This makes them a real-imagery false-positive test, analogous to the synthetic brightness_only/parked_cars gates but on genuine Delhi data. CAVEAT: none of these pairs have confirmed real change, so this set tests precision/false-positive behavior only -- it does NOT test recall on held-out real change, since no such pairs were found among the remaining unlabeled batch."
+  },
+  "still_unlabeled": {
+    "pair_ids": [
+      "delhi_0019",
+      "delhi_0021",
+      "delhi_0022",
+      "delhi_0023",
+      "delhi_0024",
+      "delhi_0025",
+      "delhi_0028",
+      "delhi_0029"
+    ],
+    "count": 8,
+    "description": "Not yet reviewed/labeled. Available for future calibration or held-out use."
+  },
+  "held_out_eval_result": {
+    "date": "Day 7 (2026-07-21)",
+    "config_tested": "AI-Based Deep Learning, cl_q_base=0.90 (current production default)",
+    "result": "mean_iou=0.75, mean_f1=0.75 -- 6/8 pairs correctly stayed quiet (IoU=1.0, zero false positives), 2/8 did NOT (mean of 0.75 reflects 6 perfect + 2 pairs scoring exactly 0, not 8 partial scores -- with empty GT, IoU is binary: 1.0 if prediction is also empty, 0.0 if any false positive exists).",
+    "per_pair": {
+      "delhi_0002": "ok (quiet)",
+      "delhi_0006": "ok (quiet)",
+      "delhi_0007": "FALSE POSITIVE (changePct=0.717%, real Delhi field texture misread as change)",
+      "delhi_0008": "ok (quiet)",
+      "delhi_0010": "ok (quiet)",
+      "delhi_0013": "ok (quiet)",
+      "delhi_0014": "ok (quiet)",
+      "delhi_0015": "ok (quiet)"
+    },
+    "takeaway": "25% false-positive rate on real held-out Delhi imagery, vs 0% on the clean synthetic brightness_only/parked_cars gates. This is a more realistic (and less flattering) picture than the synthetic-only regression suite gives -- worth reporting alongside the Day 5/6 synthetic PASS results, not instead of them. delhi_0007 is a good specific example to investigate further if false-positive reduction becomes a priority."
+  }
+}
