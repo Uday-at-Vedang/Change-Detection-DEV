@@ -285,7 +285,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0019.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -315,7 +315,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0021.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -330,7 +330,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0022.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -345,7 +345,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0023.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -360,7 +360,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0024.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -375,7 +375,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0025.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -420,7 +420,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0028.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
@@ -435,7 +435,7 @@
         "mixed_gsd",
         "vegetation"
       ],
-      "gt_mask": "docs\\delhi_eval\\labels\\delhi_0029.png",
+      "gt_mask": null,
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
     },
     {
