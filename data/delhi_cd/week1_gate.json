@@ -1,9 +1,13 @@
 {
   "date": "2026-07-16",
   "week1_gate_criteria": {
-    "labeled_pairs_ge_25": {"required": 25, "actual": 32, "pass": true},
+    "labeled_pairs_ge_25": {
+      "required": 25,
+      "actual": 32,
+      "pass": true
+    },
     "calibration_measurable": {
-      "note": "best_params.json present; Feature-Based mean F1 ~0.04–0.11 depending on sweep set",
+      "note": "best_params.json present; Feature-Based mean F1 ~0.04\u00e2\u20ac\u201c0.11 depending on sweep set",
       "artifact": "runs/calibration/best_params.json",
       "pass": true
     },
@@ -14,11 +18,11 @@
     }
   },
   "uday_day1_to_day5": {
-    "day1": "compare_methods manifest mode + finetune scaffold — done",
-    "day2": "delhi_eval loader + baseline + validate_detection --delhi — done",
-    "day3": "grid search + baseline metrics + smoke train — done",
-    "day4": "data/delhi_cd 70/15/15 + smoke metrics — done",
-    "day5": "preset day5 tuning + full train queued — done"
+    "day1": "compare_methods manifest mode + finetune scaffold \u00e2\u20ac\u201d done",
+    "day2": "delhi_eval loader + baseline + validate_detection --delhi \u00e2\u20ac\u201d done",
+    "day3": "grid search + baseline metrics + smoke train \u00e2\u20ac\u201d done",
+    "day4": "data/delhi_cd 70/15/15 + smoke metrics \u00e2\u20ac\u201d done",
+    "day5": "preset day5 tuning + 30-epoch full train complete"
   },
   "gates_verified_2026_07_16": {
     "parked_cars_feature_based_f1": 1.0,
@@ -27,9 +31,19 @@
   },
   "decision": "GO for Week 2 (finish Day5/6 full train; Priyanka promote Feature-Based calibrated defaults if car-FP stays 1.0)",
   "caveats": [
-    "Fine-tune val/test F1 still near zero on CPU smoke — Day 5 full run in progress",
+    "Fine-tune val/test F1 still near zero on CPU smoke \u00e2\u20ac\u201d Day 5 full run in progress",
     "Do not promote AI/Hybrid defaults until fine-tune beats pretrained on held-out Delhi test",
-    "inserted_buildings synthetic F1=0 under Feature-Based — expected classical under-detect; keep as regression visibility"
-  ]
+    "inserted_buildings synthetic F1=0 under Feature-Based \u00e2\u20ac\u201d expected classical under-detect; keep as regression visibility"
+  ],
+  "day5_full_result": {
+    "source_run": "runs/day5_full/20260716_142643",
+    "epochs_ran": 30,
+    "lr": 3e-05,
+    "augment": true,
+    "loss": "bce_dice",
+    "best_val_f1": 0.0001,
+    "test_mean_f1": 0.0025,
+    "device": "cpu",
+    "train_tiles": 22
+  }
 }
-
