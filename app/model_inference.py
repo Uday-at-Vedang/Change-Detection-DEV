@@ -23,6 +23,7 @@ _TILE_SIZE = 256  # LEVIR-CD native patch size
 _AVAILABLE = None
 _LOAD_FAILED = False
 _LOAD_ERROR: str | None = None
+_LOADED_FROM: str | None = None
 
 
 def _try_import():
@@ -34,8 +35,26 @@ def _try_import():
         return None, None, None
 
 
+def _resolve_weights_source() -> str:
+    """Prefer local Day-6 fine-tune weights when ADAPTFORMER_WEIGHTS is set."""
+    local = os.environ.get("ADAPTFORMER_WEIGHTS", "").strip()
+    if local:
+        return local
+    # Conventional export path from scripts/export_adaptformer_delhi.py
+    default_dir = os.path.join(os.path.dirname(__file__), "..", "models",
+                               "adaptformer_delhi", "best")
+    default_dir = os.path.normpath(default_dir)
+    if os.path.isdir(default_dir) and (
+        os.path.isfile(os.path.join(default_dir, "config.json"))
+        or os.path.isfile(os.path.join(default_dir, "model.safetensors"))
+        or os.path.isfile(os.path.join(default_dir, "pytorch_model.bin"))
+    ):
+        return default_dir
+    return _MODEL_ID
+
+
 def _load_model():
-    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED, _LOAD_ERROR
+    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED, _LOAD_ERROR, _LOADED_FROM
     if _MODEL is not None:
         return _MODEL, _PROCESSOR
     if _LOAD_FAILED:
@@ -48,18 +67,37 @@ def _load_model():
     _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     cache_dir = os.environ.get("HF_HOME", None)
-    logger.info("Loading AdaptFormer from %s ...", _MODEL_ID)
+    source = _resolve_weights_source()
+    logger.info("Loading AdaptFormer from %s ...", source)
     try:
         _PROCESSOR = AutoImageProcessor.from_pretrained(
-            _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+            source, cache_dir=cache_dir, trust_remote_code=True)
         _MODEL = AutoModel.from_pretrained(
-            _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+            source, cache_dir=cache_dir, trust_remote_code=True)
         _MODEL.to(_DEVICE)
         _MODEL.eval()
         _AVAILABLE = True
         _LOAD_ERROR = None
-        logger.info("AdaptFormer loaded on %s", _DEVICE)
+        _LOADED_FROM = source
+        logger.info("AdaptFormer loaded on %s from %s", _DEVICE, source)
     except Exception as exc:
+        # Fall back to HF hub if local fine-tune dir fails
+        if source != _MODEL_ID:
+            logger.warning("Local weights failed (%s); falling back to %s", exc, _MODEL_ID)
+            try:
+                _PROCESSOR = AutoImageProcessor.from_pretrained(
+                    _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+                _MODEL = AutoModel.from_pretrained(
+                    _MODEL_ID, cache_dir=cache_dir, trust_remote_code=True)
+                _MODEL.to(_DEVICE)
+                _MODEL.eval()
+                _AVAILABLE = True
+                _LOAD_ERROR = None
+                _LOADED_FROM = _MODEL_ID
+                logger.info("AdaptFormer loaded on %s from hub fallback", _DEVICE)
+                return _MODEL, _PROCESSOR
+            except Exception as exc2:
+                exc = exc2
         _LOAD_FAILED = True
         _AVAILABLE = False
         _LOAD_ERROR = str(exc)
@@ -230,9 +268,15 @@ def _infer_score_map(img1, img2, tile_stats=None):
             return [_score_tile(t1, t2) for t1, t2 in pairs]
 
     batch = get_tile_batch()
+    try:
+        from .detection_config import get_tile_overlap
+        overlap_frac = get_tile_overlap()
+    except Exception:
+        overlap_frac = 0.35
+    overlap_px = max(1, int(round(_TILE_SIZE * overlap_frac)))
     with torch.no_grad():
         return tiled_score_map(_score_tile, img1, img2,
-                               tile_size=_TILE_SIZE, overlap=_TILE_SIZE // 4,
+                               tile_size=_TILE_SIZE, overlap=overlap_px,
                                score_batch_fn=_score_batch if batch > 1 else None,
                                batch=batch,
                                skip_unchanged_threshold=get_skip_unchanged_threshold(),

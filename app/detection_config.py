@@ -8,10 +8,15 @@ environment with conservative defaults that preserve the previous behavior
 Env vars
 --------
 DETECTION_MAX_SIDE        Max pixel dimension for the legacy downscaled path.
-DETECTION_INFERENCE_MODE  ``downscaled`` (default) | ``fullres_tiled``.
+DETECTION_INFERENCE_MODE  ``downscaled`` | ``fullres_tiled`` | ``auto``
+                          (``auto`` = fullres_tiled for GeoTIFF paths; default
+                          stays ``downscaled`` unless paths are .tif/.tiff).
 DETECTION_FULLRES_MAX_SIDE Cap for full-resolution tiled mode (0 = native).
 DETECTION_TILE_SIZE       Tile size for full-res scoring (256..2048).
-DETECTION_TILE_OVERLAP    Fractional tile overlap (0.0..0.5).
+DETECTION_TILE_OVERLAP    Fractional tile overlap (0.0..0.5; default 0.35).
+DETECTION_SKIP_REGISTRATION_GEOTIFF  ``true``|``false``|``auto`` (default auto:
+                          skip SIFT registration when both inputs are GeoTIFF).
+ADAPTFORMER_WEIGHTS       Local fine-tuned AdaptFormer dir or .pt (Day 6+).
 DETECTION_MULTISCALE      ``off`` | comma list e.g. ``0.5,1.0,1.5``.
 DETECTION_FUSION          ``smart_union`` (default) | ``hysteresis``.
 DETECTION_SKIP_PREBLUR    ``true`` | ``false`` (auto: on for fullres_tiled).
@@ -60,10 +65,45 @@ def get_detection_max_side() -> int:
     return max(1024, min(8192, value))
 
 
-def get_inference_mode() -> str:
-    """Detection inference mode: ``downscaled`` or ``fullres_tiled``."""
-    mode = _env("DETECTION_INFERENCE_MODE", "downscaled").lower()
-    return mode if mode in ("downscaled", "fullres_tiled") else "downscaled"
+def get_inference_mode(before_path: str | None = None,
+                       after_path: str | None = None) -> str:
+    """Detection inference mode: ``downscaled`` or ``fullres_tiled``.
+
+    Env ``DETECTION_INFERENCE_MODE=auto`` (or unset path-aware default when
+    either path is a GeoTIFF) selects ``fullres_tiled`` for large rasters so
+    downscaling does not erase building-scale detail (RCA Critical #1).
+    """
+    # Default ``auto``: GeoTIFF paths → fullres_tiled (RCA Critical #1); else downscaled.
+    mode = _env("DETECTION_INFERENCE_MODE", "auto").lower()
+    if mode in ("", "auto"):
+        if _is_geotiff_path(before_path) or _is_geotiff_path(after_path):
+            return "fullres_tiled"
+        return "downscaled"
+    if mode in ("downscaled", "fullres_tiled"):
+        return mode
+    if _is_geotiff_path(before_path) or _is_geotiff_path(after_path):
+        return "fullres_tiled"
+    return "downscaled"
+
+
+def _is_geotiff_path(path: str | None) -> bool:
+    if not path:
+        return False
+    return str(path).lower().endswith((".tif", ".tiff"))
+
+
+def should_skip_registration_for_paths(
+    before_path: str | None = None,
+    after_path: str | None = None,
+) -> bool:
+    """Skip SIFT registration on GPS-aligned GeoTIFF pairs (RCA Significant #4)."""
+    raw = _env("DETECTION_SKIP_REGISTRATION_GEOTIFF", "auto").lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    # auto
+    return _is_geotiff_path(before_path) and _is_geotiff_path(after_path)
 
 
 def get_fullres_max_side() -> int:
@@ -82,14 +122,15 @@ def get_fullres_max_side() -> int:
     return max(2048, min(20000, value))
 
 
-def get_load_max_side() -> int:
+def get_load_max_side(before_path: str | None = None,
+                      after_path: str | None = None) -> int:
     """Effective image-load / inference pixel cap for the active mode.
 
     In ``fullres_tiled`` mode this returns the (much larger) full-res cap so
     images keep their detail; otherwise it returns the standard downscale cap.
     Always a concrete positive int so callers can pass it straight to loaders.
     """
-    if get_inference_mode() == "fullres_tiled":
+    if get_inference_mode(before_path, after_path) == "fullres_tiled":
         cap = get_fullres_max_side()
         return cap if cap > 0 else 20000
     return get_detection_max_side()
@@ -102,11 +143,12 @@ def get_windowed_threshold() -> int:
     longest side exceeds this, the deep score map is built tile-by-tile from
     disk instead of loading the whole array. 0 disables windowed streaming.
     """
-    raw = _env("DETECTION_WINDOWED_THRESHOLD", "8192")
+    # RCA Significant #5: 4096 triggers windowed streaming earlier for drone/GeoTIFF.
+    raw = _env("DETECTION_WINDOWED_THRESHOLD", "4096")
     try:
         value = int(raw)
     except ValueError:
-        value = 8192
+        value = 4096
     return max(0, value)
 
 
@@ -120,11 +162,15 @@ def get_tile_size() -> int:
 
 
 def get_tile_overlap() -> float:
-    """Fractional overlap between adjacent tiles (0.0..0.5)."""
+    """Fractional overlap between adjacent tiles (0.0..0.5).
+
+    Default 0.35 (was 0.25) to reduce tile-seam false edges on large GeoTIFFs
+    (RCA Moderate #6). Cap remains 0.5.
+    """
     try:
-        value = float(os.environ.get("DETECTION_TILE_OVERLAP", "0.25"))
+        value = float(os.environ.get("DETECTION_TILE_OVERLAP", "0.35"))
     except ValueError:
-        value = 0.25
+        value = 0.35
     return min(0.5, max(0.0, value))
 
 
@@ -167,7 +213,7 @@ def get_skip_preblur() -> bool:
         return True
     if raw in ("0", "false", "no", "off"):
         return False
-    return get_inference_mode() == "fullres_tiled"
+    return get_inference_mode() == "fullres_tiled"  # no paths → env-only
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -288,6 +334,11 @@ def get_kpca_n_train_patches() -> int:
         return max(20, min(4000, int(raw)))
     except ValueError:
         return 300
+
+
+def get_ensemble_mode() -> bool:
+    """Optional BIT_CD ensemble (default off — Day 6+ deferred until Delhi F1 proof)."""
+    return _flag("DETECTION_ENSEMBLE", False)
 
 
 def get_dl_floor_base() -> float:

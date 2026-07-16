@@ -1,0 +1,265 @@
+{
+  "held_out_ids": [
+    "delhi_0002",
+    "delhi_0006",
+    "delhi_0007",
+    "delhi_0008",
+    "delhi_0010",
+    "delhi_0013",
+    "delhi_0014",
+    "delhi_0015"
+  ],
+  "method": "AI-Based Deep Learning",
+  "comparison": [
+    {
+      "label": "pretrained_hub",
+      "weights": "hub:deepang/adaptformer-LEVIR-CD",
+      "n": 8,
+      "mean_f1": 0.75,
+      "mean_iou": 0.75,
+      "seconds": 160.7,
+      "pairs": {
+        "delhi_0002": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0006": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0007": {
+          "f1": 0.0,
+          "iou": 0.0,
+          "changePct": 0.706
+        },
+        "delhi_0008": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0010": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0013": {
+          "f1": 0.0,
+          "iou": 0.0,
+          "changePct": 0.638
+        },
+        "delhi_0014": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0015": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        }
+      }
+    },
+    {
+      "label": "finetuned_delhi",
+      "weights": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\best",
+      "n": 8,
+      "mean_f1": 0.75,
+      "mean_iou": 0.75,
+      "seconds": 148.8,
+      "pairs": {
+        "delhi_0002": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0006": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0007": {
+          "f1": 0.0,
+          "iou": 0.0,
+          "changePct": 0.706
+        },
+        "delhi_0008": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0010": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0013": {
+          "f1": 0.0,
+          "iou": 0.0,
+          "changePct": 0.638
+        },
+        "delhi_0014": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        },
+        "delhi_0015": {
+          "f1": 1.0,
+          "iou": 1.0,
+          "changePct": 0.0
+        }
+      }
+    },
+    {
+      "label": "feature_based",
+      "weights": "n/a",
+      "n": 8,
+      "mean_f1": 1.0,
+      "mean_iou": 1.0,
+      "pairs": {
+        "delhi_0002": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0006": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0007": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0008": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0010": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0013": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0014": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        },
+        "delhi_0015": {
+          "iou": 1.0,
+          "dice": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "pixelAccuracy": 1.0,
+          "kappa": 1.0,
+          "falsePositiveRate": 0.0,
+          "falseNegativeRate": 0.0,
+          "counts": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 90000
+          }
+        }
+      }
+    }
+  ],
+  "winner": "feature_based",
+  "rca_notes": [
+    "Domain mismatch (LEVIR\u2192Delhi) is Critical #2 \u2014 fine-tune may still underperform on empty-GT FP pairs; Feature-Based remains strong for precision gates.",
+    "GeoTIFF fullres_tiled auto + veg/registration fixes applied from RCA PDF."
+  ]
+}

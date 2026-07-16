@@ -1,0 +1,33 @@
+{
+  "source": "Root Cause Analysis.pdf (Claude)",
+  "applied_uday_day6_7": [
+    {
+      "rca": "Critical #1 — downscaled destroys detail",
+      "change": "DETECTION_INFERENCE_MODE default=auto → fullres_tiled for .tif/.tiff paths"
+    },
+    {
+      "rca": "Critical #2 — LEVIR domain mismatch",
+      "change": "Export Day5 fine-tune to models/adaptformer_delhi/; load via ADAPTFORMER_WEIGHTS; Day7 compare vs hub"
+    },
+    {
+      "rca": "Critical #3 — vegetation suppression kills real change",
+      "change": "Suppress only both-veg + similar intensity; boost large one-sided veg delta (0.45)"
+    },
+    {
+      "rca": "Significant #4 — registration on GPS GeoTIFF",
+      "change": "DETECTION_SKIP_REGISTRATION_GEOTIFF=auto skips SIFT when both paths are GeoTIFF"
+    },
+    {
+      "rca": "Significant #5 — windowed threshold / memory estimate",
+      "change": "Windowed threshold default 4096; est_mb uses width*height not long_side^2"
+    },
+    {
+      "rca": "Moderate #6 — tile seams",
+      "change": "DETECTION_TILE_OVERLAP default 0.35; AdaptFormer tiled_score uses config overlap"
+    },
+    {
+      "rca": "Moderate #7 — min_region_area not scaled",
+      "change": "Scale min_region_area by (working_side/4096)^2 in run_detection"
+    }
+  ]
+}

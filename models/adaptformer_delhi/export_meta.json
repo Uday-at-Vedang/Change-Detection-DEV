@@ -1,0 +1,6 @@
+{
+  "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\runs\\day5_full\\20260716_142643\\best",
+  "exported_to": "models/adaptformer_delhi/best",
+  "load_via": "ADAPTFORMER_WEIGHTS=models/adaptformer_delhi/best",
+  "best_pt": "models\\adaptformer_delhi\\best.pt"
+}

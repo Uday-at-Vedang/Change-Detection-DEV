@@ -408,17 +408,22 @@ def compute_vegetation_mask(img):
 
 def compute_combined_vegetation_suppression(img1, img2):
     """
-    Asymmetric vegetation handling:
-    - Where BOTH images are vegetated: suppress (likely seasonal noise)
-    - Where only ONE image is vegetated: boost (real vegetation change)
+    Asymmetric vegetation handling (RCA Critical #3):
+    - Suppress only where BOTH images are vegetated at similar intensity
+      (seasonal crop/texture noise).
+    - Boost where vegetation disappears/appears (large delta — real change).
     Returns a float map where 1.0 = neutral, <1 = suppress, >1 = boost.
     """
     veg1 = compute_vegetation_mask(img1)
     veg2 = compute_vegetation_mask(img2)
     both_veg = np.minimum(veg1, veg2)
+    # Similar intensity in both → stronger seasonal suppress; mismatched → less
+    similarity = 1.0 - np.clip(np.abs(veg1 - veg2), 0, 1)
+    seasonal_both = both_veg * similarity
     one_only = np.abs(veg1 - veg2)
-    seasonal_suppression = 1.0 - both_veg * 0.7
-    vegetation_boost = 1.0 + one_only * 0.3
+    seasonal_suppression = 1.0 - seasonal_both * 0.7
+    # Large delta-ExG / veg change → boost (agri→construction etc.)
+    vegetation_boost = 1.0 + one_only * 0.45
     return (seasonal_suppression * vegetation_boost).astype(np.float32)
 
 
@@ -2997,13 +3002,14 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     from .detection_config import (
         get_inference_mode, get_load_max_side, get_skip_preblur,
         get_windowed_threshold, get_tile_size, get_tile_overlap,
+        should_skip_registration_for_paths,
     )
 
     def _prog(pct, stage):
         if on_progress:
             on_progress(int(pct), stage)
 
-    inference_mode = get_inference_mode()
+    inference_mode = get_inference_mode(before_path, after_path)
     skip_blur = get_skip_preblur()
 
     # Decide whether to stream the deep score from native GeoTIFF windows.
@@ -3019,12 +3025,15 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             na = read_native_size(Path(before_path))
             nb = read_native_size(Path(after_path))
             if na and nb and na == nb:
-                cap = get_load_max_side()
-                long_side = min(max(na), cap)
-                # ~3 bytes/px/array, two timestamps held in memory at once
-                est_mb = (long_side * long_side * 3 * 2) / (1024 * 1024)
+                # na/nb are (width, height) — use actual area, not long_side²
+                # (RCA Significant #5 memory-estimate fix).
+                w, h = int(na[0]), int(na[1])
+                cap = get_load_max_side(before_path, after_path)
+                scale = min(1.0, float(cap) / float(max(w, h))) if max(w, h) else 1.0
+                est_w, est_h = int(w * scale), int(h * scale)
+                est_mb = (est_w * est_h * 3 * 2) / (1024 * 1024)
                 budget = get_tile_memory_budget_mb()
-                over_threshold = bool(thr and max(na) > thr)
+                over_threshold = bool(thr and max(w, h) > thr)
                 over_budget = bool(budget and est_mb > budget)
                 if over_threshold or over_budget:
                     windowed = True
@@ -3033,7 +3042,8 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
 
     if inference_mode == "fullres_tiled" and not windowed:
         # Keep full imagery at the full-res cap and skip denoise.
-        ms = max_size if (max_size and max_size > get_detection_max_size()) else get_load_max_side()
+        ms = max_size if (max_size and max_size > get_detection_max_size()) else get_load_max_side(
+            before_path, after_path)
     else:
         # Windowed mode keeps the in-memory arrays bounded (registration +
         # classical run on the preview); detail comes from the streamed score.
@@ -3043,9 +3053,22 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     before_array = preprocess_image(before_pil, max_size=ms, skip_blur=skip_blur)
     after_array = preprocess_image(after_pil, max_size=ms, skip_blur=skip_blur)
 
+    # RCA #7: scale min_region_area to working resolution vs a 4096 reference.
+    if min_region_area is not None:
+        ref = 4096.0
+        work = float(max(before_array.shape[:2]))
+        scale_area = max(0.25, min(4.0, (work / ref) ** 2))
+        min_region_area = max(50, int(round(min_region_area * scale_area)))
+
     registration_ok = False
     reg_meta = {}
-    if enable_registration:
+    do_register = bool(enable_registration)
+    if do_register and should_skip_registration_for_paths(before_path, after_path):
+        do_register = False
+        registration_ok = True
+        reg_meta = {"skipped": True, "reason": "geotiff_auto_skip"}
+        _log.info("Skipping registration for GeoTIFF pair (DETECTION_SKIP_REGISTRATION_GEOTIFF)")
+    if do_register:
         _prog(20, "Registering images")
         before_array, after_array, registration_ok, reg_meta = register_images(
             before_array, after_array)
