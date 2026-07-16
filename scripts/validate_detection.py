@@ -126,6 +126,35 @@ def _case_misaligned_change(size=384):
     return before, after, gt, "misaligned_change"
 
 
+def _case_parked_cars(size=384):
+    """Small transient objects (parked cars) appear/move/disappear between
+    timestamps -> GT empty. This is the mandatory car/transient-FP regression
+    gate referenced throughout the accuracy-improvement plan: a detector that
+    flags every parked car as "change" is useless on real road imagery, so
+    this case must stay F1=1.0 (zero false positives) before any calibrated
+    default is promoted.
+    """
+    before = _base_scene(size, seed=4)
+    # A road-side "parking" strip so the car-sized rectangles sit on a
+    # plausible surface rather than mid-field.
+    before[300:330, :] = [70, 70, 75]
+    after = before.copy()
+    gt = np.zeros((size, size), dtype=np.uint8)
+
+    car_w, car_h = 16, 8
+    car_color = [35, 35, 40]
+    # Cars present in "before" at these spots...
+    before_spots = [(40, 305), (90, 308), (260, 306), (310, 304)]
+    for (x, y) in before_spots:
+        before[y:y + car_h, x:x + car_w] = car_color
+    # ...gone or relocated in "after" (some left, some new ones parked elsewhere).
+    after_spots = [(90, 308), (140, 305), (200, 307), (340, 305)]
+    for (x, y) in after_spots:
+        after[y:y + car_h, x:x + car_w] = car_color
+
+    return before, after, gt, "parked_cars"
+
+
 def _save_comparison(out_dir: Path, name: str, before, after, pred_mask, gt):
     out_dir.mkdir(parents=True, exist_ok=True)
     h, w = gt.shape
@@ -144,14 +173,16 @@ def _save_comparison(out_dir: Path, name: str, before, after, pred_mask, gt):
     Image.fromarray(strip).save(out_dir / f"{name}.png")
 
 
-def benchmark_synthetic(out_dir: Path | None = None, sensitivity=0.5):
-    cases = [_case_inserted_buildings(), _case_brightness_only(), _case_misaligned_change()]
+def benchmark_synthetic(out_dir: Path | None = None, sensitivity=0.5, method="AI-Based Deep Learning"):
+    cases = [_case_inserted_buildings(), _case_brightness_only(), _case_misaligned_change(),
+              _case_parked_cars()]
     report = {}
-    print("\nSynthetic benchmark (IoU / Dice / F1 / Precision / Recall):")
+    print(f"\nSynthetic benchmark (method={method}, sensitivity={sensitivity}) "
+          f"— IoU / Dice / F1 / Precision / Recall:")
     for before, after, gt, name in cases:
         mask, _img, stats, regions = run_detection(
             Image.fromarray(before), Image.fromarray(after),
-            method="AI-Based Deep Learning",
+            method=method,
             enable_registration=True, enable_normalization=True,
             detection_sensitivity=sensitivity,
         )
@@ -178,6 +209,7 @@ def main():
     parser.add_argument("--benchmark", action="store_true", help="run synthetic accuracy benchmark")
     parser.add_argument("--out", type=str, default="", help="dir for comparison images + metrics.json")
     parser.add_argument("--sensitivity", type=float, default=0.5)
+    parser.add_argument("--method", type=str, default="AI-Based Deep Learning")
     args = parser.parse_args()
 
     print("validate_detection.py")
@@ -189,7 +221,7 @@ def main():
 
     if args.benchmark:
         out_dir = Path(args.out).resolve() if args.out else None
-        benchmark_synthetic(out_dir=out_dir, sensitivity=args.sensitivity)
+        benchmark_synthetic(out_dir=out_dir, sensitivity=args.sensitivity, method=args.method)
 
 
 if __name__ == "__main__":
