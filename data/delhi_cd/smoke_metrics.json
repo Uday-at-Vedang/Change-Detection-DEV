@@ -1,0 +1,7 @@
+{
+  "source_run": "runs/finetune_adaptformer/20260715_191624",
+  "best_val_f1": 0.0008,
+  "test_mean_f1": 0.0158,
+  "epochs": 12,
+  "device": "cpu"
+}

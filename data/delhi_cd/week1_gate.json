@@ -1,0 +1,35 @@
+{
+  "date": "2026-07-16",
+  "week1_gate_criteria": {
+    "labeled_pairs_ge_25": {"required": 25, "actual": 32, "pass": true},
+    "calibration_measurable": {
+      "note": "best_params.json present; Feature-Based mean F1 ~0.04–0.11 depending on sweep set",
+      "artifact": "runs/calibration/best_params.json",
+      "pass": true
+    },
+    "finetune_pipeline_clean": {
+      "smoke": "runs/day4_smoke/metrics.json",
+      "full_run": "runs/day5_full/",
+      "pass": true
+    }
+  },
+  "uday_day1_to_day5": {
+    "day1": "compare_methods manifest mode + finetune scaffold — done",
+    "day2": "delhi_eval loader + baseline + validate_detection --delhi — done",
+    "day3": "grid search + baseline metrics + smoke train — done",
+    "day4": "data/delhi_cd 70/15/15 + smoke metrics — done",
+    "day5": "preset day5 tuning + full train queued — done"
+  },
+  "gates_verified_2026_07_16": {
+    "parked_cars_feature_based_f1": 1.0,
+    "delhi_feature_based_mean_f1": 0.0413,
+    "delhi_n_pairs": 32
+  },
+  "decision": "GO for Week 2 (finish Day5/6 full train; Priyanka promote Feature-Based calibrated defaults if car-FP stays 1.0)",
+  "caveats": [
+    "Fine-tune val/test F1 still near zero on CPU smoke — Day 5 full run in progress",
+    "Do not promote AI/Hybrid defaults until fine-tune beats pretrained on held-out Delhi test",
+    "inserted_buildings synthetic F1=0 under Feature-Based — expected classical under-detect; keep as regression visibility"
+  ]
+}
+

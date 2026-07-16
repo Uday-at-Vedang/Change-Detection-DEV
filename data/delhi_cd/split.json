@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "source_manifest": "docs/delhi_eval/manifest.json",
+  "seed": 0,
+  "split": "70/15/15",
+  "n_labeled": 32,
+  "n_train": 22,
+  "n_val": 5,
+  "n_test": 5,
+  "train": [
+    "delhi_0002",
+    "delhi_0003",
+    "delhi_0005",
+    "delhi_0007",
+    "delhi_0009",
+    "delhi_0010",
+    "delhi_0012",
+    "delhi_0013",
+    "delhi_0014",
+    "delhi_0016",
+    "delhi_0017",
+    "delhi_0018",
+    "delhi_0019",
+    "delhi_0022",
+    "delhi_0023",
+    "delhi_0024",
+    "delhi_0025",
+    "delhi_0026",
+    "delhi_0028",
+    "delhi_0029",
+    "delhi_0031",
+    "delhi_0032"
+  ],
+  "val": [
+    "delhi_0001",
+    "delhi_0006",
+    "delhi_0011",
+    "delhi_0015",
+    "delhi_0027"
+  ],
+  "test": [
+    "delhi_0004",
+    "delhi_0008",
+    "delhi_0020",
+    "delhi_0021",
+    "delhi_0030"
+  ]
+}

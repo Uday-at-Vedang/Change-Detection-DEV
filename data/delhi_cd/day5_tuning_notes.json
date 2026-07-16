@@ -1,0 +1,33 @@
+{
+  "from_smoke": {
+    "run": "runs/finetune_adaptformer/20260715_191624",
+    "epochs": 12,
+    "lr": 1e-5,
+    "best_val_f1": 0.0008,
+    "test_mean_f1": 0.0158,
+    "device": "cpu",
+    "observations": [
+      "Loss fell 5.48→3.65 but val F1 stayed ~0 — under-detection / class imbalance",
+      "Only 1 tile per pair (stride=256) — too little diversity",
+      "No geometric augmentation",
+      "Peak val F1 at epoch 3 then collapsed — need early-stop + higher LR"
+    ]
+  },
+  "day5_preset": {
+    "command": "python scripts/finetune_adaptformer.py --delhi-cd data/delhi_cd --preset day5",
+    "lr": 3e-5,
+    "epochs": 30,
+    "batch_size": 2,
+    "augment": "hflip,vflip",
+    "tile_stride_train": 128,
+    "loss": "0.5*BCE + 0.5*Dice",
+    "early_stop_patience": 8
+  },
+  "week1_gate_notes": {
+    "labeled_pairs": 32,
+    "calibration_exists": true,
+    "finetune_pipeline_runs": true,
+    "smoke_f1_still_near_zero": true,
+    "go_no_go": "pipeline_ok_metrics_pending_full_run"
+  }
+}

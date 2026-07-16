@@ -27,6 +27,7 @@ from app.detection_engine import (  # noqa: E402
     run_detection,
     fuse_dl_and_classical,
 )
+from app.evaluation.delhi_eval import DelhiEvalNotReady, iter_delhi_pairs  # noqa: E402
 from app.evaluation.metrics import binary_metrics  # noqa: E402
 
 
@@ -204,25 +205,88 @@ def benchmark_synthetic(out_dir: Path | None = None, sensitivity=0.5, method="AI
     return report
 
 
+def benchmark_delhi(out_dir: Path | None = None, sensitivity=0.5,
+                    method="Feature-Based",
+                    manifest: str | Path | None = None):
+    """Run detection on labeled Delhi pairs; report per-pair + mean metrics."""
+    mpath = Path(manifest) if manifest else (ROOT / "docs" / "delhi_eval" / "manifest.json")
+    try:
+        tuples = list(iter_delhi_pairs(mpath, require_gt=True))
+    except DelhiEvalNotReady as exc:
+        raise SystemExit(str(exc)) from exc
+
+    labeled = [(b, a, g, pid, bp, ap) for b, a, g, pid, bp, ap in tuples if g is not None]
+    if not labeled:
+        raise SystemExit(f"No labeled pairs in {mpath}")
+
+    print(f"\nDelhi eval ({len(labeled)} labeled pairs, method={method}, "
+          f"sensitivity={sensitivity}):")
+    agg = {k: [] for k in ("iou", "f1", "precision", "recall", "kappa")}
+    report = {"pairs": {}, "method": method, "sensitivity": sensitivity}
+    for before, after, gt, pair_id, bp, ap in labeled:
+        mask, _img, stats, regions = run_detection(
+            Image.fromarray(before), Image.fromarray(after),
+            method=method,
+            enable_registration=True, enable_normalization=True,
+            detection_sensitivity=sensitivity,
+            before_path=bp, after_path=ap,
+        )
+        if mask.shape != gt.shape:
+            from cv2 import resize, INTER_NEAREST
+            mask = resize(mask, (gt.shape[1], gt.shape[0]), interpolation=INTER_NEAREST)
+        m = binary_metrics(mask, gt)
+        report["pairs"][pair_id] = {
+            "metrics": m, "regions": len(regions),
+            "changePct": round(stats.get("change_percentage", 0), 3),
+        }
+        for k in agg:
+            agg[k].append(m[k])
+        print(f"  {pair_id:14s} F1={m['f1']:.3f} IoU={m['iou']:.3f}")
+
+    mean = {k: round(float(np.mean(v)), 4) for k, v in agg.items()}
+    report["mean"] = mean
+    report["n_pairs"] = len(labeled)
+    print(f"\nMean over {len(labeled)} pairs: "
+          f"F1={mean['f1']:.4f} IoU={mean['iou']:.4f} kappa={mean['kappa']:.4f}")
+
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "metrics_delhi.json").write_text(
+            json.dumps(report, indent=2), encoding="utf-8")
+        print(f"  Wrote {out_dir / 'metrics_delhi.json'}")
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate + benchmark change detection")
     parser.add_argument("--benchmark", action="store_true", help="run synthetic accuracy benchmark")
+    parser.add_argument("--delhi", action="store_true",
+                        help="benchmark on Delhi eval manifest (docs/delhi_eval)")
+    parser.add_argument("--manifest", type=str, default="docs/delhi_eval/manifest.json")
     parser.add_argument("--out", type=str, default="", help="dir for comparison images + metrics.json")
     parser.add_argument("--sensitivity", type=float, default=0.5)
-    parser.add_argument("--method", type=str, default="AI-Based Deep Learning")
+    parser.add_argument("--method", type=str, default="Feature-Based")
+    parser.add_argument("--skip-checks", action="store_true", help="skip unit checks")
     args = parser.parse_args()
 
-    print("validate_detection.py")
-    test_registration_identical_pair()
-    test_registration_with_shift()
-    test_fusion_shapes()
-    test_run_detection_synthetic()
-    print("All checks passed.")
+    out_dir = Path(args.out).resolve() if args.out else None
+
+    if not args.skip_checks:
+        print("validate_detection.py")
+        test_registration_identical_pair()
+        test_registration_with_shift()
+        test_fusion_shapes()
+        test_run_detection_synthetic()
+        print("All checks passed.")
 
     if args.benchmark:
-        out_dir = Path(args.out).resolve() if args.out else None
         benchmark_synthetic(out_dir=out_dir, sensitivity=args.sensitivity, method=args.method)
+
+    if args.delhi:
+        benchmark_delhi(out_dir=out_dir, sensitivity=args.sensitivity,
+                        method=args.method, manifest=args.manifest)
 
 
 if __name__ == "__main__":
     main()
+

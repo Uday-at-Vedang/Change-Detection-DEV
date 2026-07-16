@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "split": "test",
+  "n_pairs": 5,
+  "pairs": [
+    {
+      "pair_id": "delhi_0004",
+      "before_path": "library_sources/2019/sentinel2_delhi_r3931_c9757.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r3931_c9757.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0004.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted."
+    },
+    {
+      "pair_id": "delhi_0008",
+      "before_path": "library_sources/2019/sentinel2_delhi_r3031_c8857.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r3031_c8857.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0008.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
+    },
+    {
+      "pair_id": "delhi_0020",
+      "before_path": "library_sources/2019/sentinel2_delhi_r2431_c8257.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r2431_c8257.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0020.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted. Retried with stronger morphological merge \u2014 still doesn't align with the visible real change, needs manual polygon redraw. Day 3: hand-drawn rough polygon (per project GT tolerance) bounding the new road-grid/plot development visible in after \u2014 replaced automated candidate which under-captured it."
+    },
+    {
+      "pair_id": "delhi_0021",
+      "before_path": "library_sources/2019/sentinel2_delhi_r1531_c8557.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r1531_c8557.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0021.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling."
+    },
+    {
+      "pair_id": "delhi_0030",
+      "before_path": "library_sources/2019/sentinel2_delhi_r1531_c10057.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r1531_c10057.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0030.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted. Retried with stronger morphological merge \u2014 still doesn't align with the visible real change, needs manual polygon redraw. Day 3: hand-drawn rough polygon bounding the settlement expansion + new construction patch \u2014 replaced automated candidate which under-captured it."
+    }
+  ]
+}
