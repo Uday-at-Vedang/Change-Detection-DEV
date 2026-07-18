@@ -1,6 +1,6 @@
 {
-  "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\runs\\day5_full\\20260716_142643\\best",
-  "exported_to": "models/adaptformer_delhi/best",
-  "load_via": "ADAPTFORMER_WEIGHTS=models/adaptformer_delhi/best",
-  "best_pt": "models\\adaptformer_delhi\\best.pt"
+  "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\runs\\finetune_fix\\20260716_203403\\best",
+  "exported_to": "models/adaptformer_delhi/best_fix",
+  "load_via": "ADAPTFORMER_WEIGHTS=models/adaptformer_delhi/best_fix",
+  "note": "best/ locked by running server; use best_fix until restart"
 }

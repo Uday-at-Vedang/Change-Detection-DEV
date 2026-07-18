@@ -1041,13 +1041,24 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
     full-resolution windowed inference) instead of running AdaptFormer on the
     working-resolution arrays.
     """
-    from .model_inference import is_model_available, predict_change_mask
+    from .model_inference import (
+        is_model_available, predict_change_mask, get_calibrated_threshold,
+    )
 
     model_mask = None
     dl_score = None
     model_ok = False
-    threshold = 0.32 + (1.0 - float(np.clip(sensitivity, 0, 1))) * 0.22
+    # Use val-calibrated AdaptFormer threshold (v3 Delhi = 0.2). Sensitivity
+    # nudges mildly around that base — do NOT rebuild a 0.32–0.54 schedule.
+    base_thr = get_calibrated_threshold(0.2)
+    sens = float(np.clip(sensitivity, 0.05, 1.0))
+    # sens=0.5 → base; ±0.1 sens ≈ ±10% of base (keeps UI control without
+    # drifting far from the offline v3 operating point).
+    threshold = float(np.clip(base_thr * (1.0 - 0.5 * (sens - 0.5)), 1e-6, 0.99))
     tile_stats: dict = {}
+
+    from .detection_config import get_fusion_mode
+    fusion_mode = get_fusion_mode()
 
     if dl_score_override is not None:
         dl_score = dl_score_override.astype(np.float32)
@@ -1064,6 +1075,30 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
         except Exception as e:
             _log.warning("AdaptFormer inference failed: %s", e)
 
+    # DL-only skips classical score/fusion entirely (ablation / v3 production path).
+    if model_ok and dl_score is not None and fusion_mode == "dl_only":
+        if model_mask is None:
+            model_mask = (dl_score >= threshold).astype(np.uint8) * 255
+        combined = _clean_mask(model_mask, sensitivity=sensitivity)
+        debug = {
+            "method": "AI-Based Deep Learning (AdaptFormer DL-only)",
+            "model": "adaptformer-delhi-v3",
+            "fusion": fusion_mode,
+            "threshold_used": int(min(255, max(0, round(threshold * 255)))),
+            "threshold_score": float(threshold),
+            "calibrated_threshold": float(base_thr),
+            "sensitivity": float(sensitivity),
+            "model_changed_px": int(np.sum(model_mask > 127)),
+            "rule_changed_px": 0,
+            "combined_changed_px": int(np.sum(combined > 127)),
+            "fusion_debug": {},
+            "dl_score_source": "windowed_fullres" if dl_score_override is not None else "tiled",
+            "probabilityMapStats": _prob_map_stats(dl_score),
+            "tileSkip": tile_stats or None,
+            "_score_map": dl_score.astype(np.float32),
+        }
+        return combined, debug
+
     rule_mask, classical_score, core_debug = _ai_fusion_core(
         img1, img2, sensitivity=sensitivity, registration_ok=registration_ok)
 
@@ -1071,8 +1106,6 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
         if model_mask is None:
             model_mask = (dl_score >= threshold).astype(np.uint8) * 255
 
-        from .detection_config import get_fusion_mode
-        fusion_mode = get_fusion_mode()
         if fusion_mode == "hysteresis":
             # Confidence-gated hysteresis fusion keeps complete change blobs
             # while pruning isolated weak responses (better recall on big blobs).
@@ -1086,9 +1119,11 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
             fuse_dbg = {}
         debug = {
             "method": "AI-Based Deep Learning (AdaptFormer + confidence union)",
-            "model": "adaptformer-levir-cd",
+            "model": "adaptformer-delhi-v3",
             "fusion": fusion_mode,
-            "threshold_used": int(threshold * 255),
+            "threshold_used": int(min(255, max(0, round(threshold * 255)))),
+            "threshold_score": float(threshold),
+            "calibrated_threshold": float(base_thr),
             "sensitivity": float(sensitivity),
             "model_changed_px": int(np.sum(model_mask > 127)),
             "rule_changed_px": int(np.sum(rule_mask > 127)),

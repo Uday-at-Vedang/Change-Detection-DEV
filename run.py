@@ -39,7 +39,10 @@ def main():
     # DETECTION_* tuning knobs, etc. are otherwise silently ignored).
     try:
         from dotenv import load_dotenv
-        load_dotenv(os.path.join(here, ".env"))
+        # override=True so a stale DETECTION_* / ADAPTFORMER_* value inherited
+        # from the parent shell cannot silently replace .env (this previously
+        # kept fusion on smart_union while .env said dl_only).
+        load_dotenv(os.path.join(here, ".env"), override=True)
     except ImportError:
         pass
 

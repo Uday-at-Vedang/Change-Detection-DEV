@@ -1,0 +1,291 @@
+{
+  "model_id": "deepang/adaptformer-LEVIR-CD",
+  "dummy": false,
+  "epochs": 16,
+  "epochs_ran": 7,
+  "lr": 3e-05,
+  "augment": true,
+  "stride": 64,
+  "loss": "tversky",
+  "pos_weight": 9.282262383342735,
+  "pos_oversample": 4,
+  "exclude_empty": true,
+  "full_resize": true,
+  "threshold": 0.2,
+  "device": "cpu",
+  "split": {
+    "train": [
+      "delhi_0025",
+      "delhi_0032",
+      "delhi_0024",
+      "delhi_0009",
+      "delhi_0011",
+      "delhi_0021",
+      "delhi_0022",
+      "delhi_0019",
+      "delhi_0027",
+      "delhi_0017",
+      "delhi_0018",
+      "delhi_0001",
+      "delhi_0003",
+      "delhi_0020",
+      "delhi_0016",
+      "delhi_0030"
+    ],
+    "val": [
+      "delhi_0029",
+      "delhi_0004",
+      "delhi_0026",
+      "delhi_0031"
+    ],
+    "test": [
+      "delhi_0028",
+      "delhi_0023",
+      "delhi_0005",
+      "delhi_0012"
+    ],
+    "split": "70/15/15",
+    "seed": 30,
+    "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\delhi_cd",
+    "stratified": true,
+    "excluded_empty": true,
+    "min_change_frac": 0.001
+  },
+  "class_balance": {
+    "train": {
+      "split": "train",
+      "n_pairs": 16,
+      "change_frac_mean": 0.097255,
+      "change_frac_min": 0.0235,
+      "change_frac_max": 0.480067,
+      "bg_to_change_ratio": 9.28
+    },
+    "val": {
+      "split": "val",
+      "n_pairs": 4,
+      "change_frac_mean": 0.072297,
+      "change_frac_min": 0.041322,
+      "change_frac_max": 0.095822,
+      "bg_to_change_ratio": 12.83
+    },
+    "test": {
+      "split": "test",
+      "n_pairs": 4,
+      "change_frac_mean": 0.071292,
+      "change_frac_min": 0.0368,
+      "change_frac_max": 0.109744,
+      "bg_to_change_ratio": 13.03
+    }
+  },
+  "train_pairs": 16,
+  "val_pairs": 4,
+  "test_pairs": 4,
+  "train_tiles": 160,
+  "best_val_f1": 0.6771,
+  "test_mean_f1": 0.5809,
+  "test_precision": 0.6782,
+  "test_recall": 0.5351,
+  "test_iou": 0.4117,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.201,
+      "val_mean_f1": 0.6688,
+      "val_precision": 0.6791,
+      "val_recall": 0.6896,
+      "val_iou": 0.5052,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6766,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6765625814482193,
+        "precision": 0.674230255475566,
+        "recall": 0.7131343824290199,
+        "obj": 0.7006940353761936
+      },
+      "val_mean_prob": 0.059826,
+      "val_max_prob": 1.0,
+      "lr": 3e-05
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.2422,
+      "val_mean_f1": 0.6771,
+      "val_precision": 0.686,
+      "val_recall": 0.7006,
+      "val_iou": 0.5139,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6891,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6890604736557051,
+        "precision": 0.6859693373048521,
+        "recall": 0.7274136064949971,
+        "obj": 0.7141378741462066
+      },
+      "val_mean_prob": 0.061096,
+      "val_max_prob": 1.0,
+      "lr": 3e-05
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.1993,
+      "val_mean_f1": 0.6696,
+      "val_precision": 0.6689,
+      "val_recall": 0.7033,
+      "val_iou": 0.5055,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6811,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6811129143910852,
+        "precision": 0.6681757423232615,
+        "recall": 0.7304796995281905,
+        "obj": 0.710106234809422
+      },
+      "val_mean_prob": 0.062638,
+      "val_max_prob": 1.0,
+      "lr": 3e-05
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.1726,
+      "val_mean_f1": 0.6666,
+      "val_precision": 0.6808,
+      "val_recall": 0.6831,
+      "val_iou": 0.5017,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6787,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6787149522368725,
+        "precision": 0.6775220324158849,
+        "recall": 0.7139063950894908,
+        "obj": 0.7023017532536773
+      },
+      "val_mean_prob": 0.060838,
+      "val_max_prob": 1.0,
+      "lr": 3e-05
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.1699,
+      "val_mean_f1": 0.6569,
+      "val_precision": 0.7203,
+      "val_recall": 0.6332,
+      "val_iou": 0.4918,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6702,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6702281302643129,
+        "precision": 0.7185551417509439,
+        "recall": 0.6607227156179305,
+        "obj": 0.6775006172826054
+      },
+      "val_mean_prob": 0.05261,
+      "val_max_prob": 1.0,
+      "lr": 3e-05
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.1637,
+      "val_mean_f1": 0.6587,
+      "val_precision": 0.6845,
+      "val_recall": 0.6681,
+      "val_iou": 0.4928,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6705,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6705481939755248,
+        "precision": 0.6821989900647205,
+        "recall": 0.6955833957502011,
+        "obj": 0.6914095152518956
+      },
+      "val_mean_prob": 0.058858,
+      "val_max_prob": 1.0,
+      "lr": 1.5e-05
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.1635,
+      "val_mean_f1": 0.6649,
+      "val_precision": 0.7175,
+      "val_recall": 0.649,
+      "val_iou": 0.5001,
+      "threshold": 0.2,
+      "calibrate_f1": 0.6782,
+      "calibrate_selected": {
+        "thr": 0.2,
+        "f1": 0.6781711203848331,
+        "precision": 0.7178672071139545,
+        "recall": 0.6748528462935188,
+        "obj": 0.6875286884533385
+      },
+      "val_mean_prob": 0.053528,
+      "val_max_prob": 1.0,
+      "lr": 1.5e-05
+    }
+  ],
+  "preset": "v3",
+  "output_probe": {
+    "n": 2,
+    "pairs": [
+      {
+        "pair_id": "delhi_0025",
+        "logits_shape": [
+          1,
+          2,
+          256,
+          256
+        ],
+        "logits_min": -115.13258361816406,
+        "logits_max": 105.7218017578125,
+        "logits_mean": -1.484132170677185,
+        "gt_pos_frac": 0.03802490234375,
+        "ch0_mean": 0.9785431027412415,
+        "ch1_mean": 0.02145695686340332,
+        "ch1_min": 0.0,
+        "ch1_max": 1.0,
+        "ch1_on_gt": 0.4170711934566498,
+        "ch1_on_bg": 0.005819139536470175,
+        "ch0_on_gt": 0.5829287767410278,
+        "change_channel": 0,
+        "prob_min": 0.0,
+        "prob_max": 1.0,
+        "prob_mean": 0.02145695686340332,
+        "prob_on_gt": 0.4170711934566498,
+        "prob_on_bg": 0.005819139536470175,
+        "pred_pos_at_0.5": 0.01983642578125
+      },
+      {
+        "pair_id": "delhi_0032",
+        "logits_shape": [
+          1,
+          2,
+          256,
+          256
+        ],
+        "logits_min": -30793584.0,
+        "logits_max": 34746832.0,
+        "logits_mean": 1360.53125,
+        "gt_pos_frac": 0.03533935546875,
+        "ch0_mean": 0.9665713906288147,
+        "ch1_mean": 0.0334286242723465,
+        "ch1_min": 0.0,
+        "ch1_max": 1.0,
+        "ch1_on_gt": 0.7304432988166809,
+        "ch1_on_bg": 0.007894202135503292,
+        "ch0_on_gt": 0.2695566415786743,
+        "change_channel": 1,
+        "prob_min": 0.0,
+        "prob_max": 1.0,
+        "prob_mean": 0.0334286242723465,
+        "prob_on_gt": 0.7304432988166809,
+        "prob_on_bg": 0.007894202135503292,
+        "pred_pos_at_0.5": 0.0328216552734375
+      }
+    ]
+  }
+}

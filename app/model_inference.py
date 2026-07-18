@@ -9,12 +9,14 @@ Falls back gracefully when torch/transformers are not installed.
 """
 import logging
 import os
+from pathlib import Path
 
 import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
+_ROOT = Path(__file__).resolve().parent.parent
 _MODEL = None
 _PROCESSOR = None
 _DEVICE = None
@@ -24,6 +26,15 @@ _AVAILABLE = None
 _LOAD_FAILED = False
 _LOAD_ERROR: str | None = None
 _LOADED_FROM: str | None = None
+_CALIBRATED_THRESHOLD: float | None = None
+_LOGITS_SHAPE_LOGGED = False
+
+# Prefer frozen v3 Delhi fine-tune over older exports / hub pretrained.
+_LOCAL_WEIGHT_CANDIDATES = (
+    "models/adaptformer_delhi/v3_frozen",
+    "models/adaptformer_delhi/best_v3",
+    "models/adaptformer_delhi/best",
+)
 
 
 def _try_import():
@@ -35,26 +46,107 @@ def _try_import():
         return None, None, None
 
 
+def _looks_like_weights_dir(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    return (
+        (path / "config.json").is_file()
+        or (path / "model.safetensors").is_file()
+        or (path / "pytorch_model.bin").is_file()
+    )
+
+
+def _as_weights_path(raw: str) -> Path | None:
+    """Resolve env/relative weight paths against the repo root (not CWD)."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    path = Path(text)
+    if not path.is_absolute():
+        path = (_ROOT / path).resolve()
+    return path if _looks_like_weights_dir(path) else None
+
+
 def _resolve_weights_source() -> str:
-    """Prefer local Day-6 fine-tune weights when ADAPTFORMER_WEIGHTS is set."""
-    local = os.environ.get("ADAPTFORMER_WEIGHTS", "").strip()
-    if local:
-        return local
-    # Conventional export path from scripts/export_adaptformer_delhi.py
-    default_dir = os.path.join(os.path.dirname(__file__), "..", "models",
-                               "adaptformer_delhi", "best")
-    default_dir = os.path.normpath(default_dir)
-    if os.path.isdir(default_dir) and (
-        os.path.isfile(os.path.join(default_dir, "config.json"))
-        or os.path.isfile(os.path.join(default_dir, "model.safetensors"))
-        or os.path.isfile(os.path.join(default_dir, "pytorch_model.bin"))
-    ):
-        return default_dir
+    """Prefer local Delhi fine-tune (v3_frozen) over HuggingFace pretrained."""
+    env = os.environ.get("ADAPTFORMER_WEIGHTS", "").strip()
+    if env:
+        resolved = _as_weights_path(env)
+        if resolved is not None:
+            return str(resolved)
+        logger.warning(
+            "ADAPTFORMER_WEIGHTS=%r is not a usable weights dir; "
+            "trying conventional local exports then hub fallback",
+            env,
+        )
+    for rel in _LOCAL_WEIGHT_CANDIDATES:
+        resolved = _as_weights_path(rel)
+        if resolved is not None:
+            return str(resolved)
     return _MODEL_ID
 
 
+def _env_threshold() -> float | None:
+    """Explicit threshold override: ADAPTFORMER_THRESHOLD or DETECTION_DL_THRESHOLD."""
+    for key in ("ADAPTFORMER_THRESHOLD", "DETECTION_DL_THRESHOLD"):
+        raw = os.environ.get(key, "").strip()
+        if not raw:
+            continue
+        try:
+            return float(raw)
+        except ValueError:
+            logger.warning("Ignoring invalid %s=%r", key, raw)
+    return None
+
+
+def _load_threshold_sidecar(source: str) -> float | None:
+    """Load val-calibrated threshold.json next to local AdaptFormer weights."""
+    env_thr = _env_threshold()
+    if env_thr is not None:
+        return env_thr
+    if not source or source == _MODEL_ID:
+        return None
+    path = os.path.join(source, "threshold.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        import json
+        data = json.loads(open(path, encoding="utf-8").read())
+        thr = float(data.get("threshold"))
+        logger.info("Loaded AdaptFormer calibrated threshold=%s from %s", thr, path)
+        return thr
+    except Exception as exc:
+        logger.warning("Could not read %s: %s", path, exc)
+        return None
+
+
+def get_calibrated_threshold(default: float = 0.5) -> float:
+    """Return val-calibrated DL threshold (loads model sidecar on first use)."""
+    global _CALIBRATED_THRESHOLD
+    if _CALIBRATED_THRESHOLD is not None:
+        return _CALIBRATED_THRESHOLD
+    env_thr = _env_threshold()
+    if env_thr is not None:
+        _CALIBRATED_THRESHOLD = env_thr
+        return _CALIBRATED_THRESHOLD
+    # Ensure weights (and sidecar) are resolved even if predict hasn't run yet
+    try:
+        _load_model()
+    except Exception:
+        pass
+    if _CALIBRATED_THRESHOLD is not None:
+        return _CALIBRATED_THRESHOLD
+    return default
+
+
+def get_loaded_weights_source() -> str | None:
+    """Path/id actually loaded into memory (None until first successful load)."""
+    return _LOADED_FROM
+
+
 def _load_model():
-    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED, _LOAD_ERROR, _LOADED_FROM
+    global _MODEL, _PROCESSOR, _DEVICE, _AVAILABLE, _LOAD_FAILED, _LOAD_ERROR
+    global _LOADED_FROM, _CALIBRATED_THRESHOLD
     if _MODEL is not None:
         return _MODEL, _PROCESSOR
     if _LOAD_FAILED:
@@ -79,6 +171,7 @@ def _load_model():
         _AVAILABLE = True
         _LOAD_ERROR = None
         _LOADED_FROM = source
+        _CALIBRATED_THRESHOLD = _load_threshold_sidecar(source)
         logger.info("AdaptFormer loaded on %s from %s", _DEVICE, source)
     except Exception as exc:
         # Fall back to HF hub if local fine-tune dir fails
@@ -94,6 +187,7 @@ def _load_model():
                 _AVAILABLE = True
                 _LOAD_ERROR = None
                 _LOADED_FROM = _MODEL_ID
+                _CALIBRATED_THRESHOLD = _load_threshold_sidecar(_MODEL_ID)
                 logger.info("AdaptFormer loaded on %s from hub fallback", _DEVICE)
                 return _MODEL, _PROCESSOR
             except Exception as exc2:
@@ -135,21 +229,32 @@ def preload_model():
 
 def get_model_status() -> dict:
     """Status for /health — shows whether AI detection or classical fallback is active."""
+    try:
+        from .detection_config import get_fusion_mode
+        fusion = get_fusion_mode()
+    except Exception:
+        fusion = "dl_only"
+
     if _AVAILABLE is True:
-        mode = "adaptformer_smart_union"
+        mode = f"adaptformer_{fusion}"
         available = True
     elif _LOAD_FAILED:
         mode = "classical_fallback"
         available = False
     else:
         available = is_model_available()
-        mode = "adaptformer_smart_union" if available else "classical_fallback"
+        mode = f"adaptformer_{fusion}" if available else "classical_fallback"
 
+    loaded = _LOADED_FROM or _resolve_weights_source()
     status = {
-        "modelId": _MODEL_ID,
+        "modelId": loaded,
+        "hubModelId": _MODEL_ID,
+        "loadedFrom": _LOADED_FROM,
         "available": available,
         "detectionMode": mode,
+        "fusion": fusion,
         "device": str(_DEVICE) if _DEVICE is not None else None,
+        "calibratedThreshold": get_calibrated_threshold(0.2) if available else None,
         "tta": [op or "identity" for op in _resolve_tta_ops()],
         "error": _LOAD_ERROR,
     }
@@ -168,6 +273,10 @@ def _logits_to_change_prob(logits, torch):
     Handles 1-channel (sigmoid), 2+-channel (softmax, change=last channel) and
     already-2D outputs so a change in the upstream model head does not silently
     break inference.
+
+    Validated for ``deepang/adaptformer-LEVIR-CD``: logits are ``(N, 2, H, W)``
+    with channel 0 = no-change and channel 1 = change. Using softmax last
+    channel is correct (see ``scripts/finetune_adaptformer.py`` output probe).
     """
     t = logits
     if t.dim() == 4:  # (N, C, H, W)
@@ -175,12 +284,40 @@ def _logits_to_change_prob(logits, torch):
         if c == 1:
             return torch.sigmoid(t)[0, 0]
         return torch.softmax(t, dim=1)[0, -1]
-    if t.dim() == 3:  # (C, H, W) or (N, H, W)
+    if t.dim() == 3:  # (C, H, W) or (N, H, W) — ambiguous without metadata
         if t.shape[0] == 1:
             return torch.sigmoid(t)[0]
+        if t.shape[0] == 2:
+            # Prefer (C,H,W) two-class head (AdaptFormer); change = channel 1
+            return torch.softmax(t, dim=0)[1]
         # ambiguous: treat as (N,H,W) single map
+        logger.warning(
+            "Ambiguous 3D logits shape %s — treating as (N,H,W) with sigmoid; "
+            "expected AdaptFormer layout is (N,2,H,W)",
+            tuple(t.shape),
+        )
         return torch.sigmoid(t[0])
     return torch.sigmoid(t)
+
+
+def _log_logits_shape_once(logits) -> None:
+    """Log / assert expected AdaptFormer logits layout on first inference."""
+    global _LOGITS_SHAPE_LOGGED
+    if _LOGITS_SHAPE_LOGGED:
+        return
+    _LOGITS_SHAPE_LOGGED = True
+    shape = tuple(logits.shape)
+    logger.info("AdaptFormer outputs.logits.shape=%s (source=%s)", shape, _LOADED_FROM)
+    # Expected for deepang/adaptformer-LEVIR-CD and Delhi fine-tunes: (N, 2, H, W)
+    if logits.dim() == 4 and logits.shape[1] == 2:
+        return
+    if logits.dim() == 4 and logits.shape[1] == 1:
+        logger.warning("AdaptFormer logits are 1-channel %s — using sigmoid path", shape)
+        return
+    logger.warning(
+        "Unexpected AdaptFormer logits shape %s — verify _logits_to_change_prob mapping",
+        shape,
+    )
 
 
 def _resolve_tta_ops():
@@ -237,6 +374,7 @@ def _infer_score_map(img1, img2, tile_stats=None):
         inputs = {k: v.to(_DEVICE) for k, v in inputs.items()}
         outputs = model(**inputs)
         logits = outputs.logits
+        _log_logits_shape_once(logits)
         return _logits_to_change_prob(logits, torch).cpu().numpy()
 
     def _score_batch(pairs):
@@ -256,6 +394,7 @@ def _infer_score_map(img1, img2, tile_stats=None):
                        for k in keys}
             outputs = model(**stacked)
             logits = outputs.logits
+            _log_logits_shape_once(logits)
             if logits.shape[0] != n * per_pair_bs:
                 raise RuntimeError("unexpected batched logits layout")
             group = per_pair_bs
@@ -376,7 +515,7 @@ def _predict_score_tta(img1, img2, tile_stats=None):
     return acc / float(n)
 
 
-def predict_change_mask(img1, img2, threshold=0.5, tile_stats=None):
+def predict_change_mask(img1, img2, threshold=None, tile_stats=None):
     """
     Run AdaptFormer inference on two RGB numpy arrays (H, W, 3).
     Averages predictions over test-time augmentation flips (DETECTION_TTA) and,
@@ -384,10 +523,14 @@ def predict_change_mask(img1, img2, threshold=0.5, tile_stats=None):
     small and large changes are captured.
     Returns (uint8 mask [0 or 255], float32 score map [0-1]).
     Use threshold > 1.0 to obtain score map only (empty mask).
+    When ``threshold`` is None, uses val-calibrated sidecar /
+    ``ADAPTFORMER_THRESHOLD`` / ``DETECTION_DL_THRESHOLD`` (v3 Delhi = 0.2).
     Pass ``tile_stats`` (a dict) to accumulate tile pre-filter counters
     (``totalTiles``/``skippedTiles``) across every TTA/scale pass.
     """
     _load_model()
+    if threshold is None:
+        threshold = get_calibrated_threshold(0.2)
 
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))

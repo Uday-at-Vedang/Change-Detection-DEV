@@ -1,0 +1,40 @@
+{
+  "plan_source": "Claude priority improvement plan",
+  "run": "runs/finetune_v2/20260716_210208",
+  "weights": "models/adaptformer_delhi/best_v2",
+  "logit_probe": {
+    "verdict": "CORRECT — AdaptFormer logits (N,2,H,W); change = softmax channel 1 (last)",
+    "why_5e-5_before": "Hub Delhi probs peak ~1e-2 with mean ~1e-4; after CE-only fix, calibration grid favored tiny thr. With focal+dice + stratified split, thr converges to ~0.5"
+  },
+  "class_imbalance": {
+    "train_bg_to_change": "≈11.5:1",
+    "note": "Previous non-stratified split had val change%≈25% vs test≈7% — inflated Val F1 and Val/Test gap"
+  },
+  "implemented": [
+    "1 logit→prob probe + output_probe.json",
+    "2 auto thr = fixed grid + score quantiles; freeze with best ckpt for test",
+    "3 imbalance report; Focal+Dice; positive-tile oversample×3 + WeightedRandomSampler",
+    "4 Precision/Recall/IoU logged each epoch",
+    "5 visuals/ Before|After|GT|Pred|Prob each epoch",
+    "6 lazy tile index (pair_i, kind, x, y)",
+    "7 brightness/contrast + rot + flips; ReduceLROnPlateau",
+    "8 stratified split (--stratify)"
+  ],
+  "scores": {
+    "day5_broken": {"val_f1": 0.0001, "test_f1": 0.0025, "thr": 0.5},
+    "fix_6ep": {"val_f1": 0.3664, "test_f1": 0.1389, "thr": 5e-05},
+    "v2_12ep": {
+      "best_val_f1": 0.5926,
+      "test_f1": 0.3975,
+      "test_precision": 0.557,
+      "test_recall": 0.34,
+      "test_iou": 0.272,
+      "frozen_threshold": 0.5
+    }
+  },
+  "targets": {
+    "val_f1_0.5_plus": "HIT (0.59)",
+    "test_closer_to_val": "IMPROVED (0.14→0.40; gap 0.23→0.20). Still limited by N=24 and domain shift; next: more labels / recall-focused loss weight"
+  },
+  "load": "ADAPTFORMER_WEIGHTS=models/adaptformer_delhi/best_v2"
+}

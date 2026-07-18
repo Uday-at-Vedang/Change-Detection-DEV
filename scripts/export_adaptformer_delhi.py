@@ -19,24 +19,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CANDIDATES = [
-    ROOT / "runs" / "day5_full" / "20260716_142643" / "best",
+    ROOT / "runs" / "finetune_v3",
+    ROOT / "runs" / "finetune_v2",
+    ROOT / "runs" / "finetune_fix",
+    ROOT / "runs" / "day5_full",
     ROOT / "runs" / "finetune_adaptformer",
 ]
 
 
 def _find_latest_best() -> Path | None:
+    found: list[Path] = []
     for cand in DEFAULT_CANDIDATES:
         if cand.name == "best" and cand.is_dir():
-            return cand
+            found.append(cand)
+            continue
         if cand.is_dir():
-            runs = sorted(
-                [p for p in cand.glob("*/best") if p.is_dir()],
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            if runs:
-                return runs[0]
-    return None
+            found.extend([p for p in cand.glob("*/best") if p.is_dir()])
+    if not found:
+        return None
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)[0]
 
 
 def main():

@@ -1,0 +1,29 @@
+{
+  "plan": "Claude FN/recall follow-up (Test F1>0.50, R>0.45, P~0.55+)",
+  "run": "runs/finetune_v3 (latest metrics)",
+  "weights": "models/adaptformer_delhi/best_v3",
+  "v2_learning_curve": "plateaued ~epoch 8-10 (Val F1~0.59); more epochs alone not enough",
+  "fn_analysis_v2": {
+    "categories": {"ok": 10, "partial": 8, "missed_almost_all": 3, "thin_linear": 2, "small_blob": 1},
+    "hard_outlier": "delhi_0030 was missed_almost_all on prior split (large hand-drawn settlement polygon)",
+    "action": "restratified seed=30 so large-change examples are in train; thr window 0.2-0.7"
+  },
+  "v3_changes": [
+    "Tversky (alpha=0.3, beta=0.7) + Focal — recall-oriented FN penalty",
+    "Change-centered GT-blob crops + pos_oversample x4 + drop empty tiles",
+    "Val thr sweep only in [0.2, 0.7] with F_beta=1.5 objective; freeze for test",
+    "Warm-start from v2 best; LR 3e-5; ReduceLROnPlateau; early stop",
+    "Shared pair aug: flips, 90 rot, mild brightness/contrast (no artificial temporal diffs)",
+    "Lazy tile index (RAM-safe)"
+  ],
+  "scores": {
+    "v2": {"val_f1": 0.593, "test_f1": 0.398, "test_P": 0.557, "test_R": 0.340, "thr": 0.5},
+    "v3": {"val_f1": 0.677, "test_f1": 0.581, "test_P": 0.678, "test_R": 0.535, "thr": 0.2}
+  },
+  "targets": {
+    "test_f1_gt_0.50": "HIT (0.581)",
+    "test_recall_gt_0.45": "HIT (0.535)",
+    "precision_around_0.55_plus": "HIT (0.678)"
+  },
+  "load": "ADAPTFORMER_WEIGHTS=models/adaptformer_delhi/best_v3"
+}

@@ -1,0 +1,78 @@
+{
+  "v3_frozen": {
+    "path": "models/adaptformer_delhi/v3_frozen",
+    "val_f1": 0.6771,
+    "test_f1": 0.5809,
+    "test_precision": 0.6782,
+    "test_recall": 0.5351,
+    "test_iou": 0.4117,
+    "threshold": 0.2,
+    "loss": "tversky",
+    "epochs": 7,
+    "n_train_pairs": 16,
+    "status": "BASELINE — do not overwrite"
+  },
+  "thr_sweep_0.10_0.40": {
+    "artifact": "runs/v3_baseline_analysis/analysis.json",
+    "best_val_thr": 0.35,
+    "best_val_f1": 0.6917,
+    "test_at_0.35": {"f1": 0.5855, "P": 0.725, "R": 0.516, "IoU": 0.418},
+    "test_at_0.20": {"f1": 0.5954},
+    "decision": "Keep thr=0.20 for recall. Raising to 0.35 helps Val F1/P but drops Test R. Prefer post-filter low-conf Other on GeoTIFF reports."
+  },
+  "pdf_report_vulnerabilities": {
+    "file": "DDA_Report_37_Grid_54_tif_vs_H43X2E1_tif.pdf",
+    "findings": [
+      "60 regions / 3.08% change — many Other at 26-50% conf (FP risk from thr=0.2)",
+      "Frequent Vegetation Change — seasonal/spectral FPs on 10m data",
+      "Largest New Construction 107k px — check edge completeness (FN)",
+      "All reviews pending — no human FP feedback into training"
+    ],
+    "ops_fix_applied": "DDA_OTHER_MIN_CONF=0.5 filter in detect_service (drops weak Other)"
+  },
+  "error_analysis": {
+    "panels": "runs/v3_baseline_analysis/panels (24)",
+    "fp_dir": "runs/v3_baseline_analysis/fp",
+    "fn_dir": "runs/v3_baseline_analysis/fn",
+    "hardest_fn": ["delhi_0030", "delhi_0020", "delhi_0023", "delhi_0005", "delhi_0017"],
+    "note": "Large settlement polygons nearly total miss — main recall bottleneck"
+  },
+  "experiments": [
+    {
+      "id": "v3_baseline",
+      "variable": "none",
+      "status": "frozen",
+      "val_f1": 0.6771,
+      "test_f1": 0.5809,
+      "test_P": 0.6782,
+      "test_R": 0.5351,
+      "test_iou": 0.4117,
+      "threshold": 0.2,
+      "loss": "tversky",
+      "epochs": 7,
+      "n_train": 16
+    },
+    {
+      "id": "v4_pos_sampling",
+      "variable": "pos_only + oversample×6 + min_tile_change 0.02 (loss=tversky unchanged)",
+      "status": "done_no_improve",
+      "warm_start": "models/adaptformer_delhi/v3_frozen",
+      "run": "runs/finetune_v4/20260717_211854",
+      "val_f1": 0.6682,
+      "test_f1": 0.5759,
+      "test_P": 0.6689,
+      "test_R": 0.5341,
+      "test_iou": 0.4064,
+      "threshold": 0.1,
+      "loss": "tversky",
+      "epochs": 9,
+      "n_train": 16,
+      "verdict": "REJECT — slightly worse than v3; thr collapsed to 0.1; keep v3"
+    }
+  ],
+  "next": [
+    "Loss ablation only (warm-start v3_frozen): bce_dice vs tversky, sampling unchanged",
+    "More labeled large-settlement pairs (0030/0020 failure mode)",
+    "Ops: keep thr=0.2 + Other conf filter; optional veg suppress"
+  ]
+}

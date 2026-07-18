@@ -1,0 +1,43 @@
+{
+  "problem": "AdaptFormer fine-tune val/test F1 near 0 (Day5 best_val_f1=0.0001, test=0.0025)",
+  "root_causes": [
+    {
+      "id": 1,
+      "title": "Empty GT labels in train",
+      "detail": "5 train pairs had all-zero masks (delhi_0002/0007/0010/0013/0014). Model was rewarded for predicting no change."
+    },
+    {
+      "id": 2,
+      "title": "Wrong loss for 2-class head",
+      "detail": "AdaptFormer logits are (N,2,H,W). Training used BCE on softmax change-channel; CE with class weights is correct for this head."
+    },
+    {
+      "id": 3,
+      "title": "Eval threshold 0.5 unreachable",
+      "detail": "On Delhi Sentinel crops, hub/finetuned max change-prob is ~0.06–0.14 (mean ~1e-4). Threshold 0.5 yields empty masks → F1=0."
+    },
+    {
+      "id": 4,
+      "title": "Only top-left 256 crop from 300px images",
+      "detail": "stride=128 on 300px yields a single top-left tile; change elsewhere was never trained on."
+    },
+    {
+      "id": 5,
+      "title": "Domain + data scale",
+      "detail": "LEVIR (~0.5m buildings) vs Delhi 10m Sentinel; only ~22 tiles. Structural limit until more/better labels or GPU + more data."
+    }
+  ],
+  "fixes_implemented": [
+    "--preset fix: CrossEntropy + pos_weight, exclude empty GT, full-image 256 resize, val-calibrated threshold",
+    "build_delhi_cd_splits.py --min-change-frac 0.001",
+    "Inference uses threshold.json / ADAPTFORMER_THRESHOLD instead of fixed ~0.32-0.5"
+  ],
+  "smoke_results_6ep": {
+    "run": "runs/finetune_fix/20260716_203403",
+    "best_val_f1": 0.3664,
+    "test_mean_f1": 0.1389,
+    "threshold": 5e-05,
+    "vs_day5": "val F1 0.0001 -> 0.3664; test F1 0.0025 -> 0.1389"
+  },
+  "retrain": "python scripts/build_delhi_cd_splits.py --min-change-frac 0.001 && python scripts/finetune_adaptformer.py --delhi-cd data/delhi_cd --preset fix --out runs/finetune_fix"
+}

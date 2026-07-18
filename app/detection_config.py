@@ -18,7 +18,7 @@ DETECTION_SKIP_REGISTRATION_GEOTIFF  ``true``|``false``|``auto`` (default auto:
                           skip SIFT registration when both inputs are GeoTIFF).
 ADAPTFORMER_WEIGHTS       Local fine-tuned AdaptFormer dir or .pt (Day 6+).
 DETECTION_MULTISCALE      ``off`` | comma list e.g. ``0.5,1.0,1.5``.
-DETECTION_FUSION          ``smart_union`` (default) | ``hysteresis``.
+DETECTION_FUSION          ``smart_union`` (default) | ``hysteresis`` | ``dl_only``.
 DETECTION_SKIP_PREBLUR    ``true`` | ``false`` (auto: on for fullres_tiled).
 DETECTION_TTA             ``off`` | ``hflip`` | ``full`` | ``auto`` (model_inference).
 DETECTION_SKIP_UNCHANGED_THRESHOLD  Worst-cell LAB tile-signature distance below
@@ -28,10 +28,11 @@ DETECTION_KPCA_N_COMPONENTS    KPCA output feature-vector length (default 8).
 DETECTION_KPCA_GAMMA           RBF kernel gamma for KernelPCA (default 5e-4).
 DETECTION_KPCA_N_TRAIN_PATCHES Patches used to fit KPCA filters (default 300).
 DETECTION_KPCA_MAX_SIDE        Max processed resolution for KPCA (default 2048).
-DETECTION_DL_FLOOR_BASE   Base DL confidence floor for smart_union fusion
-                          (default 0.36; sensitivity shifts +/-0.10 around it).
-                          Calibration knob — lower lets a weaker/out-of-domain
-                          model's evidence count for more.
+DETECTION_DL_THRESHOLD    Alias for ADAPTFORMER_THRESHOLD (v3 calibrated = 0.2).
+DETECTION_DL_FLOOR_BASE   Base DL confidence floor for smart_union fusion.
+                          Default 0.15 so v3's operating point (thr=0.2) is not
+                          discarded by the older 0.36 pretrained-era floor.
+                          Sensitivity shifts +/-0.10 around the base.
 DETECTION_CL_Q_BASE       Base classical-score percentile floor for smart_union
                           fusion (default 0.90 as of the Day 4/5/6 Delhi-eval
                           calibration pass; sensitivity shifts it slightly).
@@ -197,9 +198,17 @@ def get_multiscale_scales() -> List[float]:
 
 
 def get_fusion_mode() -> str:
-    """DL + classical fusion strategy: ``smart_union`` or ``hysteresis``."""
-    mode = _env("DETECTION_FUSION", "smart_union").lower()
-    return mode if mode in ("smart_union", "hysteresis") else "smart_union"
+    """DL + classical fusion: ``smart_union``, ``hysteresis``, or ``dl_only``.
+
+    Default ``dl_only``: v3 Delhi fine-tune (Test F1≈0.58 @ thr=0.2) is hurt
+    badly by the older smart_union/hysteresis classical fusion (ablation
+    collapsed mean F1 from ~0.58 to ~0.04). Set DETECTION_FUSION=smart_union
+    only when deliberately using pretrained/classical-heavy configs.
+    """
+    mode = _env("DETECTION_FUSION", "dl_only").lower()
+    if mode in ("smart_union", "hysteresis", "dl_only"):
+        return mode
+    return "dl_only"
 
 
 def get_skip_preblur() -> bool:
@@ -344,15 +353,24 @@ def get_ensemble_mode() -> bool:
 def get_dl_floor_base() -> float:
     """Base DL confidence floor for smart_union fusion (see module docstring).
 
-    Calibration knob: lower it if the DL model's evidence is being dropped
-    too aggressively (e.g. a pretrained model that's out-of-domain for the
-    target imagery and rarely crosses the default floor).
+    Default 0.15 aligns with the v3 Delhi calibrated threshold (0.2). The older
+    0.36 floor was tuned for pretrained LEVIR-CD + classical fusion and can
+    reject most v3 change pixels that sit between 0.2 and 0.36.
     """
-    raw = _env("DETECTION_DL_FLOOR_BASE", "0.36")
+    raw = _env("DETECTION_DL_FLOOR_BASE", "0.15")
     try:
         value = float(raw)
     except ValueError:
-        value = 0.36
+        value = 0.15
+    # Never sit above the calibrated AdaptFormer threshold when that is known —
+    # otherwise smart_union silently undoes the offline v3 operating point.
+    try:
+        from .model_inference import get_calibrated_threshold
+        calibrated = float(get_calibrated_threshold(0.2))
+        if calibrated > 0:
+            value = min(value, calibrated)
+    except Exception:
+        pass
     return max(0.0, min(1.0, value))
 
 

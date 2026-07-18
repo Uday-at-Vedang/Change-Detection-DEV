@@ -53,6 +53,26 @@ def _serialize_regions(change_regions) -> list:
     ]
 
 
+def _filter_weak_other_regions(regions: list) -> list:
+    """Drop DDA 'Other' detections below a confidence floor (env DDA_OTHER_MIN_CONF)."""
+    import os
+    raw = os.environ.get("DDA_OTHER_MIN_CONF", "0.5").strip()
+    try:
+        floor = float(raw)
+    except ValueError:
+        floor = 0.5
+    if floor <= 0:
+        return regions
+    kept = []
+    for r in regions:
+        dda = (r.get("ddaChangeType") or "").strip()
+        conf = float(r.get("confidence") or 0.0)
+        if dda == "Other" and conf < floor:
+            continue
+        kept.append(r)
+    return kept
+
+
 def _isoformat_ist(dt):
     from datetime import timedelta
     if dt is None:
@@ -213,6 +233,13 @@ def run_detection_and_save(
         bounds=bounds,
         geo=geo_ctx,
     )
+    # Ops filter: PDF report (Grid_54 vs H43X2E1) showed many low-conf "Other"
+    # blobs at thr~0.2 — quarantine weak unclassified FPs without raising DL thr.
+    before_n = len(regions_serializable)
+    regions_serializable = _filter_weak_other_regions(regions_serializable)
+    dropped_other = before_n - len(regions_serializable)
+    if dropped_other:
+        logger.info("Filtered %d low-confidence Other regions", dropped_other)
     regions_with_coords = sum(1 for r in regions_serializable if r.get("latLng"))
     geo_debug = {
         "source": geo_ctx.source if geo_ctx else "none",
