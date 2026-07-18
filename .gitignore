@@ -20,3 +20,4 @@ venv/
 runs/
 # WHU reference dataset (real-data pipeline test set, not Delhi imagery — see docs/whu_reference/)
 data/whu_reference/
+data/large_geotiff_test/

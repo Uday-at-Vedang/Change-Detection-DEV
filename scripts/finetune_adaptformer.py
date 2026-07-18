@@ -62,9 +62,17 @@ class DelhiTileDataset:
                 after = np.array(Image.fromarray(after).resize((crop_size, crop_size)))
                 gt = np.array(Image.fromarray(gt).resize((crop_size, crop_size)))
                 h = w = crop_size
-            stride = crop_size if train else crop_size
-            for y in range(0, h - crop_size + 1, stride):
-                for x in range(0, w - crop_size + 1, stride):
+
+            # Anchor crops at every corner + center instead of a single fixed
+            # top-left tile. For images only slightly larger than crop_size
+            # (our 300x300 Delhi tiles vs. a 256px crop), a plain stride loop
+            # yields exactly one crop anchored at (0,0) — silently dropping any
+            # labeled region that falls outside that corner. Fixed-position
+            # sampling (not random) keeps runs reproducible.
+            y_anchors = sorted({0, max(0, h - crop_size), max(0, (h - crop_size) // 2)})
+            x_anchors = sorted({0, max(0, w - crop_size), max(0, (w - crop_size) // 2)})
+            for y in y_anchors:
+                for x in x_anchors:
                     self.samples.append((
                         before[y:y + crop_size, x:x + crop_size],
                         after[y:y + crop_size, x:x + crop_size],
@@ -145,6 +153,39 @@ def _split_pairs(pairs: list[tuple], seed: int = 0,
     return train, val, test
 
 
+def _compute_pos_weight(train_ds, max_weight: float = 50.0) -> float:
+    """Inverse-frequency weight for the changed (positive) class.
+
+    Change-detection masks are heavily imbalanced toward "no change" (our
+    Delhi masks run ~2-10% positive pixels). Plain BCELoss on this imbalance
+    has a well-known failure mode: predicting all-background is already
+    near loss-optimal, so the model never learns real signal -- this is the
+    most likely explanation for a val/test F1 stuck near 0. Weighting the
+    positive class by (negative_count / positive_count) counteracts that.
+    """
+    total_pos = 0
+    total_px = 0
+    for _b, _a, gt in train_ds.samples:
+        mask = gt > 127
+        total_pos += int(mask.sum())
+        total_px += mask.size
+    if total_pos == 0:
+        return 1.0
+    pos_frac = total_pos / total_px
+    weight = (1.0 - pos_frac) / pos_frac
+    return float(min(max_weight, max(1.0, weight)))
+
+
+def _weighted_bce(prob, target, pos_weight: float, eps: float = 1e-7):
+    """Manual weighted binary cross-entropy on probabilities (not logits) —
+    ``BCEWithLogitsLoss``'s ``pos_weight`` only applies to raw logits, but the
+    model output here is already passed through ``_logits_to_change_prob``."""
+    torch, *_ = _try_torch()
+    prob = prob.clamp(eps, 1.0 - eps)
+    loss = -(pos_weight * target * torch.log(prob) + (1.0 - target) * torch.log(1.0 - prob))
+    return loss.mean()
+
+
 def _predict_mask(model, processor, device, before, after, threshold=0.5):
     torch, *_ = _try_torch()
     from PIL import Image as PILImage
@@ -208,7 +249,8 @@ def train(
     train_loader = DataLoader(
         train_ds.torch_dataset(), batch_size=batch_size, shuffle=True, num_workers=0)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    bce = torch.nn.BCELoss()
+    pos_weight = _compute_pos_weight(train_ds)
+    print(f"Positive-class weight (class-imbalance correction): {pos_weight:.2f}")
 
     run_id = time.strftime("%Y%m%d_%H%M%S")
     run_dir = out_root / run_id
@@ -247,7 +289,7 @@ def train(
                     prob = torch.nn.functional.interpolate(
                         prob.unsqueeze(1), size=labels_t.shape[-2:],
                         mode="bilinear", align_corners=False).squeeze(1)
-                batch_loss = batch_loss + bce(prob, labels_t)
+                batch_loss = batch_loss + _weighted_bce(prob, labels_t, pos_weight)
 
             batch_loss = batch_loss / max(before_np.shape[0], 1)
             batch_loss.backward()
@@ -291,6 +333,9 @@ def train(
         "train_pairs": len(train_pairs),
         "val_pairs": len(val_pairs),
         "test_pairs": len(test_pairs),
+        "train_tiles": len(train_ds.samples),
+        "val_tiles": len(val_ds.samples),
+        "pos_weight": round(pos_weight, 2),
         "best_val_f1": best_f1,
         "test_mean_f1": test_metrics["mean_f1"],
         "history": history,
