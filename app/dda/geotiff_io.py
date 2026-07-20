@@ -149,6 +149,8 @@ def inspect_image(path: Path) -> IngestResult:
 
     Tries rasterio first (honors embedded CRS, world files and GDAL .aux.xml for
     all formats), then falls back to Pillow + explicit world-file parsing.
+    Corrupt / truncated GeoTIFFs must not crash library rescan — callers get a
+    zero-size stub and should skip indexing.
     """
     try:
         res = _read_with_rasterio(path)
@@ -166,7 +168,22 @@ def inspect_image(path: Path) -> IngestResult:
         logger.warning("rasterio not installed — georef metadata limited")
     except Exception as exc:
         logger.warning("rasterio read failed (%s), falling back to Pillow", exc)
-    return _read_with_pillow(path)
+    try:
+        return _read_with_pillow(path)
+    except Exception as exc:
+        # Common for truncated / BigTIFF files Pillow cannot parse
+        # ("Invalid dimensions"). Don't abort the whole library sync.
+        logger.warning("Pillow inspect failed for %s: %s", path.name, exc)
+        ext = path.suffix.lower()
+        return IngestResult(
+            width=0,
+            height=0,
+            has_georef=False,
+            crs="",
+            bounds_wgs84=None,
+            format="geotiff" if ext in (".tif", ".tiff") else "image",
+            georef_source="none",
+        )
 
 
 def write_placeholder_png(dest_path: Path, label: str = "Image", max_side: int = 256) -> None:

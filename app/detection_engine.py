@@ -328,11 +328,12 @@ def _match_histogram(src, ref):
 
 
 def normalize_radiometry(img1, img2):
-    """Match after image radiometry to before; symmetric CLAHE on L channel.
+    """Match after-image brightness to before; leave chrominance intact.
 
-    CLAHE and histogram matching are env-toggleable (``DETECTION_CLAHE``,
-    ``DETECTION_HIST_MATCH``) so each technique can be A/B benchmarked before
-    being promoted to a default.
+    Only the LAB L channel is matched. Matching a/b (global chrominance) was
+    washing out new saturated surfaces — e.g. lawn/dirt → blue metal roofs on
+    Delhi industrial pairs (Report #44) — so AdaptFormer + chromatic recovery
+    both lost the construction signal.
     """
     from .detection_config import get_enable_clahe, get_hist_match
 
@@ -340,14 +341,13 @@ def normalize_radiometry(img1, img2):
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
 
     result = lab2.copy()
-    for ch in range(3):
-        mean1, std1 = np.mean(lab1[:, :, ch]), np.std(lab1[:, :, ch])
-        mean2, std2 = np.mean(lab2[:, :, ch]), np.std(lab2[:, :, ch])
-        if std2 > 1e-6:
-            result[:, :, ch] = (lab2[:, :, ch] - mean2) * (std1 / std2) + mean1
+    # Brightness / contrast only
+    mean1, std1 = float(np.mean(lab1[:, :, 0])), float(np.std(lab1[:, :, 0]))
+    mean2, std2 = float(np.mean(lab2[:, :, 0])), float(np.std(lab2[:, :, 0]))
+    if std2 > 1e-6:
+        result[:, :, 0] = (lab2[:, :, 0] - mean2) * (std1 / std2) + mean1
 
     if get_hist_match():
-        # Stronger than mean/std matching: align the full L-channel distribution
         result[:, :, 0] = _match_histogram(result[:, :, 0], lab1[:, :, 0])
 
     lab1_u = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB)
@@ -399,7 +399,9 @@ def compute_vegetation_mask(img):
 
     ndvi_veg = (ndvi > 0.08).astype(np.float32)
     exg_veg = (exg > 0.05).astype(np.float32)
-    hsv_veg = ((hue >= 35) & (hue <= 85) & (sat > 30)).astype(np.float32)
+    hsv_veg = (
+        ((hue >= 15) & (hue <= 85) & (sat > 30))  # green + yellow crop blooms
+    ).astype(np.float32)
 
     veg = np.clip(ndvi_veg * 0.4 + exg_veg * 0.3 + hsv_veg * 0.3, 0, 1)
     veg = cv2.GaussianBlur(veg, (11, 11), 0)
@@ -451,6 +453,260 @@ def compute_shadow_suppression(img1, img2):
 
     suppression = 1.0 - shadow_map * 0.8
     return suppression.astype(np.float32)
+
+
+def strip_shadow_only_from_mask(change_mask, img1, img2):
+    """Hard-remove illumination/shadow-only pixels from a binary change mask.
+
+    Classical fusion already multiplies scores by ``compute_shadow_suppression``;
+    the DL-only path skipped that, so blue-roof / parking scenes (Report #42 crop)
+    kept long shadow edges as false change.
+    """
+    if change_mask is None or img1 is None or img2 is None:
+        return change_mask
+    if img1.shape[:2] != change_mask.shape[:2] or img2.shape[:2] != change_mask.shape[:2]:
+        return change_mask
+    lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
+    delta_l = np.abs(lab1[:, :, 0] - lab2[:, :, 0])
+    chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
+    brightness_only = (delta_l > 16) & (chroma < 14)
+    # Never strip newly appeared saturated blue roof (chroma can look low in shade)
+    hsv2 = cv2.cvtColor(img2, cv2.COLOR_RGB2HSV)
+    hsv1 = cv2.cvtColor(img1, cv2.COLOR_RGB2HSV)
+    blue_a = (
+        (hsv2[:, :, 0] >= 95) & (hsv2[:, :, 0] <= 130)
+        & (hsv2[:, :, 1] > 50) & (hsv2[:, :, 2] > 40)
+        & (img2[:, :, 2].astype(np.int16) > img2[:, :, 0].astype(np.int16) + 8)
+    )
+    blue_b = (
+        (hsv1[:, :, 0] >= 90) & (hsv1[:, :, 0] <= 135)
+        & (hsv1[:, :, 1] > 45) & (hsv1[:, :, 2] > 35)
+    )
+    protect = blue_a & (~blue_b)
+    brightness_only = brightness_only & (~protect)
+    out = change_mask.copy()
+    removed = int(np.sum((out > 127) & brightness_only))
+    out[brightness_only] = 0
+    if removed:
+        _log.info("Stripped %d shadow/illumination-only pixel(s) from change mask", removed)
+    return out
+
+
+def _is_blue_roof_like(feat) -> bool:
+    """Saturated blue metal/paint roof signature common on Delhi industrial builds."""
+    if not feat:
+        return False
+    # Pixel fraction is reliable when mean hue is diluted by shadows/edges
+    if float(feat.get("blue_roof_frac", 0.0)) >= 0.20:
+        return True
+    h = float(feat.get("hue", 0.0))
+    s = float(feat.get("saturation", 0.0))
+    br = float(feat.get("blue_ratio", 0.0))
+    return 95.0 <= h <= 130.0 and s >= 55.0 and br >= 0.32
+
+
+def _blue_roof_construction_evidence(diff, feat_a) -> bool:
+    """True when after shows new blue roof vs before (lawn/dirt/grey → blue metal)."""
+    if feat_a is None:
+        return False
+    after = (diff or {}).get("after") or {}
+    before = (diff or {}).get("before") or {}
+    brf_a = float(feat_a.get("blue_roof_frac", after.get("blue_roof_frac", 0.0)))
+    brf_b = float(before.get("blue_roof_frac", 0.0)) if before else 0.0
+    if brf_a >= 0.20 and brf_a >= brf_b + 0.10:
+        return True
+    if _is_blue_roof_like(feat_a) and not _is_blue_roof_like(before):
+        return True
+    # Lawn/veg replaced by blue-dominant surface
+    if (
+        brf_a >= 0.18
+        and float(before.get("ndvi", 0.0)) > 0.03
+        and float(feat_a.get("blue_ratio", 0.0)) >= 0.30
+    ):
+        return True
+    return False
+
+
+def _chromatic_roof_gain_mask(before_img, after_img):
+    """Binary mask of saturated blue roof pixels in the after image (seed)."""
+    hsv_a = cv2.cvtColor(after_img, cv2.COLOR_RGB2HSV)
+    strong_blue = (
+        (hsv_a[:, :, 0] >= 98) & (hsv_a[:, :, 0] <= 128)
+        & (hsv_a[:, :, 1] > 55) & (hsv_a[:, :, 2] > 45)
+        & (after_img[:, :, 2].astype(np.int16) > after_img[:, :, 0].astype(np.int16) + 10)
+    )
+    return strong_blue.astype(np.uint8) * 255
+
+
+def recover_chromatic_roof_construction(change_mask, before_img, after_img):
+    """Recover large new blue-roof footprints that AdaptFormer under-detects.
+
+    Report #43 / industrial Delhi pairs: lawn+dirt → bright blue metal roof. The
+    DL score is often near-zero on most of that footprint (median ≈ 0) while
+    firing only on jagged fragments.
+
+    Important: do NOT punch holes with per-pixel ``~blue_before`` — existing
+    blueish debris inside a new roof footprint fragments connected components.
+    Instead keep after-blue blobs whose *region* was mostly non-blue before.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    if before_img.shape[:2] != change_mask.shape[:2] or after_img.shape[:2] != change_mask.shape[:2]:
+        return change_mask
+
+    seed = _chromatic_roof_gain_mask(before_img, after_img)
+    # Light close merges corrugated ridges without swallowing parking lots
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    seed = cv2.morphologyEx(seed, cv2.MORPH_CLOSE, k, iterations=2)
+    seed = cv2.morphologyEx(
+        seed, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+
+    hsv_b = cv2.cvtColor(before_img, cv2.COLOR_RGB2HSV)
+    blue_b = (
+        (hsv_b[:, :, 0] >= 90) & (hsv_b[:, :, 0] <= 135)
+        & (hsv_b[:, :, 1] > 50) & (hsv_b[:, :, 2] > 40)
+        & (before_img[:, :, 2].astype(np.int16) > before_img[:, :, 0].astype(np.int16) + 8)
+    )
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
+
+    img_h, img_w = change_mask.shape[:2]
+    img_area = img_h * img_w
+    min_area = max(5000, int(img_area * 0.00008))
+    max_car = _max_vehicle_area(img_area)
+    area_thr = max(min_area, max_car + 500)
+
+    binary = (seed > 127).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    recovered = np.zeros_like(change_mask)
+    n_comps = 0
+    for i in range(1, num_labels):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if area < area_thr:
+            continue
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        fill = area / max(w * h, 1)
+        aspect = max(w, h) / max(min(w, h), 1)
+        if fill < 0.20 or aspect > 7.0:
+            continue
+        comp = labels == i
+        # Region-level novelty: most of this roof was NOT blue before
+        was_blue = float(np.mean(blue_b[comp]))
+        if was_blue > 0.45:
+            continue
+        mean_chroma = float(np.mean(chroma[comp]))
+        if mean_chroma < 10.0 and was_blue > 0.25:
+            continue
+        recovered[comp] = 255
+        n_comps += 1
+
+    if n_comps == 0:
+        return change_mask
+
+    recovered = cv2.morphologyEx(
+        recovered, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)), iterations=2)
+    # Grow into softer blue (shaded roof panels) without leaving the roof color
+    hsv_a = cv2.cvtColor(after_img, cv2.COLOR_RGB2HSV)
+    soft_blue = (
+        (hsv_a[:, :, 0] >= 95) & (hsv_a[:, :, 0] <= 130)
+        & (hsv_a[:, :, 1] > 35) & (hsv_a[:, :, 2] > 30)
+        & (after_img[:, :, 2].astype(np.int16) > after_img[:, :, 0].astype(np.int16) + 4)
+    ).astype(np.uint8) * 255
+    grown = recovered.copy()
+    dk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    for _ in range(6):
+        grown = cv2.dilate(grown, dk, iterations=1)
+        grown = cv2.bitwise_and(grown, soft_blue)
+        grown = cv2.bitwise_or(grown, recovered)
+    recovered = grown
+    # Fill interior holes (shadow bands on corrugated roofs)
+    fill = recovered.copy()
+    h, w = fill.shape[:2]
+    ff_mask = np.zeros((h + 2, w + 2), np.uint8)
+    cv2.floodFill(fill, ff_mask, (0, 0), 128)
+    holes = (fill != 128) & (recovered == 0)
+    recovered[holes] = 255
+
+    out = change_mask.copy()
+    added = int(np.sum((out <= 127) & (recovered > 127)))
+    out[recovered > 127] = 255
+    if added:
+        _log.info(
+            "Recovered %d chromatic roof pixel(s) across %d building-scale component(s)",
+            added, n_comps,
+        )
+    return out
+
+
+def strip_parking_cluster_from_mask(change_mask, before_img, after_img):
+    """Drop medium blobs that are clusters of rearranged parked cars.
+
+    AdaptFormer often merges a parking row into one component larger than a
+    single vehicle, which escapes ``_is_vehicle_like``. If eroding the blob
+    yields many vehicle-sized pieces and permanent evidence is weak, strip it.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    out = change_mask.copy()
+    img_h, img_w = out.shape[:2]
+    img_area = img_h * img_w
+    max_car = _max_vehicle_area(img_area)
+    binary = (out > 127).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    removed = 0
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    for i in range(1, num_labels):
+        raw_area = int(stats[i, cv2.CC_STAT_AREA])
+        if raw_area < max_car or raw_area > max_car * 12:
+            continue
+        x = int(stats[i, cv2.CC_STAT_LEFT])
+        y = int(stats[i, cv2.CC_STAT_TOP])
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        aspect = max(w, h) / max(min(w, h), 1)
+        # Parking rows are usually elongated or blocky lots
+        if aspect < 1.15 and raw_area < max_car * 2:
+            continue
+        pad = 2
+        y1, y2 = max(0, y - pad), min(img_h, y + h + pad)
+        x1, x2 = max(0, x - pad), min(img_w, x + w + pad)
+        a_crop = after_img[y1:y2, x1:x2]
+        b_crop = before_img[y1:y2, x1:x2]
+        if a_crop.size == 0:
+            continue
+        feat_a = extract_advanced_features(a_crop)
+        if feat_a is None:
+            continue
+        # Never strip saturated blue roof panels as "parking"
+        if _is_blue_roof_like(feat_a) or float(feat_a.get("blue_ratio", 0)) > 0.34:
+            continue
+        diff = _extract_differential_features(b_crop, a_crop) if b_crop.size > 0 else None
+        perm = _permanent_change_evidence(diff, feat_a, raw_area, w, h)
+        if perm >= 0.40:
+            continue
+        # Count vehicle-sized pieces after a light erode of this component
+        comp = ((labels == i).astype(np.uint8) * 255)
+        eroded = cv2.erode(comp, k, iterations=1)
+        n_sub, _, sub_stats, _ = cv2.connectedComponentsWithStats(
+            (eroded > 127).astype(np.uint8), connectivity=8)
+        vehicle_bits = 0
+        for j in range(1, n_sub):
+            sa = int(sub_stats[j, cv2.CC_STAT_AREA])
+            sw = int(sub_stats[j, cv2.CC_STAT_WIDTH])
+            sh = int(sub_stats[j, cv2.CC_STAT_HEIGHT])
+            sasp = max(sw, sh) / max(min(sw, sh), 1)
+            if 80 <= sa <= max_car and 1.05 <= sasp <= 8.0:
+                vehicle_bits += 1
+        if vehicle_bits >= 3 and float(feat_a.get("ndvi", 0)) < 0.12:
+            out[labels == i] = 0
+            removed += 1
+    if removed:
+        _log.info("Stripped %d parking-lot cluster component(s) from change mask", removed)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -992,12 +1248,104 @@ def _structural_evidence(diff, feat_a):
     return min(1.0, score)
 
 
+def _is_yellow_crop_like(feat) -> bool:
+    """True for bright yellow/mustard-style crop blooms in RGB aerial imagery.
+
+    OpenCV HSV hue: yellow ≈ 15–40. RGB proxy NDVI is near 0 for yellow, so the
+    old green-only veg path missed the dominant change on Delhi field pairs.
+    """
+    if not feat:
+        return False
+    h = float(feat.get("hue", 0.0))
+    s = float(feat.get("saturation", 0.0))
+    bright = float(feat.get("brightness", 0.0))
+    return 15.0 <= h <= 42.0 and s >= 55.0 and bright >= 45.0
+
+
+def _hard_building_evidence(diff) -> bool:
+    """Geometric construction evidence — not just any low-SSIM texture change."""
+    if not diff:
+        return False
+    dl = int(diff.get("delta_lines", 0))
+    dc = int(diff.get("delta_corners", 0))
+    ded = float(diff.get("delta_edge_density", 0.0))
+    before = diff.get("before") or {}
+    after = diff.get("after") or {}
+    veg_to_built = (
+        float(before.get("ndvi", 0.0)) > 0.05
+        and float(after.get("ndvi", 0.0)) < 0.02
+        and dl >= 2
+    )
+    # Lawn/dirt → saturated blue metal roof is definitive construction
+    blue_roof_new = _is_blue_roof_like(after) and not _is_blue_roof_like(before)
+    return (
+        (dl >= 5 and dc >= 4)
+        or (dl >= 4 and ded >= 15.0)
+        or (dc >= 8 and ded >= 12.0)
+        or veg_to_built
+        or blue_roof_new
+    )
+
+
+def _spectral_vegetation_strength(diff, feat_a) -> float:
+    """0–1 score for crop/vegetation spectral change (incl. yellow mustard bloom)."""
+    # Blue industrial roofs must never win as "vegetation" (Report #43).
+    if _is_blue_roof_like(feat_a):
+        return 0.0
+    if diff and _is_blue_roof_like(diff.get("after") or {}):
+        return 0.0
+    score = 0.0
+    if diff:
+        if abs(float(diff.get("delta_exg", 0.0))) > 0.04:
+            score += 0.28
+        elif abs(float(diff.get("delta_exg", 0.0))) > 0.02:
+            score += 0.14
+        if abs(float(diff.get("delta_ndvi", 0.0))) > 0.08:
+            score += 0.22
+        if abs(float(diff.get("delta_green_ratio", 0.0))) > 0.04:
+            score += 0.12
+        after = diff.get("after") or {}
+        before = diff.get("before") or {}
+        if _is_yellow_crop_like(after) and not _is_yellow_crop_like(before):
+            score += 0.45
+        elif _is_yellow_crop_like(before) and not _is_yellow_crop_like(after):
+            score += 0.40
+        elif _is_yellow_crop_like(after) or _is_yellow_crop_like(before):
+            score += 0.18
+    if feat_a:
+        if _is_yellow_crop_like(feat_a):
+            score += 0.25
+        if float(feat_a.get("ndvi", 0.0)) > 0.08:
+            score += 0.12
+        if 35.0 <= float(feat_a.get("hue", 0.0)) <= 85.0 and float(feat_a.get("saturation", 0.0)) > 40:
+            score += 0.10
+    return float(min(1.0, score))
+
+
+def _confidence_from_scores(scores: dict) -> tuple[str, float]:
+    """Pick winner; confidence = margin over runner-up (not raw additive score)."""
+    ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    best_name, best_val = ordered[0]
+    second = ordered[1][1] if len(ordered) > 1 else 0.0
+    margin = float(best_val) - float(second)
+    # Map score+margin into a calibrated confidence. Raw sums often hit 1.0 and
+    # previously displayed as "100%" even when classes were nearly tied.
+    conf = 0.35 + 0.40 * float(np.clip(best_val, 0.0, 1.0)) + 0.45 * float(np.clip(margin, 0.0, 0.6))
+    return best_name, float(np.clip(conf, 0.0, 1.0))
+
+
 def _resolve_classification(scores, diff, feat_a):
-    """Apply cross-type constraints; fix water vs construction confusion."""
+    """Apply cross-type constraints; avoid Building bias on crop/seasonal change."""
     structural = _structural_evidence(diff, feat_a)
+    veg_spectral = _spectral_vegetation_strength(diff, feat_a)
+    hard_bld = _hard_building_evidence(diff)
+    after = (diff or {}).get("after") or {}
+    before = (diff or {}).get("before") or {}
+    blue_roof_new = _blue_roof_construction_evidence(diff, feat_a)
 
     water = scores.get("Water Body Change", 0.0)
     bld = scores.get("New Construction/Building", 0.0)
+    veg = scores.get("Vegetation Change", 0.0)
 
     # Water needs smooth, blue, low-edge surface — not just one cue
     water_cues = sum([
@@ -1011,23 +1359,71 @@ def _resolve_classification(scores, diff, feat_a):
         scores["Water Body Change"] = water * 0.45
     elif water_cues < 4:
         scores["Water Body Change"] = water * 0.75
+    # Painted metal roofs are not water even when hue is blue
+    if blue_roof_new or (feat_a and float(feat_a.get("edge_density", 0)) > 30 and _is_blue_roof_like(feat_a)):
+        scores["Water Body Change"] *= 0.15
 
-    # Built structure strongly disqualifies water
-    if structural >= 0.30:
+    # Strong crop/veg spectral change must win over edge-texture "structure"
+    # (urban rooftops always have lines/corners; mustard fields were labeled
+    # New Construction at 90–100% on Report #41).
+    if veg_spectral >= 0.35 and not blue_roof_new:
+        scores["Vegetation Change"] = max(veg, veg_spectral)
+        scores["New Construction/Building"] = bld * 0.35
+        scores["Demolition/Clearing"] = scores.get("Demolition/Clearing", 0.0) * 0.45
+        scores["Road/Pavement Change"] = scores.get("Road/Pavement Change", 0.0) * 0.5
+        scores["Temporary Structure"] = scores.get("Temporary Structure", 0.0) * 0.5
+
+    if blue_roof_new:
+        scores["New Construction/Building"] = min(1.0, max(bld, 0.78) + 0.22)
+        scores["Vegetation Change"] = min(veg * 0.08, 0.12)
+        scores["Water Body Change"] *= 0.15
+        hard_bld = True
+
+    # Built structure disqualifies water — but only boost Building with hard evidence
+    if structural >= 0.30 and veg_spectral < 0.30:
         scores["Water Body Change"] *= max(0.1, 1.0 - structural * 1.2)
-        scores["New Construction/Building"] = min(1.0, bld + structural * 0.45)
+        cur_bld = scores["New Construction/Building"]
+        if hard_bld:
+            scores["New Construction/Building"] = min(1.0, cur_bld + structural * 0.25)
+        elif not blue_roof_new:
+            # Soft texture/SSIM change alone must not become "New Construction"
+            scores["New Construction/Building"] = cur_bld * 0.55
 
-    best = max(scores, key=scores.get)
-    conf = scores[best]
+    best, conf = _confidence_from_scores(scores)
 
-    # Prefer construction when structural evidence is strong and scores are close
+    # Prefer construction only when water was falsely selected and geometry is real
     if (
         best == "Water Body Change"
         and scores["New Construction/Building"] >= conf * 0.72
-        and structural >= 0.22
+        and hard_bld
+        and veg_spectral < 0.25
     ):
         best = "New Construction/Building"
-        conf = scores["New Construction/Building"]
+        conf = min(1.0, scores["New Construction/Building"])
+
+    if blue_roof_new:
+        best = "New Construction/Building"
+        conf = max(conf, min(1.0, scores["New Construction/Building"]))
+
+    # Demote Building/Road/Temporary that lack hard geometry to unclassified
+    soft_structural = {
+        "New Construction/Building",
+        "Road/Pavement Change",
+        "Temporary Structure",
+        "Demolition/Clearing",
+    }
+    if best in soft_structural and not hard_bld and veg_spectral < 0.30:
+        best = "Unclassified Ground Change"
+        conf = min(conf, 0.55)
+
+    # If vegetation spectral wins clearly, force that label
+    if (
+        not blue_roof_new
+        and veg_spectral >= 0.45
+        and scores.get("Vegetation Change", 0.0) >= scores.get(best, 0.0) * 0.85
+    ):
+        best = "Vegetation Change"
+        conf = max(conf, min(1.0, 0.55 + 0.4 * veg_spectral))
 
     return best, conf
 
@@ -1079,7 +1475,15 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
     if model_ok and dl_score is not None and fusion_mode == "dl_only":
         if model_mask is None:
             model_mask = (dl_score >= threshold).astype(np.uint8) * 255
-        combined = _clean_mask(model_mask, sensitivity=sensitivity)
+        # Apply shadow/illumination suppression that classical fusion already had
+        try:
+            shadow = compute_shadow_suppression(img1, img2)
+            dl_score = (dl_score.astype(np.float32) * shadow).astype(np.float32)
+            model_mask = (dl_score >= threshold).astype(np.uint8) * 255
+        except Exception as exc:
+            _log.warning("DL shadow suppression failed: %s", exc)
+        combined = _clean_mask(model_mask, sensitivity=sensitivity, for_dl=True)
+        combined = recover_chromatic_roof_construction(combined, img1, img2)
         debug = {
             "method": "AI-Based Deep Learning (AdaptFormer DL-only)",
             "model": "adaptformer-delhi-v3",
@@ -1287,7 +1691,7 @@ ALIGNMENT_WARNING_MSG = (
 # 11. Robust post-processing
 # ---------------------------------------------------------------------------
 
-def _clean_mask(mask, sensitivity=0.5, border_margin=None):
+def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False):
     """
     Robust morphological cleaning:
     1. Zero-out border pixels (registration artifacts)
@@ -1300,6 +1704,8 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None):
 
     ``border_margin`` defaults to the env-configured value (smaller in full-res
     mode so genuine edge changes are not discarded).
+    ``for_dl`` uses a stronger close so AdaptFormer jagged roof strips coalesce
+    into coherent footprints (blue-roof industrial FP/FN noise).
     """
     if border_margin is None:
         from .detection_config import get_border_margin
@@ -1322,6 +1728,8 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None):
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_open)
 
     close_size = max(3, int(5 * (1 - sensitivity)))
+    if for_dl:
+        close_size = max(close_size, 9)
     if close_size % 2 == 0:
         close_size += 1
     k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
@@ -1520,6 +1928,14 @@ def extract_advanced_features(region):
     shifted_d = np.roll(gray, 1, axis=0)
     glcm_contrast = float(np.mean((gray - shifted_r) ** 2 + (gray - shifted_d) ** 2))
 
+    # Fraction of pixels that look like saturated blue metal roof paint
+    blue_roof_px = (
+        (hsv[:, :, 0] >= 98) & (hsv[:, :, 0] <= 128)
+        & (hsv[:, :, 1] > 55) & (hsv[:, :, 2] > 45)
+        & (region[:, :, 2].astype(np.int16) > region[:, :, 0].astype(np.int16) + 10)
+    )
+    blue_roof_frac = float(np.mean(blue_roof_px))
+
     return {
         "mean_rgb": mean_rgb, "std_rgb": std_rgb, "mean_hsv": mean_hsv, "mean_lab": mean_lab,
         "ndvi": ndvi, "exg": exg,
@@ -1530,6 +1946,7 @@ def extract_advanced_features(region):
         "brightness": float(mean_lab[0]),
         "green_ratio": green_ratio, "blue_ratio": blue_ratio, "red_ratio": red_ratio,
         "saturation": float(mean_hsv[1]), "hue": float(mean_hsv[0]),
+        "blue_roof_frac": blue_roof_frac,
     }
 
 
@@ -1891,6 +2308,11 @@ def classify_object_type(image_region, bbox, before_region=None):
     if _is_transient_object(area, w, h, feat_a, diff, feat_b=feat_b, img_area=img_area):
         return None, 0.0
 
+    # Hard early override: new blue metal roof is never "Vegetation Change"
+    # (mean hue is often diluted ~50–70 by shadows; blue_roof_frac is the cue).
+    if _blue_roof_construction_evidence(diff, feat_a):
+        return "New Construction/Building", 0.92
+
     aspect_ratio = max(w, h) / max(min(w, h), 1)
     compactness = (4 * np.pi * area) / ((2 * (w + h)) ** 2 + 1e-6)
 
@@ -1937,6 +2359,13 @@ def classify_object_type(image_region, bbox, before_region=None):
         if abs(diff["delta_saturation"]) > 15 and (
                 diff["before"]["green_ratio"] > 0.34 or diff["after"]["green_ratio"] > 0.34):
             veg += 0.12
+        # Yellow/mustard crop bloom (RGB aerial) — not covered by green NDVI/ExG
+        if _is_yellow_crop_like(diff["after"]) and not _is_yellow_crop_like(diff["before"]):
+            veg += 0.40
+        elif _is_yellow_crop_like(diff["before"]) and not _is_yellow_crop_like(diff["after"]):
+            veg += 0.35
+        elif _is_yellow_crop_like(diff["after"]) or _is_yellow_crop_like(diff["before"]):
+            veg += 0.15
         if diff["delta_lines"] < 3 and diff["delta_corners"] < 5:
             veg += 0.06
         if area > 500:
@@ -1950,12 +2379,17 @@ def classify_object_type(image_region, bbox, before_region=None):
             veg += 0.18
         if 35 <= feat_a["hue"] <= 85:
             veg += 0.15
+        if _is_yellow_crop_like(feat_a):
+            veg += 0.30
         if feat_a["saturation"] > 40:
             veg += 0.10
         if feat_a["orientation_entropy"] > 2.5:
             veg += 0.05
         if area > 500:
             veg += 0.04
+    # Lawn/dirt → blue metal roof is construction, not vegetation loss
+    if _blue_roof_construction_evidence(diff, feat_a):
+        veg *= 0.05
     scores["Vegetation Change"] = veg
 
     # ---- New Construction/Building ----
@@ -2054,6 +2488,8 @@ def classify_object_type(image_region, bbox, before_region=None):
             bld += 0.08
         if area > 600:
             bld += 0.05
+    if _blue_roof_construction_evidence(diff, feat_a):
+        bld = min(1.0, max(bld, 0.78) + 0.20)
     scores["New Construction/Building"] = bld
     if area < _max_vehicle_area(img_area):
         if _is_radiometric_transient(diff, area, w, h, feat_a, img_area=img_area):
@@ -2237,9 +2673,12 @@ def classify_with_ensemble(image_region, bbox, before_region=None):
     classifications = []
     confidences = []
     transient_count = 0
-    for sb in sub_boxes:
+    full_type, full_conf = None, 0.0
+    for i, sb in enumerate(sub_boxes):
         obj_type, conf = classify_object_type(image_region, sb,
                                               before_region=before_region)
+        if i == 0:
+            full_type, full_conf = obj_type, conf
         if obj_type is None:
             transient_count += 1
             continue
@@ -2254,6 +2693,10 @@ def classify_with_ensemble(image_region, bbox, before_region=None):
         return classify_object_type(image_region, (x, y, w, h),
                                     before_region=before_region)
 
+    # Full-bbox blue-roof construction must not lose to a vegetated corner tile
+    if full_type == "New Construction/Building" and full_conf >= 0.7:
+        return full_type, full_conf
+
     weighted = {}
     counts = Counter(classifications)
     for ot, c in zip(classifications, confidences):
@@ -2264,6 +2707,15 @@ def classify_with_ensemble(image_region, bbox, before_region=None):
 
     if counts[best_type] / len(classifications) >= 0.6:
         avg_conf = min(1.0, avg_conf * 1.15)
+
+    # Prefer construction over vegetation when both appear (roof + former lawn)
+    if (
+        best_type == "Vegetation Change"
+        and weighted.get("New Construction/Building", 0) >= 0.55 * weighted.get(best_type, 1)
+    ):
+        best_type = "New Construction/Building"
+        avg_conf = max(avg_conf, weighted["New Construction/Building"] /
+                       max(counts.get("New Construction/Building", 1), 1))
 
     return best_type, avg_conf
 
@@ -2984,6 +3436,24 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
         }
 
         if before_img is not None:
+            # Safety net: Vegetation label on a new blue roof is always wrong
+            if object_type in _VEGETATION_TYPES:
+                pad = 5
+                ry1 = max(0, y - pad)
+                ry2 = min(image.shape[0], y + h + pad)
+                rx1 = max(0, x - pad)
+                rx2 = min(image.shape[1], x + w + pad)
+                a_crop = image[ry1:ry2, rx1:rx2]
+                b_crop = before_img[ry1:ry2, rx1:rx2]
+                if a_crop.size > 0 and b_crop.size > 0:
+                    fa = extract_advanced_features(a_crop)
+                    dlt = _extract_differential_features(b_crop, a_crop)
+                    if _blue_roof_construction_evidence(dlt, fa):
+                        object_type = "New Construction/Building"
+                        confidence = max(float(confidence), 0.9)
+                        region["object_type"] = object_type
+                        region["confidence"] = confidence
+
             if object_type in _VEGETATION_TYPES:
                 sub, sub_conf = classify_vegetation_subtype(
                     before_img, image, (x, y, w, h))
@@ -3107,6 +3577,10 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         _prog(20, "Registering images")
         before_array, after_array, registration_ok, reg_meta = register_images(
             before_array, after_array)
+    # Keep registered (pre-normalization) copies for chromatic roof recovery —
+    # brightness matching must not be required to see saturated new paint.
+    before_chromatic = before_array.copy()
+    after_chromatic = after_array.copy()
     if enable_normalization:
         _prog(35, "Normalizing radiometry")
         before_array, after_array = normalize_radiometry(before_array, after_array)
@@ -3196,13 +3670,19 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     )
 
     change_mask = strip_transient_from_mask(change_mask, before_array, after_array)
+    change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
+    change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
+    # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs
+    change_mask = recover_chromatic_roof_construction(
+        change_mask, before_chromatic, after_chromatic)
 
     _prog(65, "Analyzing change regions")
+    # Classify on pre-normalization color so blue roofs keep their true hue/chroma
     change_regions = analyze_change_regions(
         change_mask,
-        after_array,
+        after_chromatic,
         min_area=min_region_area,
-        before_img=before_array,
+        before_img=before_chromatic,
         registration_ok=registration_ok,
     )
 

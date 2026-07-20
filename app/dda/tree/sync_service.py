@@ -119,16 +119,38 @@ def _image_type_for(file_path: Path) -> str:
     return "Raster"
 
 
-def _index_image_file(db: Session, node: TreeNode, file_path: Path, rel_file: str) -> bool:
+def _index_image_file(
+    db: Session, node: TreeNode, file_path: Path, rel_file: str, stats: dict,
+) -> bool:
+    """Index one library file. Returns True if newly created.
+
+    Unreadable rasters (corrupt TIFF, etc.) are skipped and counted in
+    ``stats['imagesSkipped']`` so one bad file cannot fail the whole rescan.
+    """
     existing = db.query(ImageLibrary).filter(ImageLibrary.file_path == rel_file).first()
     stat = file_path.stat()
+    try:
+        meta = inspect_image(file_path)
+    except Exception as exc:
+        logger.warning("Skipping unreadable image %s: %s", rel_file, exc)
+        stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
+        return False
+    if meta.width <= 0 or meta.height <= 0:
+        logger.warning(
+            "Skipping image with invalid dimensions (%sx%s): %s",
+            meta.width, meta.height, rel_file,
+        )
+        stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
+        return False
+
     if existing:
         changed = (
             existing.file_size_bytes != stat.st_size
             or existing.node_id != node.id
+            or existing.width != meta.width
+            or existing.height != meta.height
         )
         if changed:
-            meta = inspect_image(file_path)
             existing.node_id = node.id
             existing.file_size_bytes = stat.st_size
             existing.width = meta.width
@@ -137,9 +159,9 @@ def _index_image_file(db: Session, node: TreeNode, file_path: Path, rel_file: st
             existing.bounds_json = bounds_to_json(meta.bounds_wgs84) or existing.bounds_json
             existing.format = meta.format
             db.commit()
+            stats["imagesUpdated"] += 1
         return False
 
-    meta = inspect_image(file_path)
     img = ImageLibrary(
         node_id=node.id,
         image_name=file_path.name,
@@ -196,10 +218,8 @@ def _sync_directory(db: Session, abs_dir: Path, rel_path: str, stats: dict) -> N
                     if not f.is_file() or f.suffix.lower() not in ALLOWED_EXTENSIONS:
                         continue
                     rel_file = f.relative_to(storage_root()).as_posix()
-                    if _index_image_file(db, node, f, rel_file):
+                    if _index_image_file(db, node, f, rel_file, stats):
                         stats["imagesIndexed"] += 1
-                    else:
-                        stats["imagesUpdated"] += 1
             continue
 
         if child.name.lower() in _RESERVED_DIR_NAMES:
@@ -228,6 +248,7 @@ def sync_from_filesystem(db: Session) -> dict:
         "nodesCreated": 0,
         "imagesIndexed": 0,
         "imagesUpdated": 0,
+        "imagesSkipped": 0,
         "orphansFlagged": 0,
         "foldersSkipped": 0,
     }
