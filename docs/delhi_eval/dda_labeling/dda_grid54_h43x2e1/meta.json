@@ -1,0 +1,13 @@
+{
+  "pair_id": "dda_grid54_h43x2e1",
+  "before": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\Grid_54.tif",
+  "after": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\H43X2E1.tif",
+  "preview_shape": [
+    4096,
+    3765
+  ],
+  "max_side": 4096,
+  "seed_changed_px": 0,
+  "seed_note": "blank placeholder \u2014 hand-draw real change; detector seed deferred due to CPU load",
+  "created_unix": 1784612762.308225
+}

@@ -1,0 +1,136 @@
+{
+  "pair_id": "dda_grid54_h43x2e1",
+  "method": "curated_from_fullres_detection_plus_manual_region_review",
+  "label_shape": [
+    4096,
+    3765
+  ],
+  "change_frac": 0.0022583494148406373,
+  "changed_px": 34827,
+  "n_components": 10,
+  "blue_roof_pass_px": 11923,
+  "region_decisions": [
+    {
+      "review_idx": 0,
+      "object_type": "New Construction/Building",
+      "area_det": 22085,
+      "decision": "DROP",
+      "gt_px_added": 0,
+      "reason": "wetland/water seasonal-ish \u2014 exclude"
+    },
+    {
+      "review_idx": 1,
+      "object_type": "New Construction/Building",
+      "area_det": 10348,
+      "decision": "KEEP",
+      "gt_px_added": 6794,
+      "reason": "new blue metal roof"
+    },
+    {
+      "review_idx": 2,
+      "object_type": "New Construction/Building",
+      "area_det": 10154,
+      "decision": "KEEP",
+      "gt_px_added": 6577,
+      "reason": "new blue metal roof over dirt lot"
+    },
+    {
+      "review_idx": 3,
+      "object_type": "New Construction/Building",
+      "area_det": 7051,
+      "decision": "KEEP",
+      "gt_px_added": 4872,
+      "reason": "new blue metal roof in yard"
+    },
+    {
+      "review_idx": 4,
+      "object_type": "New Construction/Building",
+      "area_det": 4136,
+      "decision": "DROP",
+      "gt_px_added": 0,
+      "reason": "tree shadow shift only \u2014 exclude"
+    },
+    {
+      "review_idx": 5,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 3548,
+      "decision": "KEEP",
+      "gt_px_added": 2998,
+      "reason": "new grey building roof over dirt lot"
+    },
+    {
+      "review_idx": 6,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 3334,
+      "decision": "KEEP",
+      "gt_px_added": 2588,
+      "reason": "new white/grey roof over cluttered courtyard"
+    },
+    {
+      "review_idx": 7,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2656,
+      "decision": "DROP",
+      "gt_px_added": 0,
+      "reason": "pool water color (green->blue) \u2014 exclude"
+    },
+    {
+      "review_idx": 8,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2459,
+      "decision": "KEEP",
+      "gt_px_added": 1604,
+      "reason": "blue roof/cover over former parking"
+    },
+    {
+      "review_idx": 9,
+      "object_type": "Bare Land/Soil Change",
+      "area_det": 2421,
+      "decision": "DROP",
+      "gt_px_added": 0,
+      "reason": "aquatic vegetation shift \u2014 exclude"
+    },
+    {
+      "review_idx": 10,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2390,
+      "decision": "KEEP",
+      "gt_px_added": 1459,
+      "reason": "new rooftop solar panels"
+    },
+    {
+      "review_idx": 11,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2317,
+      "decision": "DROP",
+      "gt_px_added": 0,
+      "reason": "tree/veg removal \u2014 exclude"
+    },
+    {
+      "review_idx": 12,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2285,
+      "decision": "SKIP",
+      "gt_px_added": 0,
+      "reason": ""
+    },
+    {
+      "review_idx": 13,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2249,
+      "decision": "SKIP",
+      "gt_px_added": 0,
+      "reason": ""
+    },
+    {
+      "review_idx": 14,
+      "object_type": "Unclassified Ground Change",
+      "area_det": 2221,
+      "decision": "SKIP",
+      "gt_px_added": 0,
+      "reason": ""
+    }
+  ],
+  "policy": "Structural only: new roofs/buildings/solar. Dropped shadows, pool color, wetland/veg.",
+  "added_region_13": true
+}

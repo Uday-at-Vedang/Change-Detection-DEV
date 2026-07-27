@@ -54,22 +54,49 @@ def _serialize_regions(change_regions) -> list:
 
 
 def _filter_weak_other_regions(regions: list) -> list:
-    """Drop DDA 'Other' detections below a confidence floor (env DDA_OTHER_MIN_CONF)."""
+    """Optionally mark tiny low-conf Other blobs — never drop report rows.
+
+    History: a hard conf floor (DDA_OTHER_MIN_CONF=0.5) deleted 13/15 Grid_54
+    regions from ``regions_json`` while the overlay still drew them, so the
+    report disagreed with detection. Regions must match the engine list; ops
+    can hide noise in review instead of deleting at save time.
+
+    Set ``DDA_OTHER_MIN_CONF>0`` and ``DDA_SUPPRESS_WEAK_OTHER=1`` to flag
+    (not remove) tiny Other blobs with ``suppressed=true``.
+    """
     import os
-    raw = os.environ.get("DDA_OTHER_MIN_CONF", "0.5").strip()
+    raw = os.environ.get("DDA_OTHER_MIN_CONF", "0").strip()
     try:
         floor = float(raw)
     except ValueError:
-        floor = 0.5
+        floor = 0.0
+    try:
+        min_area = int(float(os.environ.get("DDA_OTHER_MIN_AREA", "1200")))
+    except ValueError:
+        min_area = 1200
+    suppress = os.environ.get("DDA_SUPPRESS_WEAK_OTHER", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
     if floor <= 0:
+        for r in regions:
+            r.setdefault("suppressed", False)
         return regions
+
     kept = []
+    flagged = 0
     for r in regions:
         dda = (r.get("ddaChangeType") or "").strip()
         conf = float(r.get("confidence") or 0.0)
-        if dda == "Other" and conf < floor:
-            continue
+        area = int(r.get("area") or 0)
+        weak = dda == "Other" and conf < floor and area < min_area
+        r = dict(r)
+        r["suppressed"] = bool(weak and suppress)
+        if weak and suppress:
+            flagged += 1
+        # Never drop — always keep in report JSON
         kept.append(r)
+    if flagged:
+        logger.info("Flagged %d weak Other regions as suppressed (still in report)", flagged)
     return kept
 
 
@@ -266,7 +293,7 @@ def run_detection_and_save(
         total_pixels=total_px,
         changed_pixels=changed_px,
         change_percentage=change_pct,
-        regions_count=len(change_regions),
+        regions_count=len(regions_serializable),
         overlay_path=relative_overlay,
         before_full_path=relative_before_full,
         before_thumb_path=relative_before_thumb,

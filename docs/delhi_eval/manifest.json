@@ -483,6 +483,27 @@
       ],
       "gt_mask": "docs\\delhi_eval\\labels\\delhi_0032.png",
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Visually confirmed real new construction (Day 2 review) \u2014 coarse 10m precision only."
+    },
+    {
+      "pair_id": "dda_grid54_h43x2e1",
+      "before_path": "data/library_sources/central_delhi/Images/Grid_54.tif",
+      "after_path": "data/library_sources/central_delhi/Images/H43X2E1.tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": 0.03,
+      "zone": "Central Delhi / Grid 54",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed_gsd"
+      ],
+      "gt_mask": "docs/delhi_eval/labels/dda_grid54_h43x2e1.png",
+      "notes": "DDA production pair (Grid_54 vs H43X2E1). Hand-label in docs/delhi_eval/dda_labeling/dda_grid54_h43x2e1/ then run scripts/ingest_dda_gt_label.py",
+      "label_preview_size": [
+        3765,
+        4096
+      ]
     }
   ]
 }

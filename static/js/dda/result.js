@@ -108,6 +108,64 @@ async function patchRegionReview(runId, regionId, reviewStatus) {
   return res.region;
 }
 
+function buildDdaRegionRow(r) {
+  const tr = document.createElement('tr');
+  tr.dataset.regionId = r.id;
+  const subType = r.subType || '—';
+  const ddaType = r.ddaChangeType || '—';
+  const mapsUrl = r.latLng
+    ? `https://www.google.com/maps?q=${r.latLng.lat},${r.latLng.lng}&ll=${r.latLng.lat},${r.latLng.lng}&z=19`
+    : null;
+  const latLng = r.latLng
+    ? `<a href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">${r.latLng.lat}, ${r.latLng.lng}</a>`
+    : '—';
+  const severity = (r.severity || 'minor').toLowerCase();
+  const stories = r.estimatedStories != null ? r.estimatedStories : '—';
+  const height = r.estimatedHeightM != null ? r.estimatedHeightM + ' m' : '—';
+  const stage = r.constructionStage && r.constructionStage !== 'Unknown' ? r.constructionStage : '—';
+  const reviewStatus = r.reviewStatus || 'pending';
+  const locked = reviewStatus === 'submitted';
+  const okActive = reviewStatus === 'confirmed' ? ' is-active' : '';
+  const fpActive = reviewStatus === 'false_positive' ? ' is-active' : '';
+  tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.objectType}</td>
+      <td>${ddaType}</td>
+      <td>${latLng}</td>
+      <td>${subType}</td>
+      <td><span class="severity-badge ${severity}">${severity}</span></td>
+      <td>${(r.confidence * 100).toFixed(1)}%</td>
+      <td>${r.areaSqM != null ? r.areaSqM.toLocaleString() + ' m²' : r.area.toLocaleString()}</td>
+      <td>(${r.center.x}, ${r.center.y})</td>
+      <td>${stories}</td>
+      <td>${height}</td>
+      <td>${stage}</td>
+      <td><span class="${reviewBadgeClass(reviewStatus)}">${reviewStatus.replace('_', ' ')}</span></td>
+      <td class="dda-review-btns">
+        <button type="button" class="btn btn-secondary btn-sm btn-review-ok${okActive}" data-action="confirmed" ${locked ? 'disabled' : ''} title="Confirm">✓</button>
+        <button type="button" class="btn btn-secondary btn-sm btn-review-fp${fpActive}" data-action="false_positive" ${locked ? 'disabled' : ''} title="False positive">✗</button>
+        <button type="button" class="btn btn-secondary btn-sm btn-review-locate" title="Locate">◎</button>
+        ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">Map</a>` : ''}
+      </td>
+    `;
+  return tr;
+}
+
+function rebuildDdaRegionRows() {
+  ddaRegionRows = (ddaRegionList || []).map((r) => buildDdaRegionRow(r));
+}
+
+function applyRegionReviewLocally(regionId, reviewStatus, extra = {}) {
+  const idx = ddaRegionList.findIndex((x) => x.id === regionId);
+  if (idx < 0) return null;
+  const prev = ddaRegionList[idx];
+  ddaRegionList[idx] = { ...prev, ...extra, reviewStatus };
+  ddaRegionRows[idx] = buildDdaRegionRow(ddaRegionList[idx]);
+  renderDdaRegionPage();
+  updateDdaReviewSummary(ddaRegionList);
+  return prev;
+}
+
 function showDdaResult(data) {
   const modal = document.getElementById('result-modal');
   const statsEl = document.getElementById('result-stats');
@@ -183,46 +241,7 @@ function showDdaResult(data) {
 
   const regions = data.regions || [];
   ddaRegionList = regions;
-  ddaRegionRows = regions.map((r) => {
-    const tr = document.createElement('tr');
-    tr.dataset.regionId = r.id;
-    const subType = r.subType || '—';
-    const ddaType = r.ddaChangeType || '—';
-    const mapsUrl = r.latLng
-      ? `https://www.google.com/maps/search/?api=1&query=${r.latLng.lat},${r.latLng.lng}`
-      : null;
-    const latLng = r.latLng
-      ? `<a href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">${r.latLng.lat}, ${r.latLng.lng}</a>`
-      : '—';
-    const severity = (r.severity || 'minor').toLowerCase();
-    const stories = r.estimatedStories != null ? r.estimatedStories : '—';
-    const height = r.estimatedHeightM != null ? r.estimatedHeightM + ' m' : '—';
-    const stage = r.constructionStage && r.constructionStage !== 'Unknown' ? r.constructionStage : '—';
-    const reviewStatus = r.reviewStatus || 'pending';
-    const locked = reviewStatus === 'submitted';
-    tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.objectType}</td>
-      <td>${ddaType}</td>
-      <td>${latLng}</td>
-      <td>${subType}</td>
-      <td><span class="severity-badge ${severity}">${severity}</span></td>
-      <td>${(r.confidence * 100).toFixed(1)}%</td>
-      <td>${r.areaSqM != null ? r.areaSqM.toLocaleString() + ' m²' : r.area.toLocaleString()}</td>
-      <td>(${r.center.x}, ${r.center.y})</td>
-      <td>${stories}</td>
-      <td>${height}</td>
-      <td>${stage}</td>
-      <td><span class="${reviewBadgeClass(reviewStatus)}">${reviewStatus.replace('_', ' ')}</span></td>
-      <td class="dda-review-btns">
-        <button type="button" class="btn btn-secondary btn-sm btn-review-ok" data-action="confirmed" ${locked ? 'disabled' : ''} title="Confirm">✓</button>
-        <button type="button" class="btn btn-secondary btn-sm btn-review-fp" data-action="false_positive" ${locked ? 'disabled' : ''} title="False positive">✗</button>
-        <button type="button" class="btn btn-secondary btn-sm btn-review-locate" title="Locate">◎</button>
-        ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">Map</a>` : ''}
-      </td>
-    `;
-    return tr;
-  });
+  rebuildDdaRegionRows();
 
   ddaRegionPage = 0;
   renderDdaRegionPage();
@@ -279,26 +298,24 @@ function setupDdaReviewButtons(tbody, regions) {
     tr.querySelector('.btn-review-ok')?.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = parseInt(tr.dataset.regionId, 10);
+      const prev = applyRegionReviewLocally(id, 'confirmed');
       try {
         const updated = await patchRegionReview(runId, id, 'confirmed');
-        const idx = ddaRegionList.findIndex((x) => x.id === id);
-        if (idx >= 0) ddaRegionList[idx] = { ...ddaRegionList[idx], ...updated };
-        renderDdaRegionPage();
-        updateDdaReviewSummary(ddaRegionList);
+        applyRegionReviewLocally(id, updated?.reviewStatus || 'confirmed', updated || {});
       } catch (err) {
+        if (prev) applyRegionReviewLocally(id, prev.reviewStatus || 'pending', prev);
         if (typeof showDdaError === 'function') showDdaError(err.message);
       }
     });
     tr.querySelector('.btn-review-fp')?.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = parseInt(tr.dataset.regionId, 10);
+      const prev = applyRegionReviewLocally(id, 'false_positive');
       try {
         const updated = await patchRegionReview(runId, id, 'false_positive');
-        const idx = ddaRegionList.findIndex((x) => x.id === id);
-        if (idx >= 0) ddaRegionList[idx] = { ...ddaRegionList[idx], ...updated };
-        renderDdaRegionPage();
-        updateDdaReviewSummary(ddaRegionList);
+        applyRegionReviewLocally(id, updated?.reviewStatus || 'false_positive', updated || {});
       } catch (err) {
+        if (prev) applyRegionReviewLocally(id, prev.reviewStatus || 'pending', prev);
         if (typeof showDdaError === 'function') showDdaError(err.message);
       }
     });
@@ -319,39 +336,80 @@ function selectAndLocateRegion(tr, regions) {
   locateRegionOnViewer(r);
 }
 
-function locateRegionOnViewer(r) {
+/** Layout metrics for the before image (drives compare-slider size). */
+function getCompareImageMetrics() {
+  const beforeImg = document.getElementById('compare-before-img');
+  if (!beforeImg || !beforeImg.naturalWidth) return null;
+  const dispW = beforeImg.clientWidth;
+  const dispH = beforeImg.clientHeight;
+  if (dispW <= 0 || dispH <= 0) return null;
+  return {
+    scaleX: dispW / beforeImg.naturalWidth,
+    scaleY: dispH / beforeImg.naturalHeight,
+    offsetX: beforeImg.offsetLeft || 0,
+    offsetY: beforeImg.offsetTop || 0,
+    dispW,
+    dispH,
+    imgW: beforeImg.naturalWidth,
+    imgH: beforeImg.naturalHeight,
+  };
+}
+
+function placeRegionHighlight(r, { pulse = false } = {}) {
   const overlay = document.getElementById('region-highlight-overlay');
-  if (!r || !r.bbox || !overlay) return;
+  if (!overlay || !r || !r.bbox) return null;
+  const m = getCompareImageMetrics();
+  if (!m) return null;
   overlay.innerHTML = '';
   const box = document.createElement('div');
-  box.className = 'highlight-box highlight-pulse';
-  const imgEl = document.getElementById('compare-after-img');
-  const slider = document.getElementById('compare-slider');
-  const wrapper = document.getElementById('zoom-wrapper');
-  if (!imgEl || !slider || !imgEl.naturalWidth) return;
-  const rw = slider.offsetWidth;
-  const rh = slider.offsetHeight;
-  const imgW = imgEl.naturalWidth || 1;
-  const imgH = imgEl.naturalHeight || 1;
-  const scale = Math.min(rw / imgW, rh / imgH);
-  const drawW = imgW * scale;
-  const drawH = imgH * scale;
-  const offsetX = (rw - drawW) / 2;
-  const offsetY = (rh - drawH) / 2;
-  box.style.left = (offsetX + r.bbox.x * scale) + 'px';
-  box.style.top = (offsetY + r.bbox.y * scale) + 'px';
-  box.style.width = (r.bbox.w * scale) + 'px';
-  box.style.height = (r.bbox.h * scale) + 'px';
+  box.className = pulse ? 'highlight-box highlight-pulse' : 'highlight-box';
+  box.style.left = `${m.offsetX + r.bbox.x * m.scaleX}px`;
+  box.style.top = `${m.offsetY + r.bbox.y * m.scaleY}px`;
+  box.style.width = `${Math.max(2, r.bbox.w * m.scaleX)}px`;
+  box.style.height = `${Math.max(2, r.bbox.h * m.scaleY)}px`;
   overlay.appendChild(box);
+  return m;
+}
 
-  if (wrapper && r.bbox.w > 0 && r.bbox.h > 0) {
-    const cx = r.bbox.x + r.bbox.w / 2;
-    const cy = r.bbox.y + r.bbox.h / 2;
-    ddaZoom = Math.min(DDA_ZOOM_MAX, Math.max(1.5, Math.min(drawW / (r.bbox.w * scale * 2.5), drawH / (r.bbox.h * scale * 2.5))));
+function scrollViewerToRegion(r) {
+  const wrapper = document.getElementById('zoom-wrapper');
+  const m = getCompareImageMetrics();
+  if (!wrapper || !m || !r?.bbox) return;
+  const cx = m.offsetX + (r.bbox.x + r.bbox.w / 2) * m.scaleX;
+  const cy = m.offsetY + (r.bbox.y + r.bbox.h / 2) * m.scaleY;
+  wrapper.scrollTo({
+    left: Math.max(0, cx - wrapper.clientWidth / 2),
+    top: Math.max(0, cy - wrapper.clientHeight / 2),
+    behavior: 'smooth',
+  });
+}
+
+function locateRegionOnViewer(r) {
+  if (!r || !r.bbox) return;
+  const beforeImg = document.getElementById('compare-before-img');
+  const wrapper = document.getElementById('zoom-wrapper');
+  if (!beforeImg || !wrapper) return;
+
+  const runLocate = () => {
+    const m0 = getCompareImageMetrics();
+    if (!m0) return;
+    // Size region to ~40% of the shorter viewport edge (natural→display at zoom 1).
+    const basePx = Math.max(r.bbox.w, r.bbox.h) * (wrapper.clientWidth / m0.imgW);
+    const desired = Math.min(wrapper.clientWidth, wrapper.clientHeight) * 0.4;
+    const nextZoom = desired / Math.max(basePx, 1);
+    ddaZoom = Math.min(DDA_ZOOM_MAX, Math.max(1.25, nextZoom));
     applyDdaZoom();
-    wrapper.scrollLeft = Math.max(0, (offsetX + cx * scale) * ddaZoom - wrapper.clientWidth / 2);
-    wrapper.scrollTop = Math.max(0, (offsetY + cy * scale) * ddaZoom - wrapper.clientHeight / 2);
+    requestAnimationFrame(() => {
+      placeRegionHighlight(r, { pulse: true });
+      scrollViewerToRegion(r);
+    });
+  };
+
+  if (!beforeImg.naturalWidth) {
+    beforeImg.addEventListener('load', runLocate, { once: true });
+    return;
   }
+  runLocate();
 }
 
 function setupDdaRegionHover(tbody, regions) {
@@ -361,28 +419,7 @@ function setupDdaRegionHover(tbody, regions) {
   function showRegionHighlight(r, zoomTo) {
     if (!r || !r.bbox) return;
     if (zoomTo) locateRegionOnViewer(r);
-    else {
-      overlay.innerHTML = '';
-      const box = document.createElement('div');
-      box.className = 'highlight-box';
-      const imgEl = document.getElementById('compare-after-img');
-      const slider = document.getElementById('compare-slider');
-      if (!imgEl || !slider || !imgEl.naturalWidth) return;
-      const rw = slider.offsetWidth;
-      const rh = slider.offsetHeight;
-      const imgW = imgEl.naturalWidth || 1;
-      const imgH = imgEl.naturalHeight || 1;
-      const scale = Math.min(rw / imgW, rh / imgH);
-      const drawW = imgW * scale;
-      const drawH = imgH * scale;
-      const offsetX = (rw - drawW) / 2;
-      const offsetY = (rh - drawH) / 2;
-      box.style.left = (offsetX + r.bbox.x * scale) + 'px';
-      box.style.top = (offsetY + r.bbox.y * scale) + 'px';
-      box.style.width = (r.bbox.w * scale) + 'px';
-      box.style.height = (r.bbox.h * scale) + 'px';
-      overlay.appendChild(box);
-    }
+    else placeRegionHighlight(r, { pulse: false });
   }
 
   tbody.querySelectorAll('tr[data-region-id]').forEach((tr) => {
@@ -432,19 +469,32 @@ function applyDdaZoom() {
   const slider = document.getElementById('compare-slider');
   const levelEl = document.getElementById('zoom-level');
   if (!slider) return;
-  slider.style.transform = `scale(${ddaZoom})`;
-  slider.style.transformOrigin = 'center top';
+  // Width-based zoom keeps overflow:auto scrollable (CSS transform does not).
+  slider.style.transform = 'none';
+  slider.style.transformOrigin = '';
+  slider.style.width = `${Math.max(DDA_ZOOM_MIN, ddaZoom) * 100}%`;
+  slider.style.maxWidth = 'none';
   if (levelEl) levelEl.textContent = Math.round(ddaZoom * 100) + '%';
+  if (ddaSelectedRegionId != null) {
+    const r = ddaRegionList.find((x) => x.id === ddaSelectedRegionId);
+    if (r) placeRegionHighlight(r, { pulse: true });
+  }
 }
 
 function resetDdaZoom() {
   ddaZoom = 1;
   applyDdaZoom();
+  const wrapper = document.getElementById('zoom-wrapper');
+  if (wrapper) {
+    wrapper.scrollLeft = 0;
+    wrapper.scrollTop = 0;
+  }
 }
 
 function initDdaCompareSlider() {
   const slider = document.getElementById('compare-slider');
-  if (!slider) return;
+  const handle = document.getElementById('compare-handle');
+  if (!slider || !handle) return;
   let isDragging = false;
 
   function updatePosition(clientX) {
@@ -452,15 +502,60 @@ function initDdaCompareSlider() {
     const rect = slider.getBoundingClientRect();
     const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     document.getElementById('compare-after-clip').style.clipPath = `inset(0 0 0 ${pct}%)`;
-    document.getElementById('compare-handle').style.left = pct + '%';
+    handle.style.left = pct + '%';
   }
 
-  slider.addEventListener('mousedown', (e) => { if (ddaViewMode !== 'slider') return; e.preventDefault(); isDragging = true; updatePosition(e.clientX); });
+  // Only the handle adjusts the before/after clip — rest of image is free to pan.
+  handle.addEventListener('mousedown', (e) => {
+    if (ddaViewMode !== 'slider') return;
+    e.preventDefault();
+    e.stopPropagation();
+    isDragging = true;
+    updatePosition(e.clientX);
+  });
   document.addEventListener('mousemove', (e) => { if (isDragging) updatePosition(e.clientX); });
   document.addEventListener('mouseup', () => { isDragging = false; });
-  slider.addEventListener('touchstart', (e) => { if (ddaViewMode !== 'slider') return; isDragging = true; updatePosition(e.touches[0].clientX); }, { passive: true });
+  handle.addEventListener('touchstart', (e) => {
+    if (ddaViewMode !== 'slider') return;
+    e.stopPropagation();
+    isDragging = true;
+    updatePosition(e.touches[0].clientX);
+  }, { passive: true });
   document.addEventListener('touchmove', (e) => { if (isDragging) updatePosition(e.touches[0].clientX); }, { passive: true });
   document.addEventListener('touchend', () => { isDragging = false; });
+}
+
+function initDdaMapPan() {
+  const wrap = document.getElementById('zoom-wrapper');
+  if (!wrap) return;
+  let panning = false;
+  let startX = 0;
+  let startY = 0;
+  let scrollLeft = 0;
+  let scrollTop = 0;
+
+  wrap.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.compare-handle')) return;
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    panning = true;
+    wrap.classList.add('is-panning');
+    startX = e.clientX;
+    startY = e.clientY;
+    scrollLeft = wrap.scrollLeft;
+    scrollTop = wrap.scrollTop;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!panning) return;
+    wrap.scrollLeft = scrollLeft - (e.clientX - startX);
+    wrap.scrollTop = scrollTop - (e.clientY - startY);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!panning) return;
+    panning = false;
+    wrap.classList.remove('is-panning');
+  });
 }
 
 function initDdaViewToolbar() {
@@ -483,6 +578,7 @@ function initDdaZoom() {
     applyDdaZoom();
   });
   document.getElementById('zoom-wrapper')?.addEventListener('wheel', (e) => {
+    // Ctrl/Cmd+wheel zooms; plain wheel scrolls (native overflow).
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
     if (e.deltaY < 0) ddaZoom = Math.min(DDA_ZOOM_MAX, ddaZoom + DDA_ZOOM_STEP);
@@ -503,5 +599,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 initDdaCompareSlider();
+initDdaMapPan();
 initDdaZoom();
 initDdaViewToolbar();
+applyDdaZoom();

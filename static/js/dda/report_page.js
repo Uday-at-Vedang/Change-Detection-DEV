@@ -69,7 +69,7 @@ async function loadReportPage() {
             const { lat, lng } = regionLatLng(r);
             const hasCoords = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
             const mapsUrl = hasCoords
-              ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+              ? `https://www.google.com/maps?q=${lat},${lng}&ll=${lat},${lng}&z=19`
               : null;
             return `
             <tr>

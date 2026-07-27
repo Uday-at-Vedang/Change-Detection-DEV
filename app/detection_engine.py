@@ -484,6 +484,19 @@ def strip_shadow_only_from_mask(change_mask, img1, img2):
         & (hsv1[:, :, 1] > 45) & (hsv1[:, :, 2] > 35)
     )
     protect = blue_a & (~blue_b)
+    # Also protect new dark roofs / solar (large darkening with residual texture)
+    # — pure shadow strip would delete GT dark-roof cases (bright lot → black tarp).
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    gx = cv2.Sobel(gray2, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray2, cv2.CV_32F, 0, 1, ksize=3)
+    edge2 = np.sqrt(gx * gx + gy * gy)
+    dark_new = (
+        (lab2[:, :, 0] < 88)
+        & ((lab1[:, :, 0] - lab2[:, :, 0]) > 28)
+        & (edge2 > 16)
+        & (hsv2[:, :, 1] < 120)
+    )
+    protect = protect | dark_new
     brightness_only = brightness_only & (~protect)
     out = change_mask.copy()
     removed = int(np.sum((out > 127) & brightness_only))
@@ -546,9 +559,10 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
     DL score is often near-zero on most of that footprint (median ≈ 0) while
     firing only on jagged fragments.
 
-    Important: do NOT punch holes with per-pixel ``~blue_before`` — existing
-    blueish debris inside a new roof footprint fragments connected components.
-    Instead keep after-blue blobs whose *region* was mostly non-blue before.
+    When a new blue roof abuts an existing blue court/pool, morphological close
+    can merge them into one component that looks "already blue before". In that
+    case keep only the *novel* (non-blue-before) pixels so solar/new roofs are
+    not discarded with the pre-existing blue surface.
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -571,12 +585,14 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
     lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
     chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
+    d_l = lab1[:, :, 0] - lab2[:, :, 0]
 
     img_h, img_w = change_mask.shape[:2]
     img_area = img_h * img_w
-    min_area = max(5000, int(img_area * 0.00008))
+    # Lower floor so mid-size roofs / solar arrays (~2.5k–5k px) are eligible.
+    min_area = max(2500, int(img_area * 0.00005))
     max_car = _max_vehicle_area(img_area)
-    area_thr = max(min_area, max_car + 500)
+    area_thr = max(min_area, int(max_car * 0.45))
 
     binary = (seed > 127).astype(np.uint8)
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
@@ -590,17 +606,26 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
         h = int(stats[i, cv2.CC_STAT_HEIGHT])
         fill = area / max(w * h, 1)
         aspect = max(w, h) / max(min(w, h), 1)
-        if fill < 0.20 or aspect > 7.0:
+        if fill < 0.18 or aspect > 8.0:
             continue
         comp = labels == i
-        # Region-level novelty: most of this roof was NOT blue before
+        novel = comp & (~blue_b)
+        novel_px = int(np.sum(novel))
         was_blue = float(np.mean(blue_b[comp]))
-        if was_blue > 0.45:
+        novel_frac = novel_px / max(area, 1)
+        # Mostly pre-existing blue with no substantial novel footprint → skip
+        if was_blue > 0.55 and novel_px < area_thr:
             continue
-        mean_chroma = float(np.mean(chroma[comp]))
-        if mean_chroma < 10.0 and was_blue > 0.25:
+        if novel_frac < 0.18 and was_blue > 0.40:
             continue
-        recovered[comp] = 255
+        mean_chroma = float(np.mean(chroma[novel])) if novel_px else float(np.mean(chroma[comp]))
+        if mean_chroma < 8.0 and was_blue > 0.30 and float(np.mean(d_l[novel] if novel_px else d_l[comp])) < 6.0:
+            continue
+        # Prefer novel pixels when the blob swallowed an old blue surface
+        if was_blue > 0.35 and novel_px >= min_area:
+            recovered[novel] = 255
+        else:
+            recovered[comp] = 255
         n_comps += 1
 
     if n_comps == 0:
@@ -616,6 +641,8 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
         & (hsv_a[:, :, 1] > 35) & (hsv_a[:, :, 2] > 30)
         & (after_img[:, :, 2].astype(np.int16) > after_img[:, :, 0].astype(np.int16) + 4)
     ).astype(np.uint8) * 255
+    # Do not grow onto pixels that were already strong blue before
+    soft_blue[blue_b] = 0
     grown = recovered.copy()
     dk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     for _ in range(6):
@@ -639,6 +666,214 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
             "Recovered %d chromatic roof pixel(s) across %d building-scale component(s)",
             added, n_comps,
         )
+    return out
+
+
+def _dark_roof_gain_mask(before_img, after_img):
+    """Seed mask for new dark/grey/black roofs and solar arrays (bright→dark)."""
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    d_l = lab1[:, :, 0] - lab2[:, :, 0]
+    l2 = lab2[:, :, 0]
+    hsv_a = cv2.cvtColor(after_img, cv2.COLOR_RGB2HSV)
+    sat = hsv_a[:, :, 1]
+    val = hsv_a[:, :, 2]
+    hue = hsv_a[:, :, 0]
+    exg = (
+        2.0 * after_img[:, :, 1].astype(np.float32)
+        - after_img[:, :, 0].astype(np.float32)
+        - after_img[:, :, 2].astype(np.float32)
+    )
+    # Exclude vivid recreational paint (court blue/green/red)
+    court = (
+        (sat > 90)
+        & (
+            ((hue >= 90) & (hue <= 140))
+            | ((hue >= 35) & (hue <= 85))
+            | ((hue <= 12) | (hue >= 168))
+        )
+        & (val > 100)
+    )
+    gray_a = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    gx = cv2.Sobel(gray_a, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray_a, cv2.CV_32F, 0, 1, ksize=3)
+    edge = np.sqrt(gx * gx + gy * gy)
+    # Dark after, strong darkening, not veg, not court paint
+    seed = (
+        (l2 < 88)
+        & (val < 140)
+        & (d_l > 28)
+        & (exg < 18)
+        & (~court)
+        & (sat < 120)
+        & (edge > 16)
+    )
+    return seed.astype(np.uint8) * 255
+
+
+def recover_dark_roof_construction(change_mask, before_img, after_img):
+    """Recover new dark/grey roofs and solar arrays AdaptFormer under-fires on.
+
+    Two modes (keeps city-wide shadow FP low):
+    1. Grow existing change blobs into adjacent dark-roof seeds.
+    2. Add only high-confidence standalone dark footprints (strong darkening,
+       compact fill) that look like new tarp/metal/solar — not soft shadows.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    if before_img.shape[:2] != change_mask.shape[:2] or after_img.shape[:2] != change_mask.shape[:2]:
+        return change_mask
+
+    seed = _dark_roof_gain_mask(before_img, after_img)
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    seed = cv2.morphologyEx(seed, cv2.MORPH_CLOSE, k, iterations=2)
+    seed = cv2.morphologyEx(
+        seed, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    d_l = lab1[:, :, 0] - lab2[:, :, 0]
+    exg = (
+        2.0 * after_img[:, :, 1].astype(np.float32)
+        - after_img[:, :, 0].astype(np.float32)
+        - after_img[:, :, 2].astype(np.float32)
+    )
+
+    img_h, img_w = change_mask.shape[:2]
+    img_area = img_h * img_w
+    min_area = max(2200, int(img_area * 0.00005))
+    max_car = _max_vehicle_area(img_area)
+    area_thr = max(min_area, int(max_car * 0.40))
+    max_area = int(img_area * 0.008)
+
+    # --- Mode 1: grow existing detections into nearby dark seeds only ---
+    # Local band (not city-wide geodesic) — otherwise one DL fragment floods
+    # into the entire dark-seed field and change% explodes.
+    existing = (change_mask > 127).astype(np.uint8) * 255
+    grown_add = np.zeros_like(change_mask)
+    if int(existing.sum()) > 0 and int(seed.sum()) > 0:
+        band = cv2.dilate(
+            existing, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)), iterations=2)
+        local = cv2.bitwise_and(seed, band)
+        # Small geodesic fill inside the local band
+        grown = existing.copy()
+        dk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        allowed = cv2.bitwise_or(existing, local)
+        for _ in range(4):
+            nxt = cv2.dilate(grown, dk, iterations=1)
+            nxt = cv2.bitwise_and(nxt, allowed)
+            if np.array_equal(nxt, grown):
+                break
+            grown = nxt
+        grown_add = cv2.bitwise_and(grown, local)
+
+    # --- Mode 2: strict standalone dark-roof components ---
+    # Strong darkening only — avoid heavy close (it merges city-wide shadows
+    # into one mega-component and then everything fails max_area).
+    strict = ((seed > 127) & (d_l > 45)).astype(np.uint8)
+    strict = cv2.morphologyEx(
+        strict, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
+    binary = strict
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    recovered = np.zeros_like(change_mask)
+    n_comps = 0
+    # Tarp/solar patches can be smaller than a vehicle; require stronger dL.
+    strong_area_thr = max(400, int(img_area * 0.00002))
+    for i in range(1, num_labels):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if area > max_area:
+            continue
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        fill = area / max(w * h, 1)
+        aspect = max(w, h) / max(min(w, h), 1)
+        if fill < 0.30 or aspect > 6.5:
+            continue
+        comp = labels == i
+        mean_dl = float(np.mean(d_l[comp]))
+        if mean_dl < 45.0:
+            continue
+        if float(np.mean(exg[comp])) > 14.0:
+            continue
+        if float(np.mean(lab2[:, :, 0][comp])) > 80.0:
+            continue
+        need = strong_area_thr if mean_dl >= 55.0 else area_thr
+        if area < need:
+            continue
+        recovered[comp] = 255
+        n_comps += 1
+
+    if n_comps:
+        recovered = cv2.morphologyEx(
+            recovered, cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)), iterations=1)
+
+    out = change_mask.copy()
+    # Apply local dark-adjacent fill
+    added_grow = int(np.sum((out <= 127) & (grown_add > 127)))
+    out[grown_add > 127] = 255
+    added_new = int(np.sum((out <= 127) & (recovered > 127)))
+    out[recovered > 127] = 255
+    added = added_grow + added_new
+    if added:
+        _log.info(
+            "Recovered %d dark-roof/solar pixel(s) (%d grow, %d new comps)",
+            added, added_grow, n_comps,
+        )
+    return out
+
+
+def strip_weak_seasonal_veg_from_mask(change_mask, before_img, after_img):
+    """Drop large high-NDVI blobs that lack structural evidence (seasonal fields).
+
+    Hysteresis / weak DL scores can merge agricultural phenology into huge
+    components that drown the report. Keep vegetation only when permanent /
+    structural evidence is present or the footprint is modest.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    out = change_mask.copy()
+    img_h, img_w = out.shape[:2]
+    img_area = img_h * img_w
+    max_car = _max_vehicle_area(img_area)
+    binary = (out > 127).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    removed = 0
+    for i in range(1, num_labels):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        # Only touch very large blobs (field-scale), not building roofs
+        if area < max(max_car * 4, int(img_area * 0.0015)):
+            continue
+        x = int(stats[i, cv2.CC_STAT_LEFT])
+        y = int(stats[i, cv2.CC_STAT_TOP])
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        pad = 2
+        y1, y2 = max(0, y - pad), min(img_h, y + h + pad)
+        x1, x2 = max(0, x - pad), min(img_w, x + w + pad)
+        a_crop = after_img[y1:y2, x1:x2]
+        b_crop = before_img[y1:y2, x1:x2]
+        if a_crop.size == 0:
+            continue
+        feat_a = extract_advanced_features(a_crop)
+        if feat_a is None:
+            continue
+        if _is_blue_roof_like(feat_a) or _dark_roof_construction_evidence(None, feat_a):
+            continue
+        diff = _extract_differential_features(b_crop, a_crop) if b_crop.size > 0 else None
+        if _blue_roof_construction_evidence(diff, feat_a):
+            continue
+        if _dark_roof_construction_evidence(diff, feat_a):
+            continue
+        perm = _permanent_change_evidence(diff, feat_a, area, w, h)
+        ndvi = float(feat_a.get("ndvi", 0.0))
+        exg = float(feat_a.get("exg", 0.0))
+        if perm < 0.30 and (ndvi > 0.12 or exg > 12.0):
+            out[labels == i] = 0
+            removed += 1
+    if removed:
+        _log.info("Stripped %d large seasonal-vegetation component(s) from change mask", removed)
     return out
 
 
@@ -837,21 +1072,30 @@ def _hysteresis_threshold(score, high_thr, low_thr):
     high-threshold "seed" pixel, and drops the rest. This recovers complete
     change blobs (less fragmentation) while removing isolated weak speckle that
     a single hard threshold would either cut or admit.
+
+    The low mask is lightly opened first so weak seasonal/veg bridges cannot
+    merge distant strong seeds into city-scale mega-components.
     """
     score = score.astype(np.float32)
     high = (score >= high_thr).astype(np.uint8)
     if int(high.sum()) == 0:
         return (high * 255).astype(np.uint8)
     low = (score >= min(low_thr, high_thr)).astype(np.uint8)
+    # Break thin weak bridges between unrelated change pockets
+    low = cv2.morphologyEx(
+        low, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+    low = cv2.bitwise_or(low, high)  # never erase strong seeds
     num, labels = cv2.connectedComponents(low, connectivity=8)
     if num <= 1:
         return (high * 255).astype(np.uint8)
     seed_labels = np.unique(labels[high > 0])
-    seed_labels = seed_labels[seed_labels != 0]
+    seed_labels = seed_labels[seed_labels > 0]
     if seed_labels.size == 0:
         return (high * 255).astype(np.uint8)
-    keep = np.isin(labels, seed_labels)
-    return np.where(keep, 255, 0).astype(np.uint8)
+    out = np.zeros_like(high)
+    for lab in seed_labels:
+        out[labels == lab] = 1
+    return (out * 255).astype(np.uint8)
 
 
 def compute_texture_change(img1, img2):
@@ -1482,8 +1726,17 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
             model_mask = (dl_score >= threshold).astype(np.uint8) * 255
         except Exception as exc:
             _log.warning("DL shadow suppression failed: %s", exc)
+        # Mild hysteresis only at lower operating points. At thr≥0.45 (val F1≈0.71
+        # recipe) skip it so weak scores are not pulled back in.
+        if threshold < 0.45:
+            low_thr = float(np.clip(threshold * 0.65, 0.10, threshold))
+            hyst = _hysteresis_threshold(dl_score, high_thr=threshold, low_thr=low_thr)
+            if hyst is not None and int(np.sum(hyst > 127)) > 0:
+                model_mask = cv2.bitwise_or(model_mask, hyst)
         combined = _clean_mask(model_mask, sensitivity=sensitivity, for_dl=True)
         combined = recover_chromatic_roof_construction(combined, img1, img2)
+        # Dark-roof recovery runs once after transient/shadow strip in
+        # ``run_detection`` so local grow cannot compound twice.
         debug = {
             "method": "AI-Based Deep Learning (AdaptFormer DL-only)",
             "model": "adaptformer-delhi-v3",
@@ -1721,30 +1974,36 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False):
 
     mask = cv2.medianBlur(mask, 3)
 
-    open_size = max(3, int(4 * (1 - sensitivity * 0.5)))
-    if open_size % 2 == 0:
-        open_size += 1
-    k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_size, open_size))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_open)
-
-    close_size = max(3, int(5 * (1 - sensitivity)))
+    # DL no-retrain recipe (val F1 0.67→0.71): close k=9 then drop comps <50px.
+    # Skip the classical open/erode bridge-break so we don't undo that gain.
     if for_dl:
-        close_size = max(close_size, 9)
-    if close_size % 2 == 0:
-        close_size += 1
-    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k_close)
+        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k_close)
+        filled = mask
+        min_component_px = 50
+    else:
+        open_size = max(3, int(4 * (1 - sensitivity * 0.5)))
+        if open_size % 2 == 0:
+            open_size += 1
+        k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_size, open_size))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_open)
 
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    filled = np.zeros_like(mask)
-    cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
+        close_size = max(3, int(5 * (1 - sensitivity)))
+        if close_size % 2 == 0:
+            close_size += 1
+        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k_close)
 
-    k_break = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    filled = cv2.erode(filled, k_break, iterations=1)
-    filled = cv2.dilate(filled, k_break, iterations=1)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filled = np.zeros_like(mask)
+        cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
 
-    # 7. Component-level filtering: remove tiny survivors and elongated noise
-    min_component_px = max(120, int(h * w * 0.00005))
+        k_break = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        filled = cv2.erode(filled, k_break, iterations=1)
+        filled = cv2.dilate(filled, k_break, iterations=1)
+
+        # Component-level filtering: remove tiny survivors and elongated noise
+        min_component_px = max(120, int(h * w * 0.00005))
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(filled, connectivity=8)
     clean = np.zeros_like(filled)
     for i in range(1, num_labels):
@@ -2078,19 +2337,59 @@ def _is_vehicle_like(area, w, h, features, diff=None, feat_b=None, img_area=None
     return False
 
 
+def _dark_roof_construction_evidence(diff, feat_a, feat_b=None) -> bool:
+    """True when after looks like a new dark/grey roof or solar array."""
+    if feat_a is None:
+        return False
+    after = (diff or {}).get("after") or {}
+    before = (diff or {}).get("before") or feat_b or {}
+    bri_a = float(feat_a.get("brightness", after.get("brightness", 100.0)))
+    bri_b = float(before.get("brightness", 100.0)) if before else 100.0
+    ndvi_a = float(feat_a.get("ndvi", 0.0))
+    # Substantial darkening onto a dark surface, not vegetation
+    if bri_b - bri_a >= 18.0 and bri_a <= 95.0 and ndvi_a < 0.15:
+        return True
+    # Dark blue / black panel-like after (solar) vs brighter before
+    if (
+        bri_a <= 90.0
+        and bri_b >= bri_a + 12.0
+        and float(feat_a.get("blue_ratio", 0.0)) >= 0.30
+        and float(feat_a.get("saturation", 0.0)) >= 40.0
+        and ndvi_a < 0.12
+    ):
+        return True
+    return False
+
+
 def _should_suppress_transient_region(area, w, h, feat_a, diff=None, feat_b=None,
                                       img_area=None, fill_ratio=1.0):
     """True when a region should be dropped (vehicles + other non-permanent clutter)."""
     if feat_a is None:
         return area < 500
+    max_car = _max_vehicle_area(img_area)
+    # Protect new blue / dark roof construction even when perm score is weak
+    # (AdaptFormer blobs often lack strong LSD line counts on small pads).
+    if _blue_roof_construction_evidence(diff, feat_a):
+        return False
+    if _dark_roof_construction_evidence(diff, feat_a, feat_b):
+        return False
+    # Building-scale footprints with structural evidence — keep.
+    if area >= int(max_car * 1.15):
+        perm = _permanent_change_evidence(diff, feat_a, area, w, h, fill_ratio)
+        if perm >= 0.22:
+            return False
+        # Large high-NDVI seasonal fields are not vehicles; leave them for
+        # later classification rather than vehicle-strip (avoid mega-FP keep
+        # via a blanket area gate — only structural perm protects here).
     if _is_vehicle_like(area, w, h, feat_a, diff=diff, feat_b=feat_b, img_area=img_area):
         return True
     if _is_radiometric_transient(diff, area, w, h, feat_a, img_area=img_area):
         return True
-    max_transient = _max_vehicle_area(img_area) * 2
     aspect = max(w, h) / max(min(w, h), 1)
     perm = _permanent_change_evidence(diff, feat_a, area, w, h, fill_ratio)
-    if area <= max_transient and perm < 0.26 and aspect < 9.0:
+    # Only apply the weak-perm heuristic inside typical vehicle size — the old
+    # max_car*2 gate deleted mid-size roofs/solar arrays on fullres GeoTIFFs.
+    if area <= max_car and perm < 0.26 and aspect < 9.0:
         if float(feat_a.get("ndvi", 0)) < 0.20:
             return True
     return False
@@ -3529,19 +3828,31 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             thr = get_windowed_threshold()
             na = read_native_size(Path(before_path))
             nb = read_native_size(Path(after_path))
-            if na and nb and na == nb:
+            # Use before grid as reference; after may differ in px size but share
+            # bounds (DDA Grid_54 vs H43X2E1) — geotiff_io warps windows.
+            if na and nb:
                 # na/nb are (width, height) — use actual area, not long_side²
                 # (RCA Significant #5 memory-estimate fix).
                 w, h = int(na[0]), int(na[1])
                 cap = get_load_max_side(before_path, after_path)
-                scale = min(1.0, float(cap) / float(max(w, h))) if max(w, h) else 1.0
-                est_w, est_h = int(w * scale), int(h * scale)
+                # Native (cap=0) → treat full native footprint for budget check
+                if cap <= 0:
+                    est_w, est_h = w, h
+                else:
+                    scale = min(1.0, float(cap) / float(max(w, h))) if max(w, h) else 1.0
+                    est_w, est_h = int(w * scale), int(h * scale)
                 est_mb = (est_w * est_h * 3 * 2) / (1024 * 1024)
                 budget = get_tile_memory_budget_mb()
                 over_threshold = bool(thr and max(w, h) > thr)
                 over_budget = bool(budget and est_mb > budget)
                 if over_threshold or over_budget:
                     windowed = True
+                    if na != nb:
+                        _log.info(
+                            "Windowed full-res: pixel grids differ %s vs %s — "
+                            "warping after windows onto before grid",
+                            na, nb,
+                        )
         except Exception as exc:
             _log.warning("Windowed-size probe failed: %s", exc)
 
@@ -3598,7 +3909,9 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
                 out_h, out_w = before_array.shape[:2]
 
                 def _win_prog(frac):
-                    _prog(45 + int(frac * 5), "Full-res tiled inference")
+                    # Map windowed pass across 45→95 so % actually moves
+                    _prog(45 + int(frac * 50),
+                          f"Full-res tiled inference {frac * 100:.1f}%")
 
                 dl_score_override = predict_change_score_windowed(
                     before_path, after_path, out_h, out_w,
@@ -3672,8 +3985,11 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     change_mask = strip_transient_from_mask(change_mask, before_array, after_array)
     change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
     change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
+    change_mask = strip_weak_seasonal_veg_from_mask(change_mask, before_array, after_array)
     # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs
     change_mask = recover_chromatic_roof_construction(
+        change_mask, before_chromatic, after_chromatic)
+    change_mask = recover_dark_roof_construction(
         change_mask, before_chromatic, after_chromatic)
 
     _prog(65, "Analyzing change regions")

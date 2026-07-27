@@ -252,6 +252,13 @@ async def detect_from_library(
         title = f"{Path(base_norm).name} vs {Path(comp_norm).name}"
 
     try:
+        # Use fullres load cap (up to DETECTION_FULLRES_MAX_SIDE), not the
+        # legacy 4096 downscaled cap — otherwise max-res config is ignored.
+        detect_max = load_side
+        logger.info(
+            "Library detection max_size=%d (loaded %s)",
+            detect_max, before_pil.size,
+        )
         return run_detection_and_save(
             db,
             before_pil,
@@ -265,7 +272,7 @@ async def detect_from_library(
             detection_sensitivity=detection_sensitivity,
             min_region_area=min_region_area,
             notify_email=notify_email,
-            max_size=get_detection_max_side(),
+            max_size=detect_max,
             geo_bounds_path=base_file,
             comparison_file=comp_file,
             base_path=base_norm,

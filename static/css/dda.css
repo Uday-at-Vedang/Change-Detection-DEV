@@ -545,6 +545,16 @@
 .dda-review-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .dda-review-btns { white-space: nowrap; }
 .dda-review-btns .btn { padding: 0.15rem 0.4rem; margin-right: 0.15rem; }
+.dda-review-btns .btn-review-ok.is-active {
+  background: #15803d;
+  border-color: #15803d;
+  color: #fff;
+}
+.dda-review-btns .btn-review-fp.is-active {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
 
 .review-badge {
   font-size: 0.72rem;

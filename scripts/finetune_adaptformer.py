@@ -211,7 +211,8 @@ class DelhiTileDataset:
                 gr = np.array(Image.fromarray(gt).resize(
                     (crop_size, crop_size), resample=Image.NEAREST))
                 frac = float((gr > 127).mean())
-                is_pos = frac >= self.min_tile_change
+                # Empty GT (hard negatives) must count as neg even when min_tile_change=0
+                is_pos = frac > 0.0 and frac >= self.min_tile_change
                 if not (train and drop_empty_tiles and not is_pos):
                     self.index.append((pi, self.KIND_FULL, 0, 0, is_pos))
                     n_pos += int(is_pos)
@@ -226,9 +227,9 @@ class DelhiTileDataset:
                 for x, y in coords:
                     tile_gt = gt[y:y + crop_size, x:x + crop_size]
                     frac = float((tile_gt > 127).mean())
-                    is_pos = frac >= self.min_tile_change
-                    # Drop empty / near-empty crops so batches aren't bg-dominated
-                    if train and (drop_empty_tiles or self.min_tile_change > 0) and not is_pos:
+                    is_pos = frac > 0.0 and frac >= self.min_tile_change
+                    # Drop empty / near-empty crops when exclude_empty path is active
+                    if train and drop_empty_tiles and not is_pos:
                         continue
                     self.index.append((pi, self.KIND_CROP, x, y, is_pos))
                     n_pos += int(is_pos)
@@ -814,11 +815,13 @@ def train(
         "test": _class_balance_report(test_pairs, "test"),
     }
 
+    # keep-empty / exclude_empty=False must retain hard-negative (all-zero GT) tiles
+    drop_empty_tiles = bool(exclude_empty) and not pos_only
     train_ds = DelhiTileDataset(
         train_pairs, train=True, stride=stride, augment=augment, seed=0,
         full_resize=full_resize, min_tile_change=min_tile_change,
         pos_oversample=pos_oversample, change_centered=change_centered,
-        drop_empty_tiles=True, pos_only=pos_only)
+        drop_empty_tiles=drop_empty_tiles, pos_only=pos_only)
     val_ds = DelhiTileDataset(
         val_pairs, train=False, stride=_TILE, augment=False, full_resize=full_resize,
         min_tile_change=0.0, pos_oversample=1, change_centered=False)

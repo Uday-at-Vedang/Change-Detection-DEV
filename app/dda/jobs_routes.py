@@ -16,6 +16,7 @@ from .job_runner import (
     enqueue_detection_job,
     is_job_runner_busy,
     job_to_dict,
+    reconcile_stale_jobs,
 )
 from .local_routes import safe_resolve
 from .models import DetectionJob
@@ -62,6 +63,15 @@ async def create_job(
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid library path: {exc}") from exc
+
+    if is_job_runner_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Another detection job is already running. Wait for it to finish, then try again.",
+        )
+
+    # Clear DB orphans left after UI timeout / server restart so new jobs can start
+    reconcile_stale_jobs(db)
 
     if is_job_runner_busy():
         raise HTTPException(
@@ -140,7 +150,7 @@ def _run_detail(db: Session, run: DetectionRun, user_id: int) -> dict:
         if overlay_file.exists():
             overlay_b64 = base64.b64encode(overlay_file.read_bytes()).decode("utf-8")
 
-    from .config import get_detection_max_side
+    from ..detection_config import get_load_max_side
     from .detect_service import _isoformat_ist
 
     return {
@@ -163,7 +173,7 @@ def _run_detail(db: Session, run: DetectionRun, user_id: int) -> dict:
         "afterThumbUrl": f"/api/overlay/{run.after_thumb_path}" if run.after_thumb_path else None,
         "afterFullUrl": f"/api/overlay/{run.after_full_path}" if getattr(run, "after_full_path", None) else None,
         "createdAt": _isoformat_ist(run.created_at),
-        "detectionMaxSide": get_detection_max_side(),
+        "detectionMaxSide": get_load_max_side(),
     }
 
 

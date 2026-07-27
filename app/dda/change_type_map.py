@@ -15,9 +15,11 @@ _KEYWORDS = [
     (DDA_VEGETATION, ("vegetation", "tree", "forest", "green", "crop")),
     (DDA_NEW_CONSTRUCTION, (
         "construction", "building", "structure", "road", "pavement",
-        "temporary", "roof", "concrete", "foundation",
+        "temporary", "roof", "concrete", "foundation", "solar", "panel",
+        "industrial",
     )),
-    (DDA_OTHER, ("water", "bare", "soil", "land", "unclassified")),
+    # Bare/soil/water only — do NOT match the substring "land" alone (too broad).
+    (DDA_OTHER, ("water body", "bare land", "bare earth", "soil change")),
 ]
 
 

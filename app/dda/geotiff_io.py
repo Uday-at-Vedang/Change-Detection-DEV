@@ -273,30 +273,32 @@ def _normalize_window_rgb(data):
 
 def iter_geotiff_window_pairs(path_a: Path, path_b: Path,
                               tile_size: int = 512, overlap: float = 0.25):
-    """Stream paired native-resolution RGB windows from two same-size GeoTIFFs.
+    """Stream paired native-resolution RGB windows from two GeoTIFFs.
 
-    Reads corresponding pixel windows from disk via rasterio so very large
-    rasters never load fully into RAM. Yields
-    ``(tile_a, tile_b, y0, x0, full_h, full_w)`` where tiles are RGB uint8.
-    Requires both rasters to share native pixel dimensions; raises ValueError
-    otherwise so the caller can fall back to the in-memory path.
+    Reads windows from disk via rasterio so very large rasters never load
+    fully into RAM. Yields ``(tile_a, tile_b, y0, x0, full_h, full_w)`` where
+    tiles are RGB uint8 on **path_a's** pixel grid.
+
+    Same-size pairs use direct window reads. Different pixel sizes (common for
+    same-bounds DDA pairs with slight GSD drift) reproject ``path_b`` into each
+    ``path_a`` window via georef so windowed full-res inference still works.
     """
+    import numpy as np
     import rasterio
-    from rasterio.windows import Window
+    from rasterio.enums import Resampling
+    from rasterio.warp import reproject
+    from rasterio.windows import Window, transform as window_transform
 
     tile_size = max(64, int(tile_size))
     ov = min(0.5, max(0.0, float(overlap)))
     step = max(1, int(round(tile_size * (1.0 - ov))))
 
     with rasterio.open(path_a) as src_a, rasterio.open(path_b) as src_b:
-        if (src_a.width, src_a.height) != (src_b.width, src_b.height):
-            raise ValueError(
-                f"GeoTIFF dimensions differ: {src_a.width}x{src_a.height} "
-                f"vs {src_b.width}x{src_b.height}"
-            )
         full_w, full_h = int(src_a.width), int(src_a.height)
+        same_grid = (src_a.width, src_a.height) == (src_b.width, src_b.height)
         bands_a = list(range(1, min(3, src_a.count) + 1))
         bands_b = list(range(1, min(3, src_b.count) + 1))
+        n_bands = len(bands_a)
 
         ys = list(range(0, max(1, full_h - tile_size + 1), step))
         xs = list(range(0, max(1, full_w - tile_size + 1), step))
@@ -311,7 +313,25 @@ def iter_geotiff_window_pairs(path_a: Path, path_b: Path,
                 ww = min(tile_size, full_w - x0)
                 win = Window(x0, y0, ww, wh)
                 da = src_a.read(indexes=bands_a, window=win)
-                db = src_b.read(indexes=bands_b, window=win)
+
+                if same_grid:
+                    db = src_b.read(indexes=bands_b, window=win)
+                else:
+                    # Warp after → before window CRS/transform/size
+                    dst = np.zeros((n_bands, wh, ww), dtype=np.float32)
+                    dst_transform = window_transform(win, src_a.transform)
+                    for i, band in enumerate(bands_b[:n_bands]):
+                        reproject(
+                            source=rasterio.band(src_b, band),
+                            destination=dst[i],
+                            src_transform=src_b.transform,
+                            src_crs=src_b.crs,
+                            dst_transform=dst_transform,
+                            dst_crs=src_a.crs,
+                            resampling=Resampling.bilinear,
+                        )
+                    db = dst
+
                 yield (_normalize_window_rgb(da), _normalize_window_rgb(db),
                        y0, x0, full_h, full_w)
 

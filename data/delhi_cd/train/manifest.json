@@ -197,6 +197,83 @@
       ],
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted. Retried with stronger morphological merge \u2014 still doesn't align with the visible real change, needs manual polygon redraw. Day 3: hand-drawn rough polygon bounding the settlement expansion + new construction patch \u2014 replaced automated candidate which under-captured it.",
       "change_frac": 0.37924444444444444
+    },
+    {
+      "pair_id": "hn_delhi_0013",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0013_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0013_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0013_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0013 (fp_frac=0.069)"
+    },
+    {
+      "pair_id": "hn_delhi_0014",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0014_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0014_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0014_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0014 (fp_frac=0.101)"
+    },
+    {
+      "pair_id": "hn_delhi_0002",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0002_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0002_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0002_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0002 (fp_frac=0.038)"
+    },
+    {
+      "pair_id": "hn_delhi_0006",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0006_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0006_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0006_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0006 (fp_frac=0.036)"
+    },
+    {
+      "pair_id": "hn_delhi_0007",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0007_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0007_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0007_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0007 (fp_frac=0.026)"
+    },
+    {
+      "pair_id": "hn_delhi_0008",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0008_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0008_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0008_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0008 (fp_frac=0.027)"
+    },
+    {
+      "pair_id": "hn_delhi_0015",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0015_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0015_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0015_gt.png",
+      "change_types": [
+        "hard_negative",
+        "vegetation_seasonal"
+      ],
+      "notes": "Mined FP from delhi_0015 (fp_frac=0.036)"
     }
   ]
 }

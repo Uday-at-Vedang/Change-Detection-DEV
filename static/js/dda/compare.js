@@ -382,8 +382,14 @@ async function runDetectionWithFallback(form) {
     return await pollJobUntilDone(queued.jobId);
   } catch (err) {
     const msg = String(err.message || '');
+    // Busy / queue conflict: never fall back to sync (that fights the running job).
+    if (msg.includes('409') || msg.includes('busy') || msg.includes('already running')) {
+      throw new Error(
+        'Another detection is still running. Wait for it to finish (Reports tab), then try again.',
+      );
+    }
     const useSync = msg.includes('Not Found') || msg.includes('404')
-      || msg.includes('503') || msg.includes('409') || msg.includes('busy')
+      || msg.includes('503')
       || msg.includes('Internal Server Error') || msg.includes('NOT NULL');
     if (!useSync) throw err;
     return runSyncDetectionWithProgress(form);
@@ -407,13 +413,44 @@ async function runSyncDetectionWithProgress(form) {
 }
 
 async function pollJobUntilDone(jobId) {
-  const maxAttempts = 600;
-  for (let i = 0; i < maxAttempts; i++) {
-    const job = await ddaApi('GET', `/api/dda/jobs/${jobId}`);
+  // Fullres GeoTIFF pairs often take 20–90+ min. Do not hard-timeout the UI —
+  // the backend job keeps running; we poll until completed/failed.
+  const pollMs = 2000;
+  const started = Date.now();
+  let lastPct = -1;
+  let lastStage = '';
+  let consecutiveErrors = 0;
+  for (;;) {
+    let job;
+    try {
+      job = await ddaApi('GET', `/api/dda/jobs/${jobId}`);
+      consecutiveErrors = 0;
+    } catch (err) {
+      consecutiveErrors += 1;
+      const elapsedMin = Math.max(0, Math.round((Date.now() - started) / 60000));
+      setDetectProgress(
+        Math.max(lastPct, 1),
+        `Waiting for job #${jobId}… (${elapsedMin} min, reconnecting)`,
+      );
+      if (consecutiveErrors > 30) {
+        throw new Error(
+          `Lost connection while job #${jobId} was running. `
+          + 'Open the Reports tab — the job may still finish in the background.',
+        );
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+      continue;
+    }
     const status = job.status;
     const pct = job.progressPct ?? (status === 'queued' ? 0 : 10);
-    const stage = job.progressStage || (status === 'queued' ? 'Queued' : 'Running');
-    setDetectProgress(pct, stage);
+    const elapsedMin = Math.max(0, Math.round((Date.now() - started) / 60000));
+    let stage = job.progressStage || (status === 'queued' ? 'Queued' : 'Running');
+    if (elapsedMin >= 1) stage = `${stage} (${elapsedMin} min)`;
+    if (pct !== lastPct || stage !== lastStage) {
+      setDetectProgress(pct, stage);
+      lastPct = pct;
+      lastStage = stage;
+    }
     if (status === 'completed') {
       setDetectProgress(100, 'Complete');
       if (job.result) {
@@ -428,9 +465,8 @@ async function pollJobUntilDone(jobId) {
       if (job.resultError) throw new Error(job.resultError);
     }
     if (status === 'failed') throw new Error(job.errorMessage || 'Detection job failed');
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, pollMs));
   }
-  throw new Error('Detection timed out. Check Reports tab for job status.');
 }
 
 async function runLibraryDetection() {

@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 from ..auth import get_or_create_guest_user
 from ..database import SessionLocal
 from ..models import DetectionRun
-from .config import get_detection_max_side
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
 from .job_progress import update_job_progress
@@ -86,6 +85,14 @@ def _run_job_sync(job_id: int) -> None:
         comp_file = safe_resolve(comparison_path)
         update_job_progress(job_id, 12, "Images loaded")
         title = params.get("title") or f"{Path(base_path).name} vs {Path(comparison_path).name}"
+        from ..detection_config import get_load_max_side
+        # Must use fullres load cap — get_detection_max_side() is 4096 and was
+        # silently downscaling overnight "max res" runs back to preview size.
+        detect_max = get_load_max_side(base_path, comparison_path)
+        logger.info(
+            "Job %d detection max_size=%d (loaded %s)",
+            job_id, detect_max, before_pil.size,
+        )
         result = run_detection_and_save(
             db,
             before_pil,
@@ -99,7 +106,7 @@ def _run_job_sync(job_id: int) -> None:
             detection_sensitivity=float(params.get("detection_sensitivity", 0.45)),
             min_region_area=params.get("min_region_area"),
             notify_email=job.notify_email or params.get("notify_email"),
-            max_size=get_detection_max_side(),
+            max_size=detect_max,
             geo_bounds_path=base_file,
             comparison_file=comp_file,
             base_path=base_path,
@@ -162,15 +169,35 @@ def is_job_runner_busy() -> bool:
         return _active_job_id is not None
 
 
-def reconcile_stale_jobs(db: Session) -> int:
-    """Mark orphaned running jobs failed after server restart; re-queue oldest queued job."""
-    if is_job_runner_busy():
-        return 0
+def reconcile_stale_jobs(db: Session, max_running_hours: float = 3.0) -> int:
+    """Mark orphaned / stuck running jobs failed; re-queue oldest queued job.
+
+    - Orphans: status=running but no in-process worker (server restart).
+    - Stuck: status=running longer than ``max_running_hours`` (crashed worker).
+    """
+    from datetime import timedelta
+
     fixed = 0
+    busy = is_job_runner_busy()
+    cutoff = _utcnow() - timedelta(hours=max_running_hours)
     running = db.query(DetectionJob).filter(DetectionJob.status == "running").all()
     for job in running:
+        started = job.started_at or job.created_at
+        # Normalize naive datetimes from SQLite
+        if started is not None and started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        stale_by_age = started is not None and started < cutoff
+        orphaned = not busy
+        if not (orphaned or stale_by_age):
+            continue
         job.status = "failed"
-        job.error_message = "Job interrupted (server restarted). Please run detection again."
+        if stale_by_age and busy:
+            job.error_message = (
+                f"Job timed out after {max_running_hours:g}h with no completion. "
+                "Please run detection again."
+            )
+        else:
+            job.error_message = "Job interrupted (server restarted). Please run detection again."
         job.completed_at = _utcnow()
         fixed += 1
     if fixed:
