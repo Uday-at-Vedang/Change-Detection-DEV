@@ -7,9 +7,12 @@ DDA_NEW_CONSTRUCTION = "New Construction"
 DDA_DEMOLITION = "Demolition"
 DDA_EXTENSION = "Extension"
 DDA_VEGETATION = "Vegetation Change"
+DDA_SHADOW = "Shadow"
 DDA_OTHER = "Other"
 
 _KEYWORDS = [
+    # Shadow is specific and must win before generic structural keywords.
+    (DDA_SHADOW, ("shadow", "illumination")),
     (DDA_DEMOLITION, ("demolition", "clearing", "removed", "debris")),
     (DDA_EXTENSION, ("expansion", "widening", "extension", "renovation", "addition")),
     (DDA_VEGETATION, ("vegetation", "tree", "forest", "green", "crop")),
