@@ -72,3 +72,18 @@ python scripts/reapply_run47_accuracy.py
 
 Note: curated GT **#7** is basketball-court activity (people/paint), not structural —
 still detected under the denser mask; structural policy may want to drop it from GT later.
+
+## Tuesday 2026-07-28 — day plan integration
+
+### Uday P0 — Real weights + held-out baseline
+- `models/adaptformer_delhi/v3_frozen/model.safetensors` present (~50 MB)
+- `/health` → `loadedFrom=.../v3_frozen`, `available=true`, device=cuda
+- Held-out test split (`data/delhi_cd/test`, 4 pairs) @ thr=0.2, `dl_only`, TTA off:
+  - **mean F1=0.5867 · P=0.6028 · R=0.614 · IoU=0.4171**
+  - Artifact: `runs/tuesday_baseline_20260728/metrics.json`
+  - Re-run: `python scripts/record_tuesday_baseline.py`
+
+### Integrated from Priyanka (same day)
+- `pair_align` guard wired in `detect_service` (identical → message, low NCC → warning)
+- Shadow classification: shadow-only blobs kept as `Shadow`; structural vs all %
+- Verify: `python scripts/verify_tuesday.py` → ALL CHECKS PASSED

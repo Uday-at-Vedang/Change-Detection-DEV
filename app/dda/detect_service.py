@@ -111,6 +111,48 @@ def _isoformat_ist(dt):
     return dt.astimezone(_IST).isoformat()
 
 
+def _alignment_warning(before_pil, after_pil, before_tif, after_tif):
+    """Operator-facing warning when a pair is identical or poorly aligned.
+
+    Runs the pre-detection guard (``app.dda.pair_align``) to catch the two
+    silent-failure modes that otherwise yield an empty or garbage change mask
+    with no explanation: (1) the same image uploaded twice, and (2) raw drone
+    frames from different viewpoints that never register onto a common grid.
+    Returns ``None`` when the pair looks fine or the check cannot run, so this
+    can never block or crash a detection job.
+    """
+    try:
+        import numpy as np
+
+        from .pair_align import are_identical, assess_alignment, geo_align_pair
+
+        b = np.asarray(before_pil.convert("RGB"))
+        a = np.asarray(after_pil.convert("RGB"))
+        if b.shape == a.shape and are_identical(b, a):
+            return ("Before and after are the same image (identical pixels). There is "
+                    "no change to detect - please check that two different dates were "
+                    "selected.")
+        # The NCC misalignment check only makes sense on georeferenced pairs, where
+        # both can be placed on a common grid. For plain uploads the engine's own
+        # SIFT/ECC registration handles alignment, so comparing the raw (pre-
+        # registration) frames here would raise false alarms.
+        if before_tif and after_tif:
+            aligned = geo_align_pair(Path(before_tif), Path(after_tif))
+            if aligned is not None:
+                bb, aa, _overlap = aligned
+                status, ncc = assess_alignment(bb, aa)
+                if status == "low_quality":
+                    return (f"The before/after images do not align well (NCC={ncc:.2f}). "
+                            "They look like raw drone frames from different viewpoints "
+                            "rather than orthomosaics on a common grid, so detected "
+                            "changes may be unreliable. For accurate results, export both "
+                            "dates as north-up orthomosaics on the same grid.")
+        return None
+    except Exception as exc:
+        logger.warning("Alignment guard skipped: %s", exc)
+        return None
+
+
 def run_detection_and_save(
     db: Session,
     before_pil: Image.Image,
@@ -176,6 +218,18 @@ def run_detection_and_save(
         before_path=_geotiff_path(geo_bounds_path),
         after_path=_geotiff_path(comparison_file),
     )
+
+    # Pre-detection guard: surface identical / poorly-aligned pairs to the operator
+    # instead of returning a silent empty or garbage mask (the UI already renders
+    # stats["alignment_warning"] as a banner). Never overrides an existing warning.
+    if not stats.get("alignment_warning"):
+        align_warn = _alignment_warning(
+            before_pil, after_pil,
+            _geotiff_path(geo_bounds_path), _geotiff_path(comparison_file),
+        )
+        if align_warn:
+            stats["alignment_warning"] = align_warn
+            logger.info("Alignment guard flagged pair: %s", align_warn)
 
     if gsd_debug and isinstance(stats.get("threshold_debug"), dict):
         stats["threshold_debug"]["gsdHarmonization"] = gsd_debug
@@ -339,6 +393,10 @@ def run_detection_and_save(
             "changedPixels": changed_px,
             "unchangedPixels": int(stats["unchanged_pixels"]),
             "changePercentage": change_pct,
+            "changePercentageStructural": float(
+                stats.get("change_percentage_structural", change_pct)),
+            "changePercentageAll": float(stats.get("change_percentage_all", change_pct)),
+            "shadowPixels": int(stats.get("shadow_pixels", 0)),
             "thresholdDebug": stats.get("threshold_debug", {}),
             "params": stats.get("params", {}),
             "alignmentWarning": stats.get("alignment_warning"),
