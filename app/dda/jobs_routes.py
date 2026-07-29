@@ -44,10 +44,16 @@ async def create_job(
     detection_sensitivity: float = Form(0.45),
     min_region_area: Optional[int] = Form(150),
     notify_email: Optional[str] = Form(None),
+    roi: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
-    """Queue async detection from local library paths. Returns immediately with jobId."""
+    """Queue async detection from local library paths. Returns immediately with jobId.
+
+    ``roi`` (optional) is a JSON object ``{"x","y","w","h"}`` with fractional
+    coordinates in [0,1]; when present, detection runs only on that cropped
+    window (fast "test on a small area").
+    """
     _require_dda()
     base_norm = base_path.replace("\\", "/").strip()
     comp_norm = comparison_path.replace("\\", "/").strip()
@@ -55,6 +61,16 @@ async def create_job(
         raise HTTPException(status_code=400, detail="base_path and comparison_path are required")
     if base_norm == comp_norm:
         raise HTTPException(status_code=400, detail="Base and comparison images must be different")
+
+    roi_dict = None
+    if roi and roi.strip():
+        import json as _json
+
+        from .geotiff_io import parse_roi
+        try:
+            roi_dict = parse_roi(_json.loads(roi))
+        except (ValueError, _json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid roi: {exc}") from exc
 
     try:
         safe_resolve(base_norm)
@@ -97,6 +113,7 @@ async def create_job(
         min_region_area=min_region_area,
         notify_email=notify_email or "",
         created_by=user.id,
+        roi=roi_dict,
     )
 
     if not enqueue_detection_job(job.id):

@@ -1,0 +1,121 @@
+{
+  "date": "2026-07-28T19:59:41.973738+05:30",
+  "role": "Tuesday baseline for Friday comparison (Uday P0)",
+  "weights": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\v3_frozen",
+  "loadedFrom": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\v3_frozen",
+  "threshold": 0.2,
+  "fusion": "dl_only",
+  "tta": "off",
+  "split": "data/delhi_cd/test",
+  "pair_ids": [
+    "delhi_0028",
+    "delhi_0023",
+    "delhi_0005",
+    "delhi_0012"
+  ],
+  "n_pairs": 4,
+  "mean_f1": 0.5867,
+  "mean_precision": 0.6028,
+  "mean_recall": 0.614,
+  "mean_iou": 0.4171,
+  "elapsed_sec": 3.0,
+  "model_status": {
+    "modelId": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\v3_frozen",
+    "hubModelId": "deepang/adaptformer-LEVIR-CD",
+    "loadedFrom": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\v3_frozen",
+    "available": true,
+    "detectionMode": "adaptformer_dl_only",
+    "fusion": "dl_only",
+    "device": "cuda",
+    "calibratedThreshold": 0.2,
+    "tta": [
+      "identity"
+    ],
+    "error": null,
+    "ensemble": {
+      "enabled": false,
+      "weightsPath": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\app\\cd_models\\weights\\bit_cd_levir.pth",
+      "weightsAvailable": false,
+      "loaded": false,
+      "loadFailed": false
+    }
+  },
+  "per_pair": [
+    {
+      "pair_id": "delhi_0028",
+      "iou": 0.4979,
+      "dice": 0.6648,
+      "f1": 0.6648,
+      "precision": 0.5499,
+      "recall": 0.8403,
+      "pixelAccuracy": 0.9688,
+      "kappa": 0.6491,
+      "falsePositiveRate": 0.0263,
+      "falseNegativeRate": 0.1597,
+      "counts": {
+        "tp": 2783,
+        "fp": 2278,
+        "fn": 529,
+        "tn": 84410
+      },
+      "threshold": 0.2
+    },
+    {
+      "pair_id": "delhi_0023",
+      "iou": 0.4195,
+      "dice": 0.5911,
+      "f1": 0.5911,
+      "precision": 0.7924,
+      "recall": 0.4714,
+      "pixelAccuracy": 0.9683,
+      "kappa": 0.5757,
+      "falsePositiveRate": 0.0063,
+      "falseNegativeRate": 0.5286,
+      "counts": {
+        "tp": 2065,
+        "fp": 541,
+        "fn": 2316,
+        "tn": 85078
+      },
+      "threshold": 0.2
+    },
+    {
+      "pair_id": "delhi_0005",
+      "iou": 0.3503,
+      "dice": 0.5188,
+      "f1": 0.5188,
+      "precision": 0.5674,
+      "recall": 0.4779,
+      "pixelAccuracy": 0.9027,
+      "kappa": 0.4652,
+      "falsePositiveRate": 0.0449,
+      "falseNegativeRate": 0.5221,
+      "counts": {
+        "tp": 4720,
+        "fp": 3598,
+        "fn": 5157,
+        "tn": 76525
+      },
+      "threshold": 0.2
+    },
+    {
+      "pair_id": "delhi_0012",
+      "iou": 0.4008,
+      "dice": 0.5723,
+      "f1": 0.5723,
+      "precision": 0.5013,
+      "recall": 0.6666,
+      "pixelAccuracy": 0.9104,
+      "kappa": 0.5233,
+      "falsePositiveRate": 0.0655,
+      "falseNegativeRate": 0.3334,
+      "counts": {
+        "tp": 5396,
+        "fp": 5367,
+        "fn": 2699,
+        "tn": 76538
+      },
+      "threshold": 0.2
+    }
+  ]
+}

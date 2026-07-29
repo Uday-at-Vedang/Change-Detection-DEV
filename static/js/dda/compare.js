@@ -1,6 +1,6 @@
 /** Change Detection tab — pick library images and run comparison. */
 
-const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [] };
+const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [], roi: null };
 
 function compareFormatBytes(n) {
   if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
@@ -32,6 +32,7 @@ function ensureDdaState() {
 function updateRunButton() {
   const btn = document.getElementById('btn-run-job');
   if (btn) btn.disabled = !(compareState.t1 && compareState.t2);
+  updateRoiUi();
 }
 
 function renderSlotPreview(slotKey, selection) {
@@ -50,6 +51,116 @@ function renderSlotPreview(slotKey, selection) {
   wrap.innerHTML = `
     <img class="dda-slot-preview" src="${thumb}" alt="" />
     <div class="dda-slot-meta">${escapeHtml(selection.label || selection.filename)}</div>`;
+  if (slotKey === 't2') setupRoiDraw();
+}
+
+// --- ROI (region-of-interest) draw tool -----------------------------------
+// Drag a rectangle on the New (T2) preview to detect only that fractional
+// window. Coordinates are stored as fractions [0,1] so they map to the full
+// image regardless of the thumbnail's display size.
+const _roiDraw = { drawing: false, startX: 0, startY: 0, img: null, wrap: null };
+let _roiListenersBound = false;
+
+function roiHintText(roi) {
+  if (!roi) return 'Tip: drag a box on the New (T2) preview to detect only that area (faster).';
+  return `Selection: ${Math.round(roi.w * 100)}% × ${Math.round(roi.h * 100)}% of the image will be detected.`;
+}
+
+function updateRoiUi() {
+  const ctr = document.getElementById('dda-roi-controls');
+  const hint = document.getElementById('dda-roi-hint');
+  const clr = document.getElementById('btn-clear-roi');
+  const btn = document.getElementById('btn-run-job');
+  if (hint) hint.textContent = roiHintText(compareState.roi);
+  if (ctr) ctr.classList.toggle('hidden', !compareState.t2);
+  if (clr) clr.classList.toggle('hidden', !compareState.roi);
+  if (btn) btn.textContent = compareState.roi ? 'Run on selection' : 'Run Detection';
+}
+
+function clearRoi(refreshUi = true) {
+  compareState.roi = null;
+  document.getElementById('dda-roi-rect')?.remove();
+  if (refreshUi) updateRoiUi();
+}
+
+function _positionRoiRect(x0, y0, x1, y1) {
+  const wrap = _roiDraw.wrap;
+  const img = _roiDraw.img;
+  if (!wrap || !img) return;
+  let rect = document.getElementById('dda-roi-rect');
+  if (!rect) {
+    rect = document.createElement('div');
+    rect.id = 'dda-roi-rect';
+    rect.className = 'dda-roi-rect';
+    wrap.appendChild(rect);
+  }
+  const b = img.getBoundingClientRect();
+  const wb = wrap.getBoundingClientRect();
+  rect.style.left = `${Math.min(x0, x1) * b.width + (b.left - wb.left)}px`;
+  rect.style.top = `${Math.min(y0, y1) * b.height + (b.top - wb.top)}px`;
+  rect.style.width = `${Math.abs(x1 - x0) * b.width}px`;
+  rect.style.height = `${Math.abs(y1 - y0) * b.height}px`;
+}
+
+function _roiFrac(clientX, clientY) {
+  const b = _roiDraw.img.getBoundingClientRect();
+  return {
+    x: Math.min(Math.max((clientX - b.left) / b.width, 0), 1),
+    y: Math.min(Math.max((clientY - b.top) / b.height, 0), 1),
+  };
+}
+
+function setupRoiDraw() {
+  const wrap = document.getElementById('slot-t2-preview');
+  const img = wrap?.querySelector('img.dda-slot-preview');
+  if (!wrap || !img) return;
+  _roiDraw.wrap = wrap;
+  _roiDraw.img = img;
+
+  img.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    _roiDraw.drawing = true;
+    const p = _roiFrac(e.clientX, e.clientY);
+    _roiDraw.startX = p.x;
+    _roiDraw.startY = p.y;
+    _positionRoiRect(p.x, p.y, p.x, p.y);
+  });
+
+  // Window-level move/up so a drag that leaves the thumbnail still works.
+  // Bind once; handlers read the shared _roiDraw state.
+  if (!_roiListenersBound) {
+    _roiListenersBound = true;
+    window.addEventListener('mousemove', (e) => {
+      if (!_roiDraw.drawing) return;
+      const p = _roiFrac(e.clientX, e.clientY);
+      _positionRoiRect(_roiDraw.startX, _roiDraw.startY, p.x, p.y);
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (!_roiDraw.drawing) return;
+      _roiDraw.drawing = false;
+      const p = _roiFrac(e.clientX, e.clientY);
+      const x = Math.min(_roiDraw.startX, p.x);
+      const y = Math.min(_roiDraw.startY, p.y);
+      const w = Math.abs(p.x - _roiDraw.startX);
+      const h = Math.abs(p.y - _roiDraw.startY);
+      if (w < 0.02 || h < 0.02) { clearRoi(); return; }  // too small → treat as clear
+      compareState.roi = {
+        x: +x.toFixed(4), y: +y.toFixed(4), w: +w.toFixed(4), h: +h.toFixed(4),
+      };
+      _positionRoiRect(x, y, x + w, y + h);
+      updateRoiUi();
+    });
+  }
+
+  // Redraw an existing ROI (e.g., after a re-render); reposition once loaded.
+  const redraw = () => {
+    if (compareState.roi) {
+      const r = compareState.roi;
+      _positionRoiRect(r.x, r.y, r.x + r.w, r.y + r.h);
+    }
+  };
+  if (img.complete) redraw(); else img.addEventListener('load', redraw, { once: true });
+  updateRoiUi();
 }
 
 function populateSelects(items) {
@@ -79,6 +190,7 @@ function setSlot(slotKey, img) {
     renderSlotPreview('t1', item);
   } else {
     compareState.t2 = item;
+    clearRoi(false);  // a new T2 invalidates any previous selection
     const sel = document.getElementById('select-t2');
     if (sel) sel.value = encodePath(item.path);
     renderSlotPreview('t2', item);
@@ -335,6 +447,7 @@ function setupCompareInteractions() {
     if (e.target.id === 'dda-picker-modal') closePicker();
   });
   document.getElementById('btn-run-job')?.addEventListener('click', runLibraryDetection);
+  document.getElementById('btn-clear-roi')?.addEventListener('click', () => clearRoi());
 
   const notifyCb = document.getElementById('dda-detect-notify');
   const notifyEmail = document.getElementById('dda-detect-notify-email');
@@ -493,6 +606,9 @@ async function runLibraryDetection() {
   const notifyEmail = document.getElementById('dda-detect-notify-email');
   if (notifyCb?.checked && notifyEmail?.value?.trim()) {
     form.append('notify_email', notifyEmail.value.trim());
+  }
+  if (compareState.roi) {
+    form.append('roi', JSON.stringify(compareState.roi));
   }
 
   try {

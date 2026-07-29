@@ -180,6 +180,13 @@ function showDdaResult(data) {
 
   const stats = data.statistics || {};
   const pct = (stats.changePercentage ?? 0).toFixed(2);
+  const pctStruct = stats.changePercentageStructural != null
+    ? Number(stats.changePercentageStructural).toFixed(2)
+    : null;
+  const pctAll = stats.changePercentageAll != null
+    ? Number(stats.changePercentageAll).toFixed(2)
+    : null;
+  const shadowPx = stats.shadowPixels ?? 0;
   const chPx = stats.changedPixels ?? 0;
   const totPx = stats.totalPixels ?? 0;
   const regOk = stats.registrationOk;
@@ -203,10 +210,19 @@ function showDdaResult(data) {
   const resHint = data.detectionMaxSide
     ? `<div class="stat-box"><div class="value value-sm">${data.detectionMaxSide}px</div><div class="label">Detection res</div></div>`
     : '';
+  const structHint = (pctStruct != null && pctAll != null && pctStruct !== pctAll)
+    ? `<div class="stat-box"><div class="value">${pctStruct}%</div><div class="label">Structural</div></div>
+       <div class="stat-box"><div class="value">${pctAll}%</div><div class="label">All (+shadow)</div></div>`
+    : '';
+  const shadowHint = shadowPx > 0
+    ? `<div class="stat-box"><div class="value" title="${shadowPx.toLocaleString()}">${formatCompact(shadowPx)}</div><div class="label">Shadow px</div></div>`
+    : '';
 
   statsEl.innerHTML = warnHtml + `
     <div class="stat-box"><div class="value">${pct}%</div><div class="label">Changed</div></div>
+    ${structHint}
     <div class="stat-box"><div class="value" title="${chPx.toLocaleString()}">${formatCompact(chPx)}</div><div class="label">Changed px</div></div>
+    ${shadowHint}
     <div class="stat-box"><div class="value" title="${totPx.toLocaleString()}">${formatCompact(totPx)}</div><div class="label">Total px</div></div>
     <div class="stat-box"><div class="value">${(data.regions || []).length}</div><div class="label">Regions</div></div>
     ${resHint}

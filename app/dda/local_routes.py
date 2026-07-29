@@ -207,10 +207,15 @@ async def detect_from_library(
     detection_sensitivity: float = Form(0.5),
     min_region_area: Optional[int] = Form(150),
     notify_email: Optional[str] = Form(None),
+    roi: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
-    """Run change detection on two library images by relative path."""
+    """Run change detection on two library images by relative path.
+
+    ``roi`` (optional) is a JSON ``{"x","y","w","h"}`` fractional window in
+    [0,1]; when present, only that cropped region is detected.
+    """
     _require_dda()
     base_norm = base_path.replace("\\", "/").strip()
     comp_norm = comparison_path.replace("\\", "/").strip()
@@ -227,11 +232,26 @@ async def detect_from_library(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid library path: {exc}") from exc
 
+    roi_dict = None
+    if roi and roi.strip():
+        import json as _json
+
+        from .geotiff_io import parse_roi
+        try:
+            roi_dict = parse_roi(_json.loads(roi))
+        except (ValueError, _json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid roi: {exc}") from exc
+
     try:
         from ..detection_config import get_load_max_side
+        from .geotiff_io import load_rgb_roi
         load_side = get_load_max_side()
-        before_pil = load_rgb_pil(base_file, max_side=load_side)
-        after_pil = load_rgb_pil(comp_file, max_side=load_side)
+        if roi_dict:
+            before_pil = load_rgb_roi(base_file, roi_dict, max_side=load_side)
+            after_pil = load_rgb_roi(comp_file, roi_dict, max_side=load_side)
+        else:
+            before_pil = load_rgb_pil(base_file, max_side=load_side)
+            after_pil = load_rgb_pil(comp_file, max_side=load_side)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

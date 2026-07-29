@@ -31,14 +31,21 @@ def _utcnow():
 
 
 def _load_pair(
-    base_path: str, comparison_path: str,
+    base_path: str, comparison_path: str, roi: Optional[dict] = None,
 ) -> tuple[Image.Image, Image.Image, Path, Optional[dict]]:
     from ..detection_config import get_load_max_side
+    from .geotiff_io import load_rgb_roi
     base_file = safe_resolve(base_path)
     comp_file = safe_resolve(comparison_path)
     max_side = get_load_max_side()
-    before_pil = load_rgb_pil(base_file, max_side=max_side)
-    after_pil = load_rgb_pil(comp_file, max_side=max_side)
+    if roi:
+        # Crop both images to the same fractional window before detection so a
+        # small ROI on a huge raster runs fast and at full detail.
+        before_pil = load_rgb_roi(base_file, roi, max_side=max_side)
+        after_pil = load_rgb_roi(comp_file, roi, max_side=max_side)
+    else:
+        before_pil = load_rgb_pil(base_file, max_side=max_side)
+        after_pil = load_rgb_pil(comp_file, max_side=max_side)
 
     gsd_debug = None
     try:
@@ -80,9 +87,14 @@ def _run_job_sync(job_id: int) -> None:
         if not base_path or not comparison_path:
             raise ValueError("Job missing base_path or comparison_path in params_json")
 
-        update_job_progress(job_id, 8, "Loading images")
-        before_pil, after_pil, base_file, gsd_debug = _load_pair(base_path, comparison_path)
+        roi = params.get("roi")
+        update_job_progress(job_id, 8, "Cropping ROI" if roi else "Loading images")
+        before_pil, after_pil, base_file, gsd_debug = _load_pair(
+            base_path, comparison_path, roi=roi)
         comp_file = safe_resolve(comparison_path)
+        if roi:
+            logger.info("Job %d ROI crop %s -> working size %s",
+                        job_id, roi, before_pil.size)
         update_job_progress(job_id, 12, "Images loaded")
         title = params.get("title") or f"{Path(base_path).name} vs {Path(comparison_path).name}"
         from ..detection_config import get_load_max_side
@@ -231,6 +243,7 @@ def create_local_folder_job(
     min_region_area: Optional[int] = 150,
     notify_email: str = "",
     created_by: Optional[int] = None,
+    roi: Optional[dict] = None,
 ) -> DetectionJob:
     user = get_or_create_guest_user(db)
     params = {
@@ -246,6 +259,8 @@ def create_local_folder_job(
         "detection_sensitivity": detection_sensitivity,
         "min_region_area": min_region_area,
     }
+    if roi:
+        params["roi"] = roi
     job = DetectionJob(
         status="queued",
         base_image_id=None,

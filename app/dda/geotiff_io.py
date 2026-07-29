@@ -359,6 +359,90 @@ def load_rgb_pil(path: Path, max_side: Optional[int] = None) -> Image.Image:
         return img.copy()
 
 
+def parse_roi(roi) -> Optional[dict]:
+    """Validate a fractional ROI ``{x, y, w, h}`` (all in [0, 1]).
+
+    Returns a normalized dict (w/h clamped so the box stays inside the image),
+    or ``None`` when ``roi`` is empty/falsey. Raises ``ValueError`` on a
+    malformed or out-of-bounds ROI so callers can turn it into an HTTP 400.
+    """
+    if not roi:
+        return None
+    try:
+        x, y = float(roi["x"]), float(roi["y"])
+        w, h = float(roi["w"]), float(roi["h"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("roi must have numeric x, y, w, h")
+    if not (0.0 <= x < 1.0 and 0.0 <= y < 1.0):
+        raise ValueError("roi x, y must be in [0, 1)")
+    if not (0.0 < w <= 1.0 and 0.0 < h <= 1.0):
+        raise ValueError("roi w, h must be in (0, 1]")
+    if x + w > 1.0 + 1e-6 or y + h > 1.0 + 1e-6:
+        raise ValueError("roi extends past image bounds (x+w or y+h > 1)")
+    return {"x": x, "y": y, "w": min(w, 1.0 - x), "h": min(h, 1.0 - y)}
+
+
+def _rasterio_read_roi(path: Path, roi: dict, max_side: int) -> Image.Image:
+    """Read only the ROI window of a GeoTIFF natively (fast, low memory)."""
+    import rasterio
+    from rasterio.enums import Resampling
+    from rasterio.windows import Window
+
+    with rasterio.open(path) as src:
+        W, H = int(src.width), int(src.height)
+        col0 = int(round(roi["x"] * W))
+        row0 = int(round(roi["y"] * H))
+        cw = min(max(1, int(round(roi["w"] * W))), W - col0)
+        ch = min(max(1, int(round(roi["h"] * H))), H - row0)
+        win = Window(col0, row0, cw, ch)
+        count = min(3, src.count)
+        scale = min(1.0, max_side / max(cw, ch, 1))
+        out_h = max(1, int(ch * scale))
+        out_w = max(1, int(cw * scale))
+        data = src.read(
+            indexes=list(range(1, count + 1)), window=win,
+            out_shape=(count, out_h, out_w), resampling=Resampling.bilinear,
+        )
+    return Image.fromarray(_normalize_window_rgb(data), mode="RGB")
+
+
+def load_rgb_roi(path: Path, roi, max_side: Optional[int] = None) -> Image.Image:
+    """Load only a fractional ROI window of an image as RGB PIL.
+
+    ``roi = {x, y, w, h}`` are fractions in [0, 1] of the image's own pixel
+    grid. For GeoTIFFs the window is read natively from disk (so a small ROI on
+    a huge raster stays fast and low-memory), then downscaled to ``max_side``;
+    other formats are opened, cropped, and downscaled. When ``roi`` is empty,
+    falls back to a full-image load.
+    """
+    if max_side is None:
+        max_side = get_detection_max_side()
+    roi = parse_roi(roi)
+    if roi is None:
+        return load_rgb_pil(path, max_side=max_side)
+    ext = path.suffix.lower()
+    if ext in (".tif", ".tiff"):
+        try:
+            return _rasterio_read_roi(path, roi, max_side).copy()
+        except ImportError as exc:
+            raise RuntimeError(
+                "GeoTIFF support requires rasterio. Install with: pip install rasterio"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(f"Could not read GeoTIFF ROI: {exc}") from exc
+    with Image.open(path) as img:
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        W, H = img.size
+        left = int(round(roi["x"] * W))
+        top = int(round(roi["y"] * H))
+        right = max(left + 1, int(round((roi["x"] + roi["w"]) * W)))
+        bottom = max(top + 1, int(round((roi["y"] + roi["h"]) * H)))
+        crop = img.crop((left, top, right, bottom))
+        if max(crop.size) > max_side:
+            crop.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        return crop.copy()
+
+
 def raster_to_preview_png(src_path: Path, dest_path: Path, max_side: int = 512) -> None:
     """Create RGB thumbnail/preview — uses decimated read for large GeoTIFFs."""
     ext = src_path.suffix.lower()
