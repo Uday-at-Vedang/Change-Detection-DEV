@@ -1,47 +1,48 @@
 {
   "version": 1,
   "source_manifest": "docs/delhi_eval/manifest.json",
-  "seed": 30,
+  "seed": 0,
   "split": "70/15/15",
   "stratified": true,
   "min_change_frac": 0.001,
-  "n_labeled": 24,
-  "n_train": 16,
+  "n_labeled": 25,
+  "n_train": 17,
   "n_val": 4,
   "n_test": 4,
   "change_frac_mean": {
-    "train": 0.097255,
-    "val": 0.072297,
-    "test": 0.071292
+    "train": 0.092966,
+    "val": 0.064658,
+    "test": 0.073411
   },
   "train": [
+    "delhi_0009",
+    "delhi_0028",
     "delhi_0025",
     "delhi_0032",
-    "delhi_0024",
-    "delhi_0009",
+    "dda_grid54_h43x2e1",
     "delhi_0011",
-    "delhi_0021",
-    "delhi_0022",
-    "delhi_0019",
-    "delhi_0027",
-    "delhi_0017",
+    "delhi_0029",
     "delhi_0018",
-    "delhi_0001",
-    "delhi_0003",
+    "delhi_0017",
+    "delhi_0027",
+    "delhi_0022",
+    "delhi_0023",
+    "delhi_0004",
+    "delhi_0012",
     "delhi_0020",
-    "delhi_0016",
-    "delhi_0030"
+    "delhi_0030",
+    "delhi_0003"
   ],
   "val": [
-    "delhi_0029",
-    "delhi_0004",
-    "delhi_0026",
-    "delhi_0031"
+    "delhi_0021",
+    "delhi_0019",
+    "delhi_0031",
+    "delhi_0026"
   ],
   "test": [
-    "delhi_0028",
-    "delhi_0023",
+    "delhi_0024",
+    "delhi_0001",
     "delhi_0005",
-    "delhi_0012"
+    "delhi_0016"
   ]
 }

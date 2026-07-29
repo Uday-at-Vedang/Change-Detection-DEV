@@ -87,3 +87,30 @@ still detected under the denser mask; structural policy may want to drop it from
 - `pair_align` guard wired in `detect_service` (identical → message, low NCC → warning)
 - Shadow classification: shadow-only blobs kept as `Shadow`; structural vs all %
 - Verify: `python scripts/verify_tuesday.py` → ALL CHECKS PASSED
+
+## Wednesday 2026-07-29 — retrain + hard-negatives
+
+### Training fixes (`--preset wed`)
+- Drop empty real GT; **keep** mined `hn_*` hard-neg tiles
+- Loss: **CE + pos_weight**
+- Oversample change tiles ×4; full-image 256 resize; change-centered crops
+- Val-calibrate + freeze threshold
+- Warm-start: `v3_frozen`
+
+### Hard-negative mining
+- Refreshed `scripts/mine_hard_negatives.py` (parking / seasonal veg / shadow tags)
+- Saved **5** tiles (`hn_delhi_0002/0006/0013/...`), all tagged vegetation_seasonal+shadow
+- Appended to `data/delhi_cd/train/manifest.json`
+
+### Result (target test F1 > 0.60) — **HIT**
+- Run: `runs/finetune_wed/20260729_134453`
+- **best val F1=0.630** · frozen thr=**0.446**
+- **test F1=0.6051 · P=0.526 · R=0.772 · IoU=0.436**
+- Export: `models/adaptformer_delhi/wed_retrain/` (does **not** replace production `v3_frozen`)
+- Summary: `data/delhi_cd/wednesday_retrain/metrics.json`
+
+```bash
+python scripts/build_delhi_cd_splits.py --min-change-frac 0.001 --stratify
+python scripts/mine_hard_negatives.py --include-all-labeled --min-fp-frac 0.03
+python scripts/finetune_adaptformer.py --delhi-cd data/delhi_cd --preset wed --out runs/finetune_wed
+```

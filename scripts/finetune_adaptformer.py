@@ -129,6 +129,31 @@ _V4_PRESET = {
     "warm_start": "models/adaptformer_delhi/v3_frozen",
 }
 
+# Wednesday plan: training_failure_diagnosis fixes + hard-neg retention
+# Target: test F1 > 0.60
+_WED_PRESET = {
+    "epochs": 20,
+    "lr": 5e-5,
+    "batch_size": 2,
+    "augment": True,
+    "stride": 64,
+    "early_stop_patience": 7,
+    "loss": "ce",                 # CE + pos_weight (diagnosis #2)
+    "exclude_empty": True,        # drop empty real GT (diagnosis #1)
+    "keep_hard_neg": True,        # but keep mined hn_* empty tiles
+    "full_resize": True,          # full-image 256 resize (diagnosis #4)
+    "min_change_frac": 0.001,
+    "pos_oversample": 4,          # oversample change tiles
+    "min_tile_change": 0.005,
+    "change_centered": True,
+    "visualize": False,
+    "scheduler": True,
+    "thr_min": 0.05,
+    "thr_max": 0.50,
+    "thr_objective": "f1",        # val-calibrate + freeze threshold
+    "warm_start": "models/adaptformer_delhi/v3_frozen",
+}
+
 
 def _try_torch():
     try:
@@ -205,15 +230,17 @@ class DelhiTileDataset:
         use_stride = max(16, min(crop_size, int(use_stride)))
 
         n_pos = n_neg = n_center = 0
-        for pi, (before, after, gt, _pair_id) in enumerate(pairs):
+        for pi, (before, after, gt, pair_id) in enumerate(pairs):
             h, w = before.shape[:2]
+            is_hard_neg = str(pair_id).startswith("hn_")
             if full_resize or h < crop_size or w < crop_size:
                 gr = np.array(Image.fromarray(gt).resize(
                     (crop_size, crop_size), resample=Image.NEAREST))
                 frac = float((gr > 127).mean())
                 # Empty GT (hard negatives) must count as neg even when min_tile_change=0
                 is_pos = frac > 0.0 and frac >= self.min_tile_change
-                if not (train and drop_empty_tiles and not is_pos):
+                # Hard-neg empty tiles are kept even when drop_empty_tiles is on
+                if not (train and drop_empty_tiles and not is_pos and not is_hard_neg):
                     self.index.append((pi, self.KIND_FULL, 0, 0, is_pos))
                     n_pos += int(is_pos)
                     n_neg += int(not is_pos)
@@ -229,7 +256,8 @@ class DelhiTileDataset:
                     frac = float((tile_gt > 127).mean())
                     is_pos = frac > 0.0 and frac >= self.min_tile_change
                     # Drop empty / near-empty crops when exclude_empty path is active
-                    if train and drop_empty_tiles and not is_pos:
+                    # (but keep hard-negative empty tiles so FP patterns are learned)
+                    if train and drop_empty_tiles and not is_pos and not is_hard_neg:
                         continue
                     self.index.append((pi, self.KIND_CROP, x, y, is_pos))
                     n_pos += int(is_pos)
@@ -450,16 +478,25 @@ def _probe_output_scale(model, processor, device, pairs: list[tuple], n: int = 2
     return {"n": len(rows), "pairs": rows}
 
 
-def _filter_empty(pairs: list[tuple], min_change_frac: float) -> list[tuple]:
+def _filter_empty(
+    pairs: list[tuple],
+    min_change_frac: float,
+    *,
+    keep_hard_neg: bool = True,
+) -> list[tuple]:
     kept, dropped = [], []
     for before, after, gt, pair_id in pairs:
         frac = float((gt > 127).mean()) if gt is not None else 0.0
-        if frac >= min_change_frac:
+        is_hn = keep_hard_neg and str(pair_id).startswith("hn_")
+        if frac >= min_change_frac or is_hn:
             kept.append((before, after, gt, pair_id))
         else:
             dropped.append(pair_id)
     if dropped:
         print(f"  Excluded {len(dropped)} empty/near-empty GT pairs: {dropped}")
+    hn_kept = sum(1 for *_, pid in kept if str(pid).startswith("hn_"))
+    if hn_kept:
+        print(f"  Kept {hn_kept} hard-negative (empty-GT) tiles for FP suppression")
     return kept
 
 
@@ -778,6 +815,7 @@ def train(
     thr_objective: str = "f1",
     warm_start: str | None = None,
     pos_only: bool = False,
+    keep_hard_neg: bool = True,
 ) -> Path:
     torch, DataLoader, _Dataset, WeightedRandomSampler, AutoImageProcessor, AutoModel = _try_torch()
     import torch.nn.functional as F
@@ -795,9 +833,12 @@ def train(
         }
 
     if exclude_empty and not dummy:
-        train_pairs = _filter_empty(train_pairs, min_change_frac)
-        val_pairs = _filter_empty(val_pairs, min_change_frac)
-        test_change = _filter_empty(test_pairs, min_change_frac)
+        train_pairs = _filter_empty(
+            train_pairs, min_change_frac, keep_hard_neg=keep_hard_neg)
+        val_pairs = _filter_empty(
+            val_pairs, min_change_frac, keep_hard_neg=False)
+        test_change = _filter_empty(
+            test_pairs, min_change_frac, keep_hard_neg=False)
         if not train_pairs:
             raise SystemExit("No train pairs left after excluding empty GT.")
         if not val_pairs:
@@ -1132,8 +1173,8 @@ def main():
     parser = argparse.ArgumentParser(description="Fine-tune AdaptFormer on Delhi tiles")
     parser.add_argument("--manifest", type=str, default="docs/delhi_eval/manifest.json")
     parser.add_argument("--dummy", action="store_true")
-    parser.add_argument("--preset", choices=["", "day5", "fix", "v2", "v3", "v4"], default="",
-                        help="v4 = stronger positive-only sampling vs frozen v3 (loss unchanged)")
+    parser.add_argument("--preset", choices=["", "day5", "fix", "v2", "v3", "v4", "wed"], default="",
+                        help="wed = diagnosis CE+pos_weight + hard-neg retention (target test F1>0.60)")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
@@ -1150,6 +1191,8 @@ def main():
     parser.add_argument("--exclude-empty", action="store_true", default=None)
     parser.add_argument("--keep-empty", action="store_true",
                         help="do not exclude empty GT (overrides preset)")
+    parser.add_argument("--no-hard-neg", action="store_true",
+                        help="drop mined hn_* hard-negatives even if preset keeps them")
     parser.add_argument("--full-resize", action="store_true", default=None)
     parser.add_argument("--min-change-frac", type=float, default=None)
     parser.add_argument("--pos-oversample", type=int, default=None)
@@ -1169,7 +1212,10 @@ def main():
     parser.add_argument("--eval-run-dir", type=str, default="")
     args = parser.parse_args()
 
-    if args.preset == "v4":
+    if args.preset == "wed":
+        preset = _WED_PRESET
+        preset_name = "wed"
+    elif args.preset == "v4":
         preset = _V4_PRESET
         preset_name = "v4"
     elif args.preset == "v3":
@@ -1220,6 +1266,7 @@ def main():
     thr_max = args.thr_max if args.thr_max is not None else float(preset.get("thr_max", 0.7))
     thr_objective = args.thr_objective or preset.get("thr_objective", "f1")
     warm_start = args.warm_start or preset.get("warm_start") or None
+    keep_hard_neg = bool(preset.get("keep_hard_neg", True)) and not args.no_hard_neg
     visualize = preset.get("visualize", False)
     if args.visualize:
         visualize = True
@@ -1232,7 +1279,7 @@ def main():
         use_scheduler = False
 
     delhi_cd_arg = args.delhi_cd
-    if not delhi_cd_arg and args.preset in ("day5", "fix", "v2", "v3", "v4") and not args.dummy:
+    if not delhi_cd_arg and args.preset in ("day5", "fix", "v2", "v3", "v4", "wed") and not args.dummy:
         delhi_cd_arg = "data/delhi_cd"
 
     manifest = Path(args.manifest).resolve() if not args.dummy else None
@@ -1267,6 +1314,7 @@ def main():
         thr_objective=thr_objective,
         warm_start=warm_start,
         pos_only=pos_only,
+        keep_hard_neg=keep_hard_neg,
     )
 
 
