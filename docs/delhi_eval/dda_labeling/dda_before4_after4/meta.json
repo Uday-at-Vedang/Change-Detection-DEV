@@ -1,0 +1,23 @@
+{
+  "pair_id": "dda_before4_after4",
+  "before": "before4.tif",
+  "after": "after4.tif",
+  "label": "two new building foundations (open lot -> construction starting)",
+  "change_frac": 0.1932,
+  "aligned": "low_quality",
+  "ncc": 0.41,
+  "georeferenced": true,
+  "training_use": false,
+  "orthomosaics_needed": true,
+  "note": "Georeferenced drone pair, NCC 0.41. Structural change labeled. Un-orthorectified -> eval/borderline until orthomosaics. RE-ANALYZED: added removed/modified roofs on the left in addition to the new foundations.",
+  "labeled_by": "assisted (traced) - VERIFY",
+  "created_unix": 1785396408.9849763,
+  "labels": [
+    "NEW: open working yard cleared + roofed over (top-left)",
+    "NEW: foundation (top-center lot)",
+    "NEW: foundation/wall (mid-right lot)",
+    "REMOVED: solid white roof demolished -> tarp (bottom-left)",
+    "MODIFIED: green roof -> grey re-roof (mid-left)"
+  ],
+  "reanalyzed": true
+}

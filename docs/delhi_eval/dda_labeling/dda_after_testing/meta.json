@@ -1,0 +1,19 @@
+{
+  "pair_id": "dda_after_testing",
+  "before": "before_testing.tif",
+  "after": "after_testing.tif",
+  "labels": [
+    "new blue corrugated roof (was open yard)",
+    "plot cleared to rubble/bricks (was vegetation)"
+  ],
+  "change_frac": 0.1604,
+  "mask_grid": "after_testing (1319x1816)",
+  "aligned": false,
+  "georeferenced": false,
+  "training_use": false,
+  "note": "Misaligned, non-georeferenced drone pair. Draft annotation of the 2 clearest changes on the AFTER grid. Demo/eval only; NOT registered in training manifest; not for fine-tune until co-registered orthomosaics.",
+  "labeled_by": "assisted (traced from imagery) - VERIFY",
+  "created_unix": 1785341268.996831,
+  "orthomosaics_needed": true,
+  "blocker": "Un-orthorectified drone frames: NCC 0.07-0.51, local parallax not fixable by 2D registration. Needs orthomosaics (ODM/Pix4D/Agisoft) from RAW photos before any training use. Labels are reusable once aligned."
+}

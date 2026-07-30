@@ -19,43 +19,47 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-PAIR_ID = "dda_grid54_h43x2e1"
-PACK = ROOT / "docs/delhi_eval/dda_labeling" / PAIR_ID
-DEST = ROOT / "docs/delhi_eval/labels" / f"{PAIR_ID}.png"
+DEFAULT_PAIR_ID = "dda_grid54_h43x2e1"
 MANIFEST = ROOT / "docs/delhi_eval/manifest.json"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--pair-id", type=str, default=DEFAULT_PAIR_ID,
+                    help="Labeling-pack pair id (folder under docs/delhi_eval/dda_labeling/)")
     ap.add_argument("--allow-seed", action="store_true",
                     help="Accept seed_mask.png if gt_mask.png is missing (draft only)")
     ap.add_argument("--src", type=str, default="",
                     help="Optional explicit path to a binary mask PNG")
     args = ap.parse_args()
 
-    src = Path(args.src) if args.src else PACK / "gt_mask.png"
+    pair_id = args.pair_id
+    pack = ROOT / "docs/delhi_eval/dda_labeling" / pair_id
+    dest = ROOT / "docs/delhi_eval/labels" / f"{pair_id}.png"
+
+    src = Path(args.src) if args.src else pack / "gt_mask.png"
     if not src.is_file() and args.allow_seed:
-        src = PACK / "seed_mask.png"
+        src = pack / "seed_mask.png"
     if not src.is_file():
-        print(f"Missing {src}. Finish labeling first (see {PACK / 'LABELING.md'}).")
+        print(f"Missing {src}. Finish labeling first (see {pack / 'LABELING.md'}).")
         return 1
 
     arr = np.array(Image.open(src).convert("L"))
     binary = ((arr > 127).astype(np.uint8) * 255)
-    DEST.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(binary).save(DEST)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(binary).save(dest)
     changed = float((binary > 127).mean())
-    print(f"Wrote {DEST} shape={binary.shape} change_frac={changed:.4f}")
+    print(f"Wrote {dest} shape={binary.shape} change_frac={changed:.4f}")
 
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     found = False
     for p in data.get("pairs", []):
-        if p.get("pair_id") == PAIR_ID:
-            p["gt_mask"] = str(DEST.relative_to(ROOT)).replace("\\", "/")
+        if p.get("pair_id") == pair_id:
+            p["gt_mask"] = str(dest.relative_to(ROOT)).replace("\\", "/")
             found = True
             break
     if not found:
-        print("WARNING: pair not in manifest — run prepare_dda_gt_labeling.py first")
+        print(f"WARNING: {pair_id} not in manifest — export the pack first")
     else:
         MANIFEST.write_text(json.dumps(data, indent=2), encoding="utf-8")
         print("Manifest updated")

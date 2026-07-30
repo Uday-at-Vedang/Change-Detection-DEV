@@ -3634,58 +3634,6 @@ def _nms_regions(regions, iou_thresh=0.45):
     return keep
 
 
-def _shadow_regions_from_mask(shadow_mask, min_area, start_id=0):
-    """Turn shadow-only pixels into labeled ``Shadow`` regions.
-
-    ``strip_shadow_only_from_mask`` already judged these pixels to be
-    illumination/shadow-only and removed them from the structural mask. Rather
-    than let them vanish silently, we surface them as a distinct ``Shadow`` class
-    (mapped to the DDA ``Shadow`` change type) so reviewers can see and keep
-    them; the caller still excludes them from the structural change total.
-    They are intentionally NOT re-run through the object classifier.
-    """
-    if shadow_mask is None:
-        return []
-    binary = (shadow_mask > 127).astype(np.uint8)
-    if int(binary.sum()) == 0:
-        return []
-    img_h, img_w = binary.shape[:2]
-    img_area = img_h * img_w
-    if min_area is None:
-        min_area = int(max(250, min(1000, img_area * 0.00009)))
-    # Shadows are diffuse — use a slightly larger floor so speckle isn't listed.
-    min_area = int(min_area * 1.5)
-    num, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
-    regions = []
-    rid = int(start_id)
-    for i in range(1, num):
-        area = int(stats[i, cv2.CC_STAT_AREA])
-        if area < min_area:
-            continue
-        x = int(stats[i, cv2.CC_STAT_LEFT]); y = int(stats[i, cv2.CC_STAT_TOP])
-        w = int(stats[i, cv2.CC_STAT_WIDTH]); h = int(stats[i, cv2.CC_STAT_HEIGHT])
-        fill = area / max(w * h, 1)
-        if fill < 0.15:
-            continue
-        cx, cy = centroids[i]
-        rid += 1
-        regions.append({
-            "id": rid,
-            "area": area,
-            "bbox": (x, y, w, h),
-            "center": (int(cx), int(cy)),
-            "object_type": "Shadow",
-            "confidence": 0.5,
-            "fill_ratio": round(fill, 3),
-            "sub_type": None,
-            "sub_type_confidence": None,
-            "estimated_stories": None,
-            "estimated_height_m": None,
-            "construction_stage": None,
-        })
-    return regions
-
-
 def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
                            before_img=None, registration_ok=True):
     """
@@ -4035,11 +3983,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     )
 
     change_mask = strip_transient_from_mask(change_mask, before_array, after_array)
-    # Capture exactly the pixels the shadow strip removes so they can be surfaced
-    # as a distinct 'Shadow' class instead of vanishing (see _shadow_regions_from_mask).
-    _pre_shadow_mask = change_mask.copy()
     change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
-    shadow_only_mask = ((_pre_shadow_mask > 127) & (change_mask <= 127)).astype(np.uint8) * 255
     change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
     change_mask = strip_weak_seasonal_veg_from_mask(change_mask, before_array, after_array)
     # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs
@@ -4085,33 +4029,15 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         before_array, after_array, change_mask,
         regions=change_regions, total_pixels=total_pixels,
     )
-    # Surface shadow-only blobs as a distinct 'Shadow' class. Done AFTER
-    # visualization so the structural overlay/tint is unchanged; these are
-    # excluded from the structural change total below (structural vs all).
-    shadow_regions = _shadow_regions_from_mask(
-        shadow_only_mask, min_region_area,
-        start_id=max([r["id"] for r in change_regions], default=0),
-    )
-    if shadow_regions:
-        change_regions = list(change_regions) + shadow_regions
-        _log.info("Classified %d shadow-only region(s) as Shadow", len(shadow_regions))
-
     changed_pixels = int(np.sum(change_mask > 127))
-    shadow_pixels = int(np.sum(shadow_only_mask > 127))
     change_pct = (changed_pixels / total_pixels * 100.0) if total_pixels else 0.0
-    change_pct_all = (
-        (changed_pixels + shadow_pixels) / total_pixels * 100.0 if total_pixels else 0.0
-    )
     _prog(95, "Finalizing results")
 
     stats = {
         "total_pixels": total_pixels,
         "changed_pixels": changed_pixels,
-        "shadow_pixels": shadow_pixels,
         "unchanged_pixels": total_pixels - changed_pixels,
         "change_percentage": change_pct,
-        "change_percentage_structural": change_pct,
-        "change_percentage_all": change_pct_all,
         "image_width": change_mask.shape[1],
         "image_height": change_mask.shape[0],
         "threshold_debug": threshold_debug,

@@ -77,13 +77,14 @@ function updateDdaReviewSummary(regions) {
   el.textContent = `Review: ${counts.confirmed} confirmed · ${counts.false_positive} false positive · ${counts.submitted || 0} submitted · ${counts.pending} pending`;
 }
 
-function setupDdaReviewBar(runId, regions) {
+function setupDdaReviewBar(runId, regions, geo) {
   const exportAll = document.getElementById('dda-export-csv');
   const exportConfirmed = document.getElementById('dda-export-confirmed');
   const submitBtn = document.getElementById('dda-submit-dept');
   if (exportAll) exportAll.href = `/api/dda/reports/${runId}/export.csv`;
   if (exportConfirmed) exportConfirmed.href = `/api/dda/reports/${runId}/export.csv?confirmed=1`;
   updateDdaReviewSummary(regions);
+  setupTrainingPackButton(runId, geo);
 
   submitBtn?.replaceWith(submitBtn.cloneNode(true));
   document.getElementById('dda-submit-dept')?.addEventListener('click', async () => {
@@ -97,6 +98,46 @@ function setupDdaReviewBar(runId, regions) {
       showDdaResult(data);
     } catch (err) {
       if (typeof showDdaError === 'function') showDdaError(err.message || 'Submit failed');
+    }
+  });
+}
+
+// "Export training pack": write a paint-ready GT-labeling pack for the current
+// pair (and ROI). Only available when the pair/ROI is known from the Compare tab
+// (i.e. a fresh detection); hidden when viewing an old report from history.
+function setupTrainingPackButton(runId, geo) {
+  const btn = document.getElementById('dda-export-pack');
+  if (!btn) return;
+  const cs = (typeof compareState !== 'undefined') ? compareState : null;
+  const havePair = cs && cs.t1 && cs.t2;
+  btn.classList.toggle('hidden', !havePair);
+  if (!havePair) return;
+
+  btn.replaceWith(btn.cloneNode(true));
+  const fresh = document.getElementById('dda-export-pack');
+  fresh.addEventListener('click', async () => {
+    fresh.disabled = true;
+    const original = fresh.textContent;
+    fresh.textContent = 'Exporting…';
+    try {
+      const form = new FormData();
+      form.append('base_path', cs.t1.path);
+      form.append('comparison_path', cs.t2.path);
+      form.append('run_id', String(runId));
+      if (geo && geo.detectionWidth && geo.detectionHeight) {
+        form.append('det_w', String(geo.detectionWidth));
+        form.append('det_h', String(geo.detectionHeight));
+      }
+      if (cs.roi) form.append('roi', JSON.stringify(cs.roi));
+      const res = await ddaApi('POST', '/api/dda/training/pack', { body: form });
+      if (typeof showDdaSuccess === 'function') {
+        showDdaSuccess(`Training pack ready: ${res.dir} — paint gt_mask.png then run: ${res.ingestCmd}`);
+      }
+    } catch (err) {
+      if (typeof showDdaError === 'function') showDdaError(err.message || 'Pack export failed');
+    } finally {
+      fresh.disabled = false;
+      fresh.textContent = original;
     }
   });
 }
@@ -261,7 +302,7 @@ function showDdaResult(data) {
 
   ddaRegionPage = 0;
   renderDdaRegionPage();
-  if (data.id) setupDdaReviewBar(data.id, regions);
+  if (data.id) setupDdaReviewBar(data.id, regions, data.statistics && data.statistics.geo);
   openDdaResultModal();
 }
 

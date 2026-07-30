@@ -1,8 +1,32 @@
 {
   "version": 1,
   "split": "train",
-  "n_pairs": 16,
+  "n_pairs": 22,
   "pairs": [
+    {
+      "pair_id": "delhi_0009",
+      "before_path": "library_sources/2019/sentinel2_delhi_r1231_c7957.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r1231_c7957.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0009.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted. Retried with stronger morphological merge \u2014 still doesn't align with the visible real change, needs manual polygon redraw. Day 3: hand-traced polygon around the color-distinctive bare-earth/staging patch that disappeared \u2014 replaced automated candidate.",
+      "change_frac": 0.0235
+    },
+    {
+      "pair_id": "delhi_0028",
+      "before_path": "library_sources/2019/sentinel2_delhi_r3931_c9457.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r3931_c9457.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0028.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
+      "change_frac": 0.0368
+    },
     {
       "pair_id": "delhi_0025",
       "before_path": "library_sources/2019/sentinel2_delhi_r1531_c8857.tif",
@@ -29,28 +53,18 @@
       "change_frac": 0.03517777777777778
     },
     {
-      "pair_id": "delhi_0024",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1231_c10357.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1231_c10357.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0024.png",
+      "pair_id": "dda_grid54_h43x2e1",
+      "before_path": "data/library_sources/central_delhi/Images/Grid_54.tif",
+      "after_path": "data/library_sources/central_delhi/Images/H43X2E1.tif",
+      "gt_mask": "docs/delhi_eval/labels/dda_grid54_h43x2e1.png",
       "change_types": [
-        "mixed_gsd",
-        "vegetation"
+        "building",
+        "road",
+        "vegetation",
+        "mixed_gsd"
       ],
-      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
-      "change_frac": 0.04346666666666667
-    },
-    {
-      "pair_id": "delhi_0009",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1231_c7957.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1231_c7957.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0009.png",
-      "change_types": [
-        "mixed_gsd",
-        "vegetation"
-      ],
-      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted. Retried with stronger morphological merge \u2014 still doesn't align with the visible real change, needs manual polygon redraw. Day 3: hand-traced polygon around the color-distinctive bare-earth/staging patch that disappeared \u2014 replaced automated candidate.",
-      "change_frac": 0.0235
+      "notes": "DDA production pair (Grid_54 vs H43X2E1). Hand-label in docs/delhi_eval/dda_labeling/dda_grid54_h43x2e1/ then run scripts/ingest_dda_gt_label.py",
+      "change_frac": 0.0022583494148406373
     },
     {
       "pair_id": "delhi_0011",
@@ -65,52 +79,28 @@
       "change_frac": 0.044333333333333336
     },
     {
-      "pair_id": "delhi_0021",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1531_c8557.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1531_c8557.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0021.png",
+      "pair_id": "delhi_0029",
+      "before_path": "library_sources/2019/sentinel2_delhi_r2731_c9157.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r2731_c9157.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0029.png",
       "change_types": [
         "mixed_gsd",
         "vegetation"
       ],
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
-      "change_frac": 0.038988888888888885
+      "change_frac": 0.041322222222222225
     },
     {
-      "pair_id": "delhi_0022",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1231_c9457.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1231_c9457.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0022.png",
-      "change_types": [
-        "mixed_gsd",
-        "vegetation"
-      ],
-      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
-      "change_frac": 0.05095555555555555
-    },
-    {
-      "pair_id": "delhi_0019",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1831_c9457.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1831_c9457.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0019.png",
-      "change_types": [
-        "mixed_gsd",
-        "vegetation"
-      ],
-      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
-      "change_frac": 0.04778888888888889
-    },
-    {
-      "pair_id": "delhi_0027",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1831_c8857.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1831_c8857.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0027.png",
+      "pair_id": "delhi_0018",
+      "before_path": "library_sources/2019/sentinel2_delhi_r4531_c8257.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r4531_c8257.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0018.png",
       "change_types": [
         "mixed_gsd",
         "vegetation"
       ],
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling.",
-      "change_frac": 0.04786666666666667
+      "change_frac": 0.05095555555555555
     },
     {
       "pair_id": "delhi_0017",
@@ -126,40 +116,65 @@
       "change_frac": 0.053344444444444444
     },
     {
-      "pair_id": "delhi_0018",
-      "before_path": "library_sources/2019/sentinel2_delhi_r4531_c8257.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r4531_c8257.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0018.png",
+      "pair_id": "delhi_0027",
+      "before_path": "library_sources/2019/sentinel2_delhi_r1831_c8857.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r1831_c8857.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0027.png",
       "change_types": [
         "mixed_gsd",
         "vegetation"
       ],
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling.",
+      "change_frac": 0.04786666666666667
+    },
+    {
+      "pair_id": "delhi_0022",
+      "before_path": "library_sources/2019/sentinel2_delhi_r1231_c9457.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r1231_c9457.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0022.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
       "change_frac": 0.05095555555555555
     },
     {
-      "pair_id": "delhi_0001",
-      "before_path": "library_sources/2019/sentinel2_delhi_r4531_c8857.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r4531_c8857.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0001.png",
+      "pair_id": "delhi_0023",
+      "before_path": "library_sources/2019/sentinel2_delhi_r3931_c9157.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r3931_c9157.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0023.png",
       "change_types": [
         "mixed_gsd",
         "vegetation"
       ],
-      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling.",
-      "change_frac": 0.06331111111111111
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: appears seasonal/crop-texture noise dominated, no clear structural change spotted at thumbnail resolution \u2014 needs a closer manual look before labeling.",
+      "change_frac": 0.04867777777777778
     },
     {
-      "pair_id": "delhi_0003",
-      "before_path": "library_sources/2019/sentinel2_delhi_r4531_c9157.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r4531_c9157.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0003.png",
+      "pair_id": "delhi_0004",
+      "before_path": "library_sources/2019/sentinel2_delhi_r3931_c9757.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r3931_c9757.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0004.png",
       "change_types": [
         "mixed_gsd",
         "vegetation"
       ],
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted.",
-      "change_frac": 0.08271111111111111
+      "change_frac": 0.07601111111111111
+    },
+    {
+      "pair_id": "delhi_0012",
+      "before_path": "library_sources/2019/sentinel2_delhi_r2731_c8857.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r2731_c8857.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0012.png",
+      "change_types": [
+        "mixed_gsd",
+        "vegetation",
+        "road"
+      ],
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Visually confirmed real road/highway construction (Day 2 review) \u2014 coarse 10m precision only.",
+      "change_frac": 0.08994444444444444
     },
     {
       "pair_id": "delhi_0020",
@@ -174,19 +189,6 @@
       "change_frac": 0.48006666666666664
     },
     {
-      "pair_id": "delhi_0016",
-      "before_path": "library_sources/2019/sentinel2_delhi_r1831_c9757.tif",
-      "after_path": "library_sources/2026/sentinel2_delhi_r1831_c9757.tif",
-      "gt_mask": "docs/delhi_eval/labels/delhi_0016.png",
-      "change_types": [
-        "mixed_gsd",
-        "vegetation",
-        "road"
-      ],
-      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Visually confirmed real road/highway construction (Day 2 review) \u2014 coarse 10m precision only.",
-      "change_frac": 0.07712222222222222
-    },
-    {
       "pair_id": "delhi_0030",
       "before_path": "library_sources/2019/sentinel2_delhi_r1531_c10057.tif",
       "after_path": "library_sources/2026/sentinel2_delhi_r1531_c10057.tif",
@@ -199,26 +201,16 @@
       "change_frac": 0.37924444444444444
     },
     {
-      "pair_id": "hn_delhi_0013",
-      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0013_before.png",
-      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0013_after.png",
-      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0013_gt.png",
+      "pair_id": "delhi_0003",
+      "before_path": "library_sources/2019/sentinel2_delhi_r4531_c9157.tif",
+      "after_path": "library_sources/2026/sentinel2_delhi_r4531_c9157.tif",
+      "gt_mask": "docs/delhi_eval/labels/delhi_0003.png",
       "change_types": [
-        "hard_negative",
-        "vegetation_seasonal"
+        "mixed_gsd",
+        "vegetation"
       ],
-      "notes": "Mined FP from delhi_0013 (fp_frac=0.069)"
-    },
-    {
-      "pair_id": "hn_delhi_0014",
-      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0014_before.png",
-      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0014_after.png",
-      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0014_gt.png",
-      "change_types": [
-        "hard_negative",
-        "vegetation_seasonal"
-      ],
-      "notes": "Mined FP from delhi_0014 (fp_frac=0.101)"
+      "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted.",
+      "change_frac": 0.08271111111111111
     },
     {
       "pair_id": "hn_delhi_0002",
@@ -227,9 +219,10 @@
       "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0002_gt.png",
       "change_types": [
         "hard_negative",
-        "vegetation_seasonal"
+        "vegetation_seasonal",
+        "shadow"
       ],
-      "notes": "Mined FP from delhi_0002 (fp_frac=0.038)"
+      "notes": "Mined FP from delhi_0002 (fp_frac=0.038, tags=hard_negative,vegetation_seasonal,shadow)"
     },
     {
       "pair_id": "hn_delhi_0006",
@@ -238,31 +231,34 @@
       "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0006_gt.png",
       "change_types": [
         "hard_negative",
-        "vegetation_seasonal"
+        "vegetation_seasonal",
+        "shadow"
       ],
-      "notes": "Mined FP from delhi_0006 (fp_frac=0.036)"
+      "notes": "Mined FP from delhi_0006 (fp_frac=0.036, tags=hard_negative,vegetation_seasonal,shadow)"
     },
     {
-      "pair_id": "hn_delhi_0007",
-      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0007_before.png",
-      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0007_after.png",
-      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0007_gt.png",
+      "pair_id": "hn_delhi_0013",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0013_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0013_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0013_gt.png",
       "change_types": [
         "hard_negative",
-        "vegetation_seasonal"
+        "vegetation_seasonal",
+        "shadow"
       ],
-      "notes": "Mined FP from delhi_0007 (fp_frac=0.026)"
+      "notes": "Mined FP from delhi_0013 (fp_frac=0.069, tags=hard_negative,vegetation_seasonal,shadow)"
     },
     {
-      "pair_id": "hn_delhi_0008",
-      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0008_before.png",
-      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0008_after.png",
-      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0008_gt.png",
+      "pair_id": "hn_delhi_0014",
+      "before_path": "data/delhi_cd/hard_negatives/hn_delhi_0014_before.png",
+      "after_path": "data/delhi_cd/hard_negatives/hn_delhi_0014_after.png",
+      "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0014_gt.png",
       "change_types": [
         "hard_negative",
-        "vegetation_seasonal"
+        "vegetation_seasonal",
+        "shadow"
       ],
-      "notes": "Mined FP from delhi_0008 (fp_frac=0.027)"
+      "notes": "Mined FP from delhi_0014 (fp_frac=0.101, tags=hard_negative,vegetation_seasonal,shadow)"
     },
     {
       "pair_id": "hn_delhi_0015",
@@ -271,9 +267,10 @@
       "gt_mask": "data/delhi_cd/hard_negatives/hn_delhi_0015_gt.png",
       "change_types": [
         "hard_negative",
-        "vegetation_seasonal"
+        "vegetation_seasonal",
+        "shadow"
       ],
-      "notes": "Mined FP from delhi_0015 (fp_frac=0.036)"
+      "notes": "Mined FP from delhi_0015 (fp_frac=0.036, tags=hard_negative,vegetation_seasonal,shadow)"
     }
   ]
 }

@@ -1,4 +1,4 @@
-"""Verify Tuesday's two tasks (CPU-only, no GPU needed).
+"""Verify Tuesday's alignment/identical guard (CPU-only, no GPU needed).
 
 Run:  venv\\Scripts\\python scripts\\verify_tuesday.py
       [optional] pass a before/after GeoTIFF pair to also test real images:
@@ -61,45 +61,28 @@ if len(sys.argv) >= 3:
 
 
 print("=" * 62)
-print("TASK 2 - Shadow classification")
+print("SHADOW REMOVAL - shadows are suppressed, NOT classified/detected")
 print("=" * 62)
 
-from app.dda.change_type_map import (  # noqa: E402
-    DDA_SHADOW, map_to_dda_change_type, enrich_region_for_dda,
-)
-from app.detection_engine import (  # noqa: E402
-    strip_shadow_only_from_mask, _shadow_regions_from_mask,
-)
+import app.dda.change_type_map as ctm  # noqa: E402
+from app.dda.change_type_map import map_to_dda_change_type  # noqa: E402
+import app.detection_engine as de  # noqa: E402
+from app.detection_engine import strip_shadow_only_from_mask  # noqa: E402
 
-# 2a. new DDA type exists and maps correctly
-check("'Shadow' maps to DDA Shadow type",
-      map_to_dda_change_type("Shadow") == DDA_SHADOW == "Shadow")
-# 2b. existing types unchanged (no regression)
-check("'New Construction/Building' still maps correctly",
-      map_to_dda_change_type("New Construction/Building") == "New Construction")
-check("enrich tags shadow region",
-      enrich_region_for_dda({"objectType": "Shadow", "id": 1})["ddaChangeType"] == "Shadow")
+# No Shadow DDA type / classifier remains
+check("no DDA_SHADOW type defined", not hasattr(ctm, "DDA_SHADOW"))
+check("no _shadow_regions_from_mask classifier", not hasattr(de, "_shadow_regions_from_mask"))
+check("'shadow' no longer maps to a Shadow class",
+      map_to_dda_change_type("Shadow") != "Shadow")
 
-# 2c. full chain: a brightness-only region -> stripped -> captured -> Shadow region
+# Shadow-only pixels are still SUPPRESSED (stripped), so they aren't detected as change
 before = np.full((300, 300, 3), 150, np.uint8)
 after = before.copy()
 after[100:180, 100:180] = 120                      # L drops, chroma unchanged = shadow
 mask = np.zeros((300, 300), np.uint8)
 mask[100:180, 100:180] = 255                       # detector flagged it as change
-pre = mask.copy()
 post = strip_shadow_only_from_mask(mask, before, after)
-shadow_only = ((pre > 127) & (post <= 127)).astype(np.uint8) * 255
-regs = _shadow_regions_from_mask(shadow_only, None, start_id=0)
-check("shadow pixels removed from structural mask", int((post > 127).sum()) == 0)
-check("shadow pixels captured", int((shadow_only > 127).sum()) > 0)
-check("shadow blob classified as Shadow region",
-      len(regs) == 1 and regs[0]["object_type"] == "Shadow",
-      f"{len(regs)} region(s)")
-
-# 2d. IDs continue after structural regions (no collision)
-regs2 = _shadow_regions_from_mask(shadow_only, None, start_id=7)
-check("shadow region ids continue after structural ids",
-      regs2[0]["id"] == 8, f"id={regs2[0]['id']}")
+check("shadow-only pixels suppressed (not detected)", int((post > 127).sum()) == 0)
 
 print("=" * 62)
 if _fails:

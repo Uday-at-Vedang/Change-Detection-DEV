@@ -1,0 +1,15 @@
+{
+  "pair_id": "dda_before5_after5",
+  "before": "before5.tif",
+  "after": "after5.tif",
+  "label": "new sheds: large white/grey + corrugated (right) and blue (center) on former debris yard",
+  "change_frac": 0.2232,
+  "aligned": "ok",
+  "ncc": 0.46,
+  "georeferenced": true,
+  "training_use": false,
+  "orthomosaics_needed": true,
+  "note": "Georeferenced drone pair, NCC 0.46. Structural change labeled. Un-orthorectified -> eval/borderline until orthomosaics.",
+  "labeled_by": "assisted (traced) - VERIFY",
+  "created_unix": 1785396409.806533
+}

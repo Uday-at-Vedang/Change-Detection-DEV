@@ -1,0 +1,14 @@
+{
+  "pair_id": "dda_before2019_r3_after2026_r3_roi_e993b2",
+  "before": "before_2019.tif",
+  "after": "after_2026.tif",
+  "label": "NO structural change (agricultural/seasonal tone change only)",
+  "change_frac": 0.0,
+  "example_type": "hard_negative",
+  "aligned": true,
+  "ncc": 0.49,
+  "training_use": true,
+  "note": "Aligned 2019->2026. Dominant difference is seasonal field green-up, NOT reportable structural change -> blank GT = hard negative that teaches the model to ignore seasonal change. If the finetune uses exclude_empty, route via the hard-negative set instead of dropping.",
+  "labeled_by": "assisted (visual review)",
+  "created_unix": 1785342926.6739736
+}

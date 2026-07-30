@@ -504,6 +504,114 @@
         3765,
         4096
       ]
+    },
+    {
+      "pair_id": "dda_before2019_r0_after2026_r0_roi_f0727d",
+      "before_path": "data/large_geotiff_test/before_2019.tif",
+      "after_path": "data/large_geotiff_test/after_2026.tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "Large GeoTIFF test (2019->2026)",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": null,
+      "roi": {
+        "x": 0.646,
+        "y": 0.057,
+        "w": 0.163,
+        "h": 0.1415
+      },
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before2019_r0_after2026_r0_roi_f0727d/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before2019_r0_after2026_r0_roi_f0727d",
+      "label_preview_size": [
+        326,
+        283
+      ]
+    },
+    {
+      "pair_id": "dda_before2019_r1_after2026_r1_roi_e0c280",
+      "before_path": "data/large_geotiff_test/before_2019.tif",
+      "after_path": "data/large_geotiff_test/after_2026.tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "Large GeoTIFF test (2019->2026)",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": null,
+      "roi": {
+        "x": 0.4965,
+        "y": 0.429,
+        "w": 0.1125,
+        "h": 0.124
+      },
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before2019_r1_after2026_r1_roi_e0c280/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before2019_r1_after2026_r1_roi_e0c280",
+      "label_preview_size": [
+        225,
+        248
+      ]
+    },
+    {
+      "pair_id": "dda_before2019_r2_after2026_r2_roi_2e5320",
+      "before_path": "data/large_geotiff_test/before_2019.tif",
+      "after_path": "data/large_geotiff_test/after_2026.tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "Large GeoTIFF test (2019->2026)",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": null,
+      "roi": {
+        "x": 0.4265,
+        "y": 0.2975,
+        "w": 0.127,
+        "h": 0.1355
+      },
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before2019_r2_after2026_r2_roi_2e5320/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before2019_r2_after2026_r2_roi_2e5320",
+      "label_preview_size": [
+        254,
+        271
+      ]
+    },
+    {
+      "pair_id": "dda_before2019_r3_after2026_r3_roi_e993b2",
+      "before_path": "data/large_geotiff_test/before_2019.tif",
+      "after_path": "data/large_geotiff_test/after_2026.tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "Large GeoTIFF test (2019->2026)",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": null,
+      "roi": {
+        "x": 0.5355,
+        "y": 0.0,
+        "w": 0.154,
+        "h": 0.102
+      },
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before2019_r3_after2026_r3_roi_e993b2/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before2019_r3_after2026_r3_roi_e993b2",
+      "label_preview_size": [
+        308,
+        204
+      ]
     }
   ]
 }

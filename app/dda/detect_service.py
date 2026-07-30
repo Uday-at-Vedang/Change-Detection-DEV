@@ -393,10 +393,6 @@ def run_detection_and_save(
             "changedPixels": changed_px,
             "unchangedPixels": int(stats["unchanged_pixels"]),
             "changePercentage": change_pct,
-            "changePercentageStructural": float(
-                stats.get("change_percentage_structural", change_pct)),
-            "changePercentageAll": float(stats.get("change_percentage_all", change_pct)),
-            "shadowPixels": int(stats.get("shadow_pixels", 0)),
             "thresholdDebug": stats.get("threshold_debug", {}),
             "params": stats.get("params", {}),
             "alignmentWarning": stats.get("alignment_warning"),

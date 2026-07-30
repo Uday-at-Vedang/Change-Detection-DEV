@@ -1,0 +1,16 @@
+{
+  "pair_id": "dda_1_2_scene",
+  "before": "1.tif",
+  "after": "2.tif",
+  "label": "two new buildings (empty lot -> construction), full-res geo-aligned scene",
+  "change_frac": 0.0079,
+  "mask_grid": "geo-aligned 2000x1360",
+  "aligned": "partial",
+  "ncc": 0.51,
+  "georeferenced": true,
+  "training_use": false,
+  "orthomosaics_needed": true,
+  "blocker": "Georeferenced + geo-aligned (NCC 0.51) but residual LOCAL parallax (tall new buildings) not fixable by 2D registration; change map noisy. Eval/demo label only. Orthomosaics needed for training.",
+  "labeled_by": "assisted (traced)",
+  "created_unix": 1785343508.551353
+}
