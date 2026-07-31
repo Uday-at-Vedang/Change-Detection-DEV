@@ -68,11 +68,46 @@ def _labeled_pairs(manifest: Path, min_change_frac: float = 0.0) -> list[dict]:
 
 def split_pairs(pairs: list[dict], seed: int = 0,
                 train_frac: float = 0.70, val_frac: float = 0.15,
-                stratify: bool = False):
-    """70/15/15 split. With stratify=True, balance change density across splits."""
+                stratify: bool = False, frozen_test_ids: list[str] | None = None):
+    """70/15/15 split. With stratify=True, balance change density across splits.
+
+    ``frozen_test_ids``, when given, pins those pair_ids to the test split every
+    time regardless of what else is added to/removed from the labeled pool, so a
+    frozen model/threshold's test F1 stays comparable across days. Any frozen id
+    not currently in ``pairs`` (label missing this run) is skipped with a
+    warning rather than silently producing a smaller/different test set.
+    """
     n = len(pairs)
     if n < 3:
         raise SystemExit(f"Need at least 3 labeled pairs for 70/15/15; got {n}")
+
+    if frozen_test_ids:
+        by_id = {p["pair_id"]: p for p in pairs}
+        forced_test = [by_id[pid] for pid in frozen_test_ids if pid in by_id]
+        missing = [pid for pid in frozen_test_ids if pid not in by_id]
+        if missing:
+            print(f"WARNING: frozen test id(s) not in labeled pool this run: {missing}")
+        remaining = [p for p in pairs if p["pair_id"] not in set(frozen_test_ids)]
+        # Two-way train/val split of the remaining pool (no test carve-out here —
+        # the frozen ids above are the entire test set, always, every run).
+        rng = random.Random(seed)
+        if stratify:
+            ordered = sorted(remaining, key=lambda p: p.get("change_frac", 0.0))
+        else:
+            ordered = list(remaining)
+            rng.shuffle(ordered)
+        n_val = max(1, int(round(len(remaining) * val_frac / (train_frac + val_frac)))) if remaining else 0
+        if stratify:
+            # Take every Nth pair across the density-sorted order for val, so val
+            # still spans easy/medium/hard rather than clustering at one end.
+            step = max(1, len(ordered) // max(1, n_val))
+            val_idx = set(range(0, len(ordered), step)[:n_val])
+            val = [p for i, p in enumerate(ordered) if i in val_idx]
+            train = [p for i, p in enumerate(ordered) if i not in val_idx]
+        else:
+            val = ordered[:n_val]
+            train = ordered[n_val:]
+        return train, val, forced_test
 
     rng = random.Random(seed)
     n_test = max(1, int(round(n * (1.0 - train_frac - val_frac))))
@@ -175,6 +210,16 @@ def main():
                         help="drop GT masks with change fraction below this (empty labels)")
     parser.add_argument("--stratify", action="store_true",
                         help="balance change density across train/val/test (fixes Val>>Test gap)")
+    parser.add_argument(
+        "--freeze-test-ids", default="data/delhi_cd/frozen_test_ids.json",
+        help=(
+            "JSON file listing pair_ids to always assign to test, so a frozen "
+            "model/threshold's test F1 stays comparable across days even as "
+            "labeled pairs are added/removed. Pass '' to disable and let the "
+            "splitter pick test freely (NOT recommended once a model/threshold "
+            "has been calibrated against a specific test set)."
+        ),
+    )
     args = parser.parse_args()
 
     manifest = (ROOT / args.manifest).resolve() if not Path(args.manifest).is_absolute() else Path(args.manifest)
@@ -186,7 +231,17 @@ def main():
     if not pairs:
         raise SystemExit("No labeled Delhi pairs found — cannot build splits.")
 
-    train, val, test = split_pairs(pairs, seed=args.seed, stratify=args.stratify)
+    frozen_test_ids = None
+    if args.freeze_test_ids:
+        freeze_path = ROOT / args.freeze_test_ids
+        if freeze_path.is_file():
+            frozen_test_ids = json.loads(freeze_path.read_text(encoding="utf-8"))["test_pair_ids"]
+            print(f"Freezing test split to {len(frozen_test_ids)} pair(s) from {freeze_path.name}")
+        else:
+            print(f"NOTE: {freeze_path} not found — test split will NOT be frozen this run.")
+
+    train, val, test = split_pairs(
+        pairs, seed=args.seed, stratify=args.stratify, frozen_test_ids=frozen_test_ids)
     out_dir = ROOT / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 

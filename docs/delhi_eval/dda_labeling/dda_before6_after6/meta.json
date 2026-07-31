@@ -1,0 +1,18 @@
+{
+  "pair_id": "dda_before6_after6",
+  "before": "before6.tif",
+  "after": "after6.tif",
+  "labels": [
+    "blue corrugated shed demolished -> new concrete roof (bottom-left)"
+  ],
+  "change_frac": 0.0471,
+  "aligned": "ok",
+  "ncc": 0.51,
+  "georeferenced": true,
+  "training_use": true,
+  "orthomosaics_needed": true,
+  "note": "Very dense rooftop block, NCC 0.51. Clear structural change = blue shed -> concrete roof. Rest of block is stable (rooftop clutter/shadow only). Eval until orthomosaics.",
+  "labeled_by": "assisted (traced) - VERIFY",
+  "created_unix": 1785464839.9430673,
+  "training_use_override": "User directive 2026-07-31: use for training despite low NCC / orthomosaics_needed flag."
+}

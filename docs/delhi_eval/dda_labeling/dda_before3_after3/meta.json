@@ -7,9 +7,10 @@
   "aligned": "best drone pair yet",
   "ncc": 0.61,
   "georeferenced": true,
-  "training_use": false,
+  "training_use": true,
   "orthomosaics_needed": true,
   "note": "NCC 0.61 (best drone pair). ONE clear structural change = new blue roof. Other before/after differences are rooftop clutter/tarps/cars/shadows -> NOT reportable structural change (labeling them would train false positives). Still un-orthorectified -> eval/borderline until orthomosaics.",
   "labeled_by": "assisted (traced) - VERIFY",
-  "created_unix": 1785394600.717185
+  "created_unix": 1785394600.717185,
+  "training_use_override": "User directive 2026-07-31: use for training despite low NCC / orthomosaics_needed flag."
 }

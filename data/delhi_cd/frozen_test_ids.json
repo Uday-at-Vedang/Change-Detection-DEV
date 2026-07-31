@@ -1,0 +1,7 @@
+{
+  "test_pair_ids": ["delhi_0024", "delhi_0001", "delhi_0005", "delhi_0016"],
+  "frozen_on": "2026-07-31",
+  "frozen_because": "wed_retrain's operating point (thr=0.446, TTA=full, test F1=0.6263) and Tuesday's v3_frozen baseline (F1=0.5867) were both measured on this exact 4-pair test set. Adding/removing labeled pairs (e.g. Friday's 9 drone labels) reshuffles the stratified split at the same seed, silently changing which pairs land in test -- making F1 comparisons across days invalid. Freezing test to this set keeps every future eval comparable to Tuesday/Wednesday/Thursday's numbers.",
+  "note": "All 4 are original clean satellite (delhi_00xx) pairs -- none of Friday's low-NCC drone labels are in this set, so the held-out benchmark stays unaffected by the drone-data alignment quality question. New labeled pairs (drone or otherwise) only enter train/val.",
+  "change_if": "Deliberately re-baselining (e.g. once the labeled pool is much larger and a bigger/more stable test set is wanted) -- update this file and note the day/reason, matching this same format."
+}
