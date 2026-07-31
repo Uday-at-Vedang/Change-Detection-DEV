@@ -14,7 +14,7 @@
   "aligned": "good-for-a-drone-pair",
   "ncc": 0.48,
   "georeferenced": true,
-  "training_use": true,
+  "training_use": false,
   "orthomosaics_needed": true,
   "note": "BEST-aligned drone pair so far: static buildings register well; NCC 0.48 is mostly from the LARGE real change, not misalignment. Still un-orthorectified (residual parallax) -> keep eval/borderline. Most change is SOFT (tree/pots) not structural; gt_mask_structural_only.png = just the new roofs, recommended if training a construction-change model. [Updated: expanded to all changes (34%); structural-only = 3 roofs (13%).]",
   "labeled_by": "assisted (traced) - VERIFY",
@@ -24,5 +24,5 @@
     "re-roof top-center",
     "new blue roof (bottom-center)"
   ],
-  "training_use_override": "User directive 2026-07-31: use for training despite low NCC / orthomosaics_needed flag."
+  "training_use_override": "REVERSED 2026-07-31: empirically confirmed to hurt F1 (frozen test 0.589 without these 9 pairs vs 0.487 with, matched recipe). Keep eval-only until orthomosaics exist."
 }

@@ -24,19 +24,43 @@ sys.path.insert(0, str(ROOT))
 from app.evaluation.delhi_eval import DelhiEvalNotReady, load_manifest  # noqa: E402
 
 
-def _labeled_pairs(manifest: Path, min_change_frac: float = 0.0) -> list[dict]:
+def _training_use_ok(pair_id: str) -> bool:
+    """False only when the pack's meta.json explicitly opts out (``training_use: false``).
+
+    Evidence 2026-07-31: the 9 un-orthorectified drone pairs (NCC 0.07-0.61)
+    measurably degraded a held-out fine-tune (frozen test F1 0.589 without
+    them vs 0.487 with) — see docs/ACCURACY_IMPROVE_STATUS.md. Their meta.json
+    now records ``training_use: false`` so a plain rerun of this script can't
+    silently re-include them; pass ``--include-low-quality`` to override.
+    """
+    meta_path = ROOT / "docs" / "delhi_eval" / "dda_labeling" / pair_id / "meta.json"
+    if not meta_path.is_file():
+        return True
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return True
+    return meta.get("training_use", True) is not False
+
+
+def _labeled_pairs(manifest: Path, min_change_frac: float = 0.0,
+                   include_low_quality: bool = False) -> list[dict]:
     import numpy as np
     from PIL import Image
 
     data = load_manifest(manifest, required=True)
     pairs = []
     dropped = []
+    excluded_low_quality = []
     for pair in data.get("pairs", []):
         pair_id = pair.get("pair_id") or pair.get("id")
         before = pair.get("before_path") or pair.get("before")
         after = pair.get("after_path") or pair.get("after")
         gt = pair.get("gt_mask")
         if not (pair_id and before and after):
+            continue
+        if not include_low_quality and not _training_use_ok(pair_id):
+            excluded_low_quality.append(pair_id)
             continue
         if not gt:
             auto = ROOT / "docs" / "delhi_eval" / "labels" / f"{pair_id}.png"
@@ -61,6 +85,9 @@ def _labeled_pairs(manifest: Path, min_change_frac: float = 0.0) -> list[dict]:
             "notes": pair.get("notes") or "",
             "change_frac": frac,
         })
+    if excluded_low_quality:
+        print(f"Auto-excluded {len(excluded_low_quality)} training_use=false pair(s): "
+              f"{excluded_low_quality}")
     if dropped:
         print(f"Dropped {len(dropped)} empty/near-empty GT pairs: {dropped}")
     return pairs
@@ -184,9 +211,39 @@ def split_pairs(pairs: list[dict], seed: int = 0,
     return train, val, test
 
 
-def _write_split_dir(out_dir: Path, name: str, pairs: list[dict]) -> Path:
+def _existing_hard_negatives(out_dir: Path, name: str) -> list[dict]:
+    """Hard-negative entries already in ``<out_dir>/<name>/manifest.json``, if any.
+
+    ``mine_hard_negatives.py`` appends tiles directly to a split's
+    ``train/manifest.json`` — outside the ``docs/delhi_eval/manifest.json``
+    source this script regenerates from. Without this, every rerun of
+    ``build_delhi_cd_splits.py`` silently wipes them (bug found 2026-07-31:
+    cost wed_retrain's 5 mined tiles from both the official and an ablation
+    split, understating the ablation's F1 vs wed_retrain until restored).
+    """
+    path = out_dir / name / "manifest.json"
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return [p for p in data.get("pairs", [])
+            if "hard_negative" in (p.get("change_types") or [])]
+
+
+def _write_split_dir(out_dir: Path, name: str, pairs: list[dict],
+                     preserve_hard_negatives: bool = False) -> Path:
     split_dir = out_dir / name
     split_dir.mkdir(parents=True, exist_ok=True)
+    if preserve_hard_negatives:
+        existing_ids = {p["pair_id"] for p in pairs}
+        carried = [hn for hn in _existing_hard_negatives(out_dir, name)
+                  if hn.get("pair_id") not in existing_ids]
+        if carried:
+            print(f"Preserved {len(carried)} existing hard-negative tile(s) in {name}: "
+                  f"{[p['pair_id'] for p in carried]}")
+            pairs = pairs + carried
     manifest = {
         "version": 1,
         "split": name,
@@ -230,11 +287,21 @@ def main():
             "never overwrites the official split."
         ),
     )
+    parser.add_argument(
+        "--include-low-quality", action="store_true",
+        help=(
+            "Include pairs whose meta.json sets training_use=false (currently the 9 "
+            "un-orthorectified drone pairs, confirmed to hurt F1 — see "
+            "docs/ACCURACY_IMPROVE_STATUS.md). Off by default; only pass this "
+            "deliberately, e.g. to re-test after orthomosaics are available."
+        ),
+    )
     args = parser.parse_args()
 
     manifest = (ROOT / args.manifest).resolve() if not Path(args.manifest).is_absolute() else Path(args.manifest)
     try:
-        pairs = _labeled_pairs(manifest, min_change_frac=args.min_change_frac)
+        pairs = _labeled_pairs(manifest, min_change_frac=args.min_change_frac,
+                               include_low_quality=args.include_low_quality)
     except DelhiEvalNotReady as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -261,7 +328,7 @@ def main():
     out_dir = ROOT / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _write_split_dir(out_dir, "train", train)
+    _write_split_dir(out_dir, "train", train, preserve_hard_negatives=True)
     _write_split_dir(out_dir, "val", val)
     _write_split_dir(out_dir, "test", test)
 

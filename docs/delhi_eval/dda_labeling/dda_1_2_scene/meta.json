@@ -8,10 +8,10 @@
   "aligned": "partial",
   "ncc": 0.51,
   "georeferenced": true,
-  "training_use": true,
+  "training_use": false,
   "orthomosaics_needed": true,
   "blocker": "Georeferenced + geo-aligned (NCC 0.51) but residual LOCAL parallax (tall new buildings) not fixable by 2D registration; change map noisy. Eval/demo label only. Orthomosaics needed for training.",
   "labeled_by": "assisted (traced)",
   "created_unix": 1785343508.551353,
-  "training_use_override": "User directive 2026-07-31: use for training despite low NCC / orthomosaics_needed flag."
+  "training_use_override": "REVERSED 2026-07-31: empirically confirmed to hurt F1 (frozen test 0.589 without these 9 pairs vs 0.487 with, matched recipe). Keep eval-only until orthomosaics exist."
 }

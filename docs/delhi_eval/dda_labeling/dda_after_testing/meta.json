@@ -10,11 +10,11 @@
   "mask_grid": "after_testing (1319x1816)",
   "aligned": false,
   "georeferenced": false,
-  "training_use": true,
+  "training_use": false,
   "note": "Misaligned, non-georeferenced drone pair. Draft annotation of the 2 clearest changes on the AFTER grid. Demo/eval only; NOT registered in training manifest; not for fine-tune until co-registered orthomosaics.",
   "labeled_by": "assisted (traced from imagery) - VERIFY",
   "created_unix": 1785341268.996831,
   "orthomosaics_needed": true,
   "blocker": "Un-orthorectified drone frames: NCC 0.07-0.51, local parallax not fixable by 2D registration. Needs orthomosaics (ODM/Pix4D/Agisoft) from RAW photos before any training use. Labels are reusable once aligned.",
-  "training_use_override": "User directive 2026-07-31: use for training despite low NCC / orthomosaics_needed flag."
+  "training_use_override": "REVERSED 2026-07-31: empirically confirmed to hurt F1 (frozen test 0.589 without these 9 pairs vs 0.487 with, matched recipe). Keep eval-only until orthomosaics exist."
 }

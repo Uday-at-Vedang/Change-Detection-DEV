@@ -7,7 +7,7 @@
   "aligned": "low_quality",
   "ncc": 0.41,
   "georeferenced": true,
-  "training_use": true,
+  "training_use": false,
   "orthomosaics_needed": true,
   "note": "Georeferenced drone pair, NCC 0.41. Structural change labeled. Un-orthorectified -> eval/borderline until orthomosaics. RE-ANALYZED: added removed/modified roofs on the left in addition to the new foundations.",
   "labeled_by": "assisted (traced) - VERIFY",
@@ -20,5 +20,5 @@
     "MODIFIED: green roof -> grey re-roof (mid-left)"
   ],
   "reanalyzed": true,
-  "training_use_override": "User directive 2026-07-31: use for training despite low NCC / orthomosaics_needed flag."
+  "training_use_override": "REVERSED 2026-07-31: empirically confirmed to hurt F1 (frozen test 0.589 without these 9 pairs vs 0.487 with, matched recipe). Keep eval-only until orthomosaics exist."
 }
