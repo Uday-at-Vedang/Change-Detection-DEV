@@ -1,0 +1,581 @@
+{
+  "model": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\wed_retrain",
+  "split": {
+    "train": [
+      "delhi_0009",
+      "delhi_0028",
+      "delhi_0025",
+      "delhi_0032",
+      "dda_grid54_h43x2e1",
+      "delhi_0011",
+      "delhi_0029",
+      "delhi_0018",
+      "delhi_0017",
+      "delhi_0027",
+      "delhi_0022",
+      "delhi_0023",
+      "delhi_0004",
+      "delhi_0012",
+      "delhi_0020",
+      "delhi_0030",
+      "delhi_0003",
+      "hn_delhi_0002",
+      "hn_delhi_0006",
+      "hn_delhi_0013",
+      "hn_delhi_0014",
+      "hn_delhi_0015"
+    ],
+    "val": [
+      "delhi_0021",
+      "delhi_0019",
+      "delhi_0031",
+      "delhi_0026"
+    ],
+    "test": [
+      "delhi_0024",
+      "delhi_0001",
+      "delhi_0005",
+      "delhi_0016"
+    ],
+    "split": "70/15/15",
+    "seed": 0,
+    "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\delhi_cd",
+    "stratified": true
+  },
+  "val_thr_sweep_fbeta": [
+    {
+      "f1": 0.5674,
+      "precision": 0.4999,
+      "recall": 0.7521,
+      "iou": 0.3967,
+      "fbeta": 0.651,
+      "n": 4,
+      "thr": 0.15
+    },
+    {
+      "f1": 0.574,
+      "precision": 0.5134,
+      "recall": 0.7455,
+      "iou": 0.4031,
+      "fbeta": 0.6544,
+      "n": 4,
+      "thr": 0.1704
+    },
+    {
+      "f1": 0.5794,
+      "precision": 0.5249,
+      "recall": 0.7392,
+      "iou": 0.4084,
+      "fbeta": 0.6567,
+      "n": 4,
+      "thr": 0.1907
+    },
+    {
+      "f1": 0.5842,
+      "precision": 0.5354,
+      "recall": 0.734,
+      "iou": 0.4134,
+      "fbeta": 0.6588,
+      "n": 4,
+      "thr": 0.2111
+    },
+    {
+      "f1": 0.5881,
+      "precision": 0.5455,
+      "recall": 0.728,
+      "iou": 0.4174,
+      "fbeta": 0.6601,
+      "n": 4,
+      "thr": 0.2315
+    },
+    {
+      "f1": 0.5923,
+      "precision": 0.5554,
+      "recall": 0.7232,
+      "iou": 0.4217,
+      "fbeta": 0.6617,
+      "n": 4,
+      "thr": 0.2519
+    },
+    {
+      "f1": 0.5955,
+      "precision": 0.5638,
+      "recall": 0.7183,
+      "iou": 0.4252,
+      "fbeta": 0.6625,
+      "n": 4,
+      "thr": 0.2722
+    },
+    {
+      "f1": 0.5984,
+      "precision": 0.5722,
+      "recall": 0.7133,
+      "iou": 0.4285,
+      "fbeta": 0.663,
+      "n": 4,
+      "thr": 0.2926
+    },
+    {
+      "f1": 0.6013,
+      "precision": 0.5803,
+      "recall": 0.7091,
+      "iou": 0.4316,
+      "fbeta": 0.6637,
+      "n": 4,
+      "thr": 0.313
+    },
+    {
+      "f1": 0.6039,
+      "precision": 0.5884,
+      "recall": 0.7042,
+      "iou": 0.4347,
+      "fbeta": 0.664,
+      "n": 4,
+      "thr": 0.3333
+    },
+    {
+      "f1": 0.6068,
+      "precision": 0.5968,
+      "recall": 0.7,
+      "iou": 0.438,
+      "fbeta": 0.6647,
+      "n": 4,
+      "thr": 0.3537
+    },
+    {
+      "f1": 0.6088,
+      "precision": 0.6045,
+      "recall": 0.6952,
+      "iou": 0.4405,
+      "fbeta": 0.6645,
+      "n": 4,
+      "thr": 0.3741
+    },
+    {
+      "f1": 0.6109,
+      "precision": 0.6125,
+      "recall": 0.6903,
+      "iou": 0.4432,
+      "fbeta": 0.6643,
+      "n": 4,
+      "thr": 0.3944
+    },
+    {
+      "f1": 0.612,
+      "precision": 0.619,
+      "recall": 0.6858,
+      "iou": 0.4448,
+      "fbeta": 0.6638,
+      "n": 4,
+      "thr": 0.4148
+    },
+    {
+      "f1": 0.6132,
+      "precision": 0.6262,
+      "recall": 0.6811,
+      "iou": 0.4466,
+      "fbeta": 0.6632,
+      "n": 4,
+      "thr": 0.4352
+    },
+    {
+      "f1": 0.6131,
+      "precision": 0.6315,
+      "recall": 0.6756,
+      "iou": 0.4471,
+      "fbeta": 0.6614,
+      "n": 4,
+      "thr": 0.4556
+    },
+    {
+      "f1": 0.6138,
+      "precision": 0.6383,
+      "recall": 0.6705,
+      "iou": 0.4485,
+      "fbeta": 0.6602,
+      "n": 4,
+      "thr": 0.4759
+    },
+    {
+      "f1": 0.6142,
+      "precision": 0.6455,
+      "recall": 0.6648,
+      "iou": 0.4495,
+      "fbeta": 0.6587,
+      "n": 4,
+      "thr": 0.4963
+    },
+    {
+      "f1": 0.6149,
+      "precision": 0.6528,
+      "recall": 0.6594,
+      "iou": 0.451,
+      "fbeta": 0.6574,
+      "n": 4,
+      "thr": 0.5167
+    },
+    {
+      "f1": 0.6162,
+      "precision": 0.6616,
+      "recall": 0.6544,
+      "iou": 0.4532,
+      "fbeta": 0.6566,
+      "n": 4,
+      "thr": 0.537
+    },
+    {
+      "f1": 0.6169,
+      "precision": 0.6697,
+      "recall": 0.649,
+      "iou": 0.4547,
+      "fbeta": 0.6553,
+      "n": 4,
+      "thr": 0.5574
+    },
+    {
+      "f1": 0.6179,
+      "precision": 0.6771,
+      "recall": 0.6447,
+      "iou": 0.4564,
+      "fbeta": 0.6544,
+      "n": 4,
+      "thr": 0.5778
+    },
+    {
+      "f1": 0.6183,
+      "precision": 0.685,
+      "recall": 0.6396,
+      "iou": 0.4576,
+      "fbeta": 0.6529,
+      "n": 4,
+      "thr": 0.5981
+    },
+    {
+      "f1": 0.6183,
+      "precision": 0.692,
+      "recall": 0.6341,
+      "iou": 0.4583,
+      "fbeta": 0.6508,
+      "n": 4,
+      "thr": 0.6185
+    },
+    {
+      "f1": 0.6191,
+      "precision": 0.7001,
+      "recall": 0.6291,
+      "iou": 0.4599,
+      "fbeta": 0.6494,
+      "n": 4,
+      "thr": 0.6389
+    },
+    {
+      "f1": 0.619,
+      "precision": 0.7077,
+      "recall": 0.6235,
+      "iou": 0.4607,
+      "fbeta": 0.6472,
+      "n": 4,
+      "thr": 0.6593
+    },
+    {
+      "f1": 0.6187,
+      "precision": 0.7163,
+      "recall": 0.6172,
+      "iou": 0.4613,
+      "fbeta": 0.6446,
+      "n": 4,
+      "thr": 0.6796
+    },
+    {
+      "f1": 0.618,
+      "precision": 0.7238,
+      "recall": 0.6108,
+      "iou": 0.4617,
+      "fbeta": 0.6416,
+      "n": 4,
+      "thr": 0.7
+    }
+  ],
+  "fbeta_thr": 0.3537,
+  "results": [
+    {
+      "name": "baseline_sidecar",
+      "tta": "off",
+      "multiscale": "off",
+      "thr": 0.446,
+      "elapsed_s": 2.27,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.6062,
+      "precision": 0.5118,
+      "recall": 0.8106,
+      "iou": 0.4377,
+      "fbeta": 0.6872,
+      "n": 4,
+      "f1_gain": 0.0,
+      "runtime_mult": 1.0,
+      "keep": false
+    },
+    {
+      "name": "fbeta_thr",
+      "tta": "off",
+      "multiscale": "off",
+      "thr": 0.3537,
+      "elapsed_s": 2.25,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.5902,
+      "precision": 0.4847,
+      "recall": 0.8255,
+      "iou": 0.4211,
+      "fbeta": 0.6787,
+      "n": 4,
+      "f1_gain": -0.016,
+      "runtime_mult": 0.99,
+      "keep": false
+    },
+    {
+      "name": "tta_hflip",
+      "tta": "hflip",
+      "multiscale": "off",
+      "thr": 0.3537,
+      "elapsed_s": 4.55,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.5963,
+      "precision": 0.484,
+      "recall": 0.8485,
+      "iou": 0.4271,
+      "fbeta": 0.6889,
+      "n": 4,
+      "f1_gain": -0.0099,
+      "runtime_mult": 2.0,
+      "keep": false
+    },
+    {
+      "name": "tta_full",
+      "tta": "full",
+      "multiscale": "off",
+      "thr": 0.3537,
+      "elapsed_s": 6.61,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.6007,
+      "precision": 0.491,
+      "recall": 0.8504,
+      "iou": 0.4326,
+      "fbeta": 0.6941,
+      "n": 4,
+      "f1_gain": -0.0055,
+      "runtime_mult": 2.91,
+      "keep": false
+    },
+    {
+      "name": "ms_075_1",
+      "tta": "off",
+      "multiscale": "0.75,1.0",
+      "thr": 0.3537,
+      "elapsed_s": 2.62,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.5686,
+      "precision": 0.4531,
+      "recall": 0.8432,
+      "iou": 0.3995,
+      "fbeta": 0.6666,
+      "n": 4,
+      "f1_gain": -0.0376,
+      "runtime_mult": 1.15,
+      "keep": false
+    },
+    {
+      "name": "tta_h_ms_075",
+      "tta": "hflip",
+      "multiscale": "0.75,1.0",
+      "thr": 0.3537,
+      "elapsed_s": 4.97,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.579,
+      "precision": 0.4605,
+      "recall": 0.8626,
+      "iou": 0.4095,
+      "fbeta": 0.68,
+      "n": 4,
+      "f1_gain": -0.0272,
+      "runtime_mult": 2.19,
+      "keep": false
+    },
+    {
+      "name": "ms_05_1_15",
+      "tta": "off",
+      "multiscale": "0.5,1.0,1.5",
+      "thr": 0.3537,
+      "elapsed_s": 4.79,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.5038,
+      "precision": 0.3667,
+      "recall": 0.8832,
+      "iou": 0.34,
+      "fbeta": 0.6161,
+      "n": 4,
+      "f1_gain": -0.1024,
+      "runtime_mult": 2.11,
+      "keep": false
+    }
+  ],
+  "kept": [],
+  "winner": "tta_full_sidecar",
+  "freeze": {
+    "threshold": 0.446,
+    "val_fbeta_thr": 0.3537,
+    "val_fbeta_row": {
+      "f1": 0.6068,
+      "precision": 0.5968,
+      "recall": 0.7,
+      "iou": 0.438,
+      "fbeta": 0.6647,
+      "n": 4,
+      "thr": 0.3537
+    },
+    "sidecar_thr_was": 0.446,
+    "tta": "full",
+    "multiscale": "off",
+    "test_f1": 0.6263,
+    "test_precision": 0.5325,
+    "test_recall": 0.8306,
+    "test_iou": 0.4597,
+    "test_fbeta": 0.7086,
+    "test_elapsed_s": 6.63,
+    "frozen_from": "tta_full_sidecar",
+    "frozen_at": "2026-07-30T13:13:22.237822+00:00",
+    "policy": {
+      "min_f1_gain": 0.005,
+      "max_runtime_mult": 2.5,
+      "fbeta": 1.5,
+      "note": "Operating point for wed_retrain only; production remains v3_frozen until promoted."
+    }
+  },
+  "written": {
+    "threshold_json": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\wed_retrain\\threshold.json",
+    "operating_point_json": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\adaptformer_delhi\\wed_retrain\\operating_point.json"
+  },
+  "supplemental_sidecar_tta_ms": [
+    {
+      "name": "baseline_sidecar",
+      "tta": "off",
+      "multiscale": "off",
+      "thr": 0.446,
+      "elapsed_s": 16.46,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.6062,
+      "precision": 0.5118,
+      "recall": 0.8106,
+      "iou": 0.4377,
+      "fbeta": 0.6872,
+      "n": 4
+    },
+    {
+      "name": "tta_hflip_sidecar",
+      "tta": "hflip",
+      "multiscale": "off",
+      "thr": 0.446,
+      "elapsed_s": 4.47,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.6215,
+      "precision": 0.5249,
+      "recall": 0.828,
+      "iou": 0.4541,
+      "fbeta": 0.7031,
+      "n": 4,
+      "f1_gain": 0.0153,
+      "runtime_mult": 0.27,
+      "keep": true
+    },
+    {
+      "name": "tta_full_sidecar",
+      "tta": "full",
+      "multiscale": "off",
+      "thr": 0.446,
+      "elapsed_s": 6.63,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.6263,
+      "precision": 0.5325,
+      "recall": 0.8306,
+      "iou": 0.4597,
+      "fbeta": 0.7086,
+      "n": 4,
+      "f1_gain": 0.0201,
+      "runtime_mult": 0.4,
+      "keep": true
+    },
+    {
+      "name": "ms_075_1_sidecar",
+      "tta": "off",
+      "multiscale": "0.75,1.0",
+      "thr": 0.446,
+      "elapsed_s": 2.6,
+      "pair_ids": [
+        "delhi_0024",
+        "delhi_0001",
+        "delhi_0005",
+        "delhi_0016"
+      ],
+      "f1": 0.5873,
+      "precision": 0.4818,
+      "recall": 0.828,
+      "iou": 0.4181,
+      "fbeta": 0.6781,
+      "n": 4,
+      "f1_gain": -0.0189,
+      "runtime_mult": 0.16,
+      "keep": false
+    }
+  ],
+  "supplemental_winner": "tta_full_sidecar",
+  "supplemental_at": "2026-07-30T13:13:22.237822+00:00"
+}

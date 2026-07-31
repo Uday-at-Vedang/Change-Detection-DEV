@@ -1,0 +1,49 @@
+{
+  "note": "Proxy DSIFN: official pretrained weights missing from Drive; trained on val, eval on test.",
+  "epochs": 6,
+  "batch": 2,
+  "lr": 0.0001,
+  "size": 256,
+  "best_test_f1": 0.4848631583317157,
+  "best_path": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\models\\dsifn_proxy\\best.pt",
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.6221,
+      "test_f1": 0.4667,
+      "elapsed_s": 27.8
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.5435,
+      "test_f1": 0.4536,
+      "elapsed_s": 26.0
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.4988,
+      "test_f1": 0.4566,
+      "elapsed_s": 26.5
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.4699,
+      "test_f1": 0.4281,
+      "elapsed_s": 26.4
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.4405,
+      "test_f1": 0.4849,
+      "elapsed_s": 26.4
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.4002,
+      "test_f1": 0.4213,
+      "elapsed_s": 26.5
+    }
+  ],
+  "source_repo": "https://github.com/GeoZcx/A-deeply-supervised-image-fusion-network-for-change-detection-in-remote-sensing-images",
+  "review_index": "https://github.com/MinZHANG-WHU/Change-Detection-Review"
+}

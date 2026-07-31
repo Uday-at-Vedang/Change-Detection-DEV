@@ -1,0 +1,30 @@
+{
+  "threshold": 0.446,
+  "val_fbeta_thr": 0.3537,
+  "val_fbeta_row": {
+    "f1": 0.6068,
+    "precision": 0.5968,
+    "recall": 0.7,
+    "iou": 0.438,
+    "fbeta": 0.6647,
+    "n": 4,
+    "thr": 0.3537
+  },
+  "sidecar_thr_was": 0.446,
+  "tta": "full",
+  "multiscale": "off",
+  "test_f1": 0.6263,
+  "test_precision": 0.5325,
+  "test_recall": 0.8306,
+  "test_iou": 0.4597,
+  "test_fbeta": 0.7086,
+  "test_elapsed_s": 6.63,
+  "frozen_from": "tta_full_sidecar",
+  "frozen_at": "2026-07-30T13:13:22.237822+00:00",
+  "policy": {
+    "min_f1_gain": 0.005,
+    "max_runtime_mult": 2.5,
+    "fbeta": 1.5,
+    "note": "Operating point for wed_retrain only; production remains v3_frozen until promoted."
+  }
+}

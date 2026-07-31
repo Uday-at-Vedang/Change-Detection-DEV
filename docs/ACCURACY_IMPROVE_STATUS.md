@@ -114,3 +114,43 @@ python scripts/build_delhi_cd_splits.py --min-change-frac 0.001 --stratify
 python scripts/mine_hard_negatives.py --include-all-labeled --min-fp-frac 0.03
 python scripts/finetune_adaptformer.py --delhi-cd data/delhi_cd --preset wed --out runs/finetune_wed
 ```
+
+## Thursday 2026-07-30 — DSIFN spike + wed_retrain OP freeze
+
+### Priyanka
+Fast-forward merged `github-dev/New/Priyanka` → `uday` (ROI crop / training packs).
+
+### DSIFN vs AdaptFormer (boundary completeness)
+- Cloned official DSIFN + Change-Detection-Review index under `third_party/`
+- Official Drive package = **dataset only** (no `.pth`/`.h5`); trained **proxy** on DSIFN val → test F1≈**0.485**
+- Delhi 5 pairs (4 test + 1 val): AdaptFormer **fills interiors**; DSIFN does **not**
+
+| Model | F1 | Fill | Hole |
+|---|---:|---:|---:|
+| AdaptFormer (`wed_retrain`) | **0.624** | **0.832** | **0.148** |
+| DSIFN proxy | 0.090 | 0.356 | 0.644 |
+
+**Decision: `KEEP_ADAPTFORMER`** — do not switch backbones.  
+Artifacts: `data/delhi_cd/thursday_dsifn_compare/DECISION.md`
+
+### wed_retrain operating point
+Sweep F_β thr + `DETECTION_TTA` + `DETECTION_MULTISCALE` on held-out test:
+
+| Config | Test F1 | Notes |
+|---|---:|---|
+| thr=0.446, TTA=off, MS=off | 0.606 | Wed sidecar baseline |
+| thr=0.354 (F_β), TTA/MS variants | ≤0.601 | Drop (hurt F1) |
+| thr=0.446, **TTA=full**, MS=off | **0.626** | **KEEP** (+0.020 F1, ~3× flips) |
+| thr=0.446, MS=0.75,1 | 0.587 | Drop |
+
+**Frozen OP** (`models/adaptformer_delhi/wed_retrain/`):
+- `threshold=0.446`
+- `DETECTION_TTA=full`
+- `DETECTION_MULTISCALE=off`
+- Production remains **`v3_frozen`** until an explicit promote.
+
+```bash
+python scripts/sweep_wed_operating_point.py
+python scripts/dsifn_proxy_train.py --epochs 6 --batch 2
+python scripts/compare_dsifn_vs_adaptformer.py
+```
