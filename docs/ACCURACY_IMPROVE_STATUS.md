@@ -265,3 +265,34 @@ Uday re-runs that sweep, note val is not fully frozen, only test.
   recipe (with vs without the 9 drone pairs, if time allows an ablation) to
   isolate whether they helped or hurt real (clean satellite) performance —
   directly answers "did the drone data degrade F1."
+
+### Result: `fri2_retrain` (delhi + drone) — confirmed regression, root cause found
+
+| Checkpoint | Frozen test F1 | thr | Val F1 | Val P | Val R |
+|---|---:|---:|---:|---:|---:|
+| `v3_frozen` | 0.587 | 0.2 | 0.677 | 0.686 | 0.700 |
+| `wed_retrain` | 0.605 (0.626 TTA) | 0.446 | 0.630 | - | - |
+| `fri2_retrain` | **0.487** | 0.5 | **0.436** | **0.345** | 0.641 |
+
+`fri2_retrain`'s `threshold.json` follows the same schema as v3/wed (real
+per-epoch val calibration, not a default) - so the drop is **not** a
+threshold-calibration bug. **Precision collapsed 0.69->0.35** while recall
+stayed reasonable (0.64): the model became far less selective, consistent
+with training on the 9 un-orthorectified drone pairs (`dda_before*`,
+`dda_after*`, `dda_1_2_scene` - NCC 0.07-0.61) - large misaligned regions
+labeled "change" taught the model "big pixel differences = change" too
+broadly. Confirmed visually on `DDA_Report_55_before1_tif_vs_after_tif.pdf`:
+16.63% flagged, mostly cars/vegetation/ground, buildings still not covered.
+
+**Fix in progress:** ablation split prepared and pushed -
+`data/delhi_cd_ablation_no_drone/` (same 24-pair pool that produced
+`wed_retrain`'s 0.605/0.626, drone pairs excluded via the new
+`--exclude-prefix` flag on `build_delhi_cd_splits.py`, frozen test set
+intact). Requested from Uday:
+```bash
+python scripts/finetune_adaptformer.py --delhi-cd data/delhi_cd_ablation_no_drone --preset wed --out runs/finetune_fri3_no_drone
+```
+If F1 recovers to ~0.60+, confirms drone data as the cause -> exclude drone
+pairs from training going forward (keep eval-only, per the original plan);
+promote whichever of `wed_retrain` / `fri3_no_drone` scores higher on the
+frozen test set. **Status: awaiting Uday's run (sent EOD Friday).**
