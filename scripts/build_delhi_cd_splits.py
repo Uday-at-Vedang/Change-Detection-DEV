@@ -220,6 +220,16 @@ def main():
             "has been calibrated against a specific test set)."
         ),
     )
+    parser.add_argument(
+        "--exclude-prefix", action="append", default=[],
+        help=(
+            "Drop any pair whose pair_id starts with this prefix (repeatable). "
+            "Use for ablation splits, e.g. --exclude-prefix dda_before --exclude-prefix "
+            "dda_after --exclude-prefix dda_1_2 to exclude the un-orthorectified drone "
+            "pairs and isolate their effect on F1. Combine with a distinct --out so this "
+            "never overwrites the official split."
+        ),
+    )
     args = parser.parse_args()
 
     manifest = (ROOT / args.manifest).resolve() if not Path(args.manifest).is_absolute() else Path(args.manifest)
@@ -227,6 +237,12 @@ def main():
         pairs = _labeled_pairs(manifest, min_change_frac=args.min_change_frac)
     except DelhiEvalNotReady as exc:
         raise SystemExit(str(exc)) from exc
+
+    if args.exclude_prefix:
+        before_n = len(pairs)
+        pairs = [p for p in pairs if not any(
+            (p.get("pair_id") or "").startswith(pfx) for pfx in args.exclude_prefix)]
+        print(f"Excluded {before_n - len(pairs)} pair(s) matching prefixes {args.exclude_prefix}")
 
     if not pairs:
         raise SystemExit("No labeled Delhi pairs found — cannot build splits.")
