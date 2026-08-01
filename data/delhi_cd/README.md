@@ -4,6 +4,6 @@
 Manifests store repo-relative paths (no GeoTIFF copies).
 
 - seed=0
-- train=16 val=4 test=4
+- train=18 val=4 test=4
 - Built by `scripts/build_delhi_cd_splits.py`
 - Consumed by `scripts/finetune_adaptformer.py --delhi-cd data/delhi_cd`

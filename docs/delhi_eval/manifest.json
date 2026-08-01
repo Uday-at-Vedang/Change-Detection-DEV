@@ -483,6 +483,50 @@
       ],
       "gt_mask": "docs\\delhi_eval\\labels\\delhi_0032.png",
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Visually confirmed real new construction (Day 2 review) \u2014 coarse 10m precision only."
+    },
+    {
+      "pair_id": "dda_before5_after5_v2",
+      "before_path": "C:/Users/Priyanka/Downloads/before5 (1).tif",
+      "after_path": "C:/Users/Priyanka/Downloads/after5 (1).tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "Delhi drone (verified NCC>=0.73)",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": "docs/delhi_eval/labels/dda_before5_after5_v2.png",
+      "roi": null,
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before5_after5_v2/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before5_after5_v2",
+      "label_preview_size": [
+        739,
+        708
+      ]
+    },
+    {
+      "pair_id": "dda_before6_after6_v2",
+      "before_path": "C:/Users/Priyanka/Downloads/before6 (1).tif",
+      "after_path": "C:/Users/Priyanka/Downloads/after6 (1).tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "Delhi drone (verified NCC>=0.73)",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": "docs/delhi_eval/labels/dda_before6_after6_v2.png",
+      "roi": null,
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before6_after6_v2/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before6_after6_v2",
+      "label_preview_size": [
+        1305,
+        1024
+      ]
     }
   ]
 }

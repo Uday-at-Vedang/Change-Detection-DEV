@@ -5,12 +5,12 @@
   "split": "70/15/15",
   "stratified": true,
   "min_change_frac": 0.001,
-  "n_labeled": 24,
-  "n_train": 16,
+  "n_labeled": 26,
+  "n_train": 18,
   "n_val": 4,
   "n_test": 4,
   "change_frac_mean": {
-    "train": 0.102394,
+    "train": 0.109808,
     "val": 0.049622,
     "test": 0.073411
   },
@@ -29,6 +29,8 @@
     "delhi_0031",
     "delhi_0012",
     "delhi_0026",
+    "dda_before5_after5_v2",
+    "dda_before6_after6_v2",
     "delhi_0030",
     "delhi_0020"
   ],

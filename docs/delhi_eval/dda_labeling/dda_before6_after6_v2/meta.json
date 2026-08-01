@@ -1,0 +1,22 @@
+{
+  "pair_id": "dda_before6_after6_v2",
+  "before": "C:\\Users\\Priyanka\\Downloads\\before6 (1).tif",
+  "after": "C:\\Users\\Priyanka\\Downloads\\after6 (1).tif",
+  "preview_shape": [
+    1024,
+    1305
+  ],
+  "roi": null,
+  "seed_changed_px": 292966,
+  "created_unix": 1785560725.0004299,
+  "labels": [
+    "new large concrete roof built over former debris yard"
+  ],
+  "ncc": 0.745,
+  "aligned": "verified_good",
+  "georeferenced": true,
+  "training_use": true,
+  "orthomosaics_needed": false,
+  "note": "NCC 0.74, visually clean blend (no rooftop ghosting) - verified 2026-07-31, meaningfully above the 0.61 ceiling that caused the fri2_retrain regression. Approved for training pending single-pair ablation confirmation.",
+  "labeled_by": "assisted (traced) - VERIFY"
+}

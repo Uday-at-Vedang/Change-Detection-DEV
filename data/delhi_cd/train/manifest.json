@@ -1,7 +1,7 @@
 {
   "version": 1,
   "split": "train",
-  "n_pairs": 21,
+  "n_pairs": 23,
   "pairs": [
     {
       "pair_id": "delhi_0032",
@@ -173,6 +173,34 @@
       ],
       "notes": "Sentinel-2 L2A TCI, 10m GSD \u2014 coarse resolution, NOT reliable for individual building/road detail. Real Delhi coordinates/dates. GT mask still needs hand-labeling. Day 2 review: real change visually confirmed but automated mask under-captures the extent \u2014 needs manual polygon redraw, not yet promoted.",
       "change_frac": 0.09582222222222223
+    },
+    {
+      "pair_id": "dda_before5_after5_v2",
+      "before_path": "C:/Users/Priyanka/Downloads/before5 (1).tif",
+      "after_path": "C:/Users/Priyanka/Downloads/after5 (1).tif",
+      "gt_mask": "docs/delhi_eval/labels/dda_before5_after5_v2.png",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before5_after5_v2/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before5_after5_v2",
+      "change_frac": 0.1190110318570675
+    },
+    {
+      "pair_id": "dda_before6_after6_v2",
+      "before_path": "C:/Users/Priyanka/Downloads/before6 (1).tif",
+      "after_path": "C:/Users/Priyanka/Downloads/after6 (1).tif",
+      "gt_mask": "docs/delhi_eval/labels/dda_before6_after6_v2.png",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before6_after6_v2/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before6_after6_v2",
+      "change_frac": 0.21923341714559386
     },
     {
       "pair_id": "delhi_0030",
