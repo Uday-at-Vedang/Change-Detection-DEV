@@ -2075,13 +2075,15 @@ _SEVERITY_COLORS = {
 
 # Maximum bounding boxes drawn on the image to avoid visual clutter
 _MAX_VISIBLE_BOXES = 30
+# Fixed fill opacity for region polygons (1-day MVP — no env / slider).
+_POLYGON_FILL_ALPHA = 0.35
 
 
 def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
     """
     Clean visualization: subtle tinted overlay for changed pixels,
-    color-coded contour outlines (not filled boxes) for the top regions,
-    and compact numbered labels.
+    severity-colored polygon fills (0.35 alpha) with contour outlines,
+    bbox rectangle fallback when polygon is absent, and numbered labels.
     """
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
@@ -2115,8 +2117,26 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
             severity = r.get("severity") or _severity_from_region(r, total_px)
             color = _SEVERITY_COLORS.get(severity, (255, 255, 255))
 
-            # Draw only the outline — no fill, keeps the image readable
-            cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, line_thickness)
+            poly = r.get("polygon")
+            pts = None
+            if poly and len(poly) >= 3:
+                try:
+                    pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
+                except (TypeError, ValueError):
+                    pts = None
+
+            if pts is not None and len(pts) >= 3:
+                filled = overlay_uint8.copy()
+                cv2.fillPoly(filled, [pts], color)
+                cv2.addWeighted(
+                    filled, _POLYGON_FILL_ALPHA,
+                    overlay_uint8, 1.0 - _POLYGON_FILL_ALPHA,
+                    0, overlay_uint8,
+                )
+                cv2.drawContours(overlay_uint8, [pts], -1, color, line_thickness)
+            else:
+                # Contract: absent / invalid polygon → bbox outline fallback
+                cv2.rectangle(overlay_uint8, (x, y), (x + w, y + h), color, line_thickness)
 
             # Compact label: region number in a small pill
             rid = r.get("id", 0)
@@ -3634,6 +3654,72 @@ def _nms_regions(regions, iou_thresh=0.45):
     return keep
 
 
+# Closed image-px ring: at most this many corner vertices (closing dup allowed).
+_MAX_POLYGON_VERTICES = 60
+
+
+def _bbox_as_polygon(x, y, w, h):
+    """Closed rectangle ring used when contour approximation fails."""
+    x, y, w, h = int(x), int(y), int(max(1, w)), int(max(1, h))
+    return [
+        [x, y],
+        [x + w, y],
+        [x + w, y + h],
+        [x, y + h],
+        [x, y],
+    ]
+
+
+def _extract_region_polygon(labels, label_id, bbox):
+    """
+    Approximate the external contour of one connected component.
+
+    Contract: closed ring ``[[x, y], ...]`` in image pixels, <= 60 corner
+    vertices. Falls back to the bbox rectangle when contours are missing or
+    degenerate. No holes (RETR_EXTERNAL only).
+    """
+    x, y, w, h = [int(v) for v in bbox]
+    fallback = _bbox_as_polygon(x, y, w, h)
+    h_img, w_img = labels.shape[:2]
+    x1 = max(0, x)
+    y1 = max(0, y)
+    x2 = min(w_img, x + max(1, w))
+    y2 = min(h_img, y + max(1, h))
+    if x2 <= x1 or y2 <= y1:
+        return fallback
+
+    crop = (labels[y1:y2, x1:x2] == int(label_id)).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(
+        crop, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return fallback
+
+    contour = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(contour) < 1.0:
+        return fallback
+
+    peri = float(cv2.arcLength(contour, True))
+    epsilon = max(1.0, 0.01 * peri)
+    approx = cv2.approxPolyDP(contour, epsilon, True)
+    for _ in range(10):
+        if len(approx) <= _MAX_POLYGON_VERTICES:
+            break
+        epsilon *= 1.5
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+
+    pts = approx.reshape(-1, 2)
+    if len(pts) < 3:
+        return fallback
+    if len(pts) > _MAX_POLYGON_VERTICES:
+        idx = np.linspace(0, len(pts) - 1, _MAX_POLYGON_VERTICES, dtype=int)
+        pts = pts[idx]
+
+    ring = [[int(px) + x1, int(py) + y1] for px, py in pts]
+    if ring[0] != ring[-1]:
+        ring.append(ring[0][:])
+    return ring
+
+
 def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
                            before_img=None, registration_ok=True):
     """
@@ -3727,6 +3813,7 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
             "object_type": object_type,
             "confidence": confidence,
             "fill_ratio": round(fill_ratio, 3),
+            "polygon": _extract_region_polygon(labels, i, (x, y, w, h)),
             "sub_type": None,
             "sub_type_confidence": None,
             "estimated_stories": None,

@@ -51,6 +51,7 @@ Standalone web application for satellite image change detection with **database 
 - **GeoTIFF library** — Year-folder library, 5 GB upload limit, lat/lng on regions
 - **Object classification** — Changed regions labeled (Water, Vegetation, Building, Road, etc.)
 - **History & reports** — Past runs, PDF export, email notifications
+- **Region polygons** — Engine footprints (`polygon` / `polygonGeo`) in the result overlay + viewer SVG; export via `GET /api/dda/reports/{id}/export.geojson` (bbox/Point fallback for older runs). Verify: `python scripts/verify_polygon_mvp.py`
 
 ## Setup (legacy summary)
 

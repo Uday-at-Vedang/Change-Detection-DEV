@@ -607,9 +607,12 @@ function applyDdaZoom() {
   slider.style.width = `${Math.max(DDA_ZOOM_MIN, ddaZoom) * 100}%`;
   slider.style.maxWidth = 'none';
   if (levelEl) levelEl.textContent = Math.round(ddaZoom * 100) + '%';
+  // Re-scale SVG footprints with the image (same metrics as bbox highlight).
+  renderRegionPolygons(ddaRegionList);
   if (ddaSelectedRegionId != null) {
     const r = ddaRegionList.find((x) => x.id === ddaSelectedRegionId);
     if (r) placeRegionHighlight(r, { pulse: true });
+    highlightRegionPolygon(ddaSelectedRegionId);
   }
 }
 
