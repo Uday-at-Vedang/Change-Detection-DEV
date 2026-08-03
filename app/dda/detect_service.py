@@ -24,9 +24,36 @@ OVERLAYS_DIR = DATA_DIR / "overlays"
 THUMB_MAX_SIZE = 200
 
 
+MAX_POLYGON_VERTICES = 100
+
+
+def _serialize_polygon(raw) -> Optional[list]:
+    """Normalize an engine polygon to ``[[x, y], ...]`` ints, or None.
+
+    The engine emits an outer ring in detection-image pixels. Defensively caps
+    the vertex count (the extractor also limits, but region JSON is stored per
+    run and a runaway contour would bloat every report that loads it) by
+    keeping evenly-spaced vertices so the footprint's shape survives.
+    """
+    if not raw:
+        return None
+    try:
+        pts = [(int(round(float(p[0]))), int(round(float(p[1])))) for p in raw]
+    except (TypeError, ValueError, IndexError):
+        logger.warning("Ignoring malformed polygon on region")
+        return None
+    if len(pts) < 3:
+        return None
+    if len(pts) > MAX_POLYGON_VERTICES:
+        step = len(pts) / float(MAX_POLYGON_VERTICES)
+        pts = [pts[min(len(pts) - 1, int(i * step))] for i in range(MAX_POLYGON_VERTICES)]
+    return [[x, y] for x, y in pts]
+
+
 def _serialize_regions(change_regions) -> list:
-    return [
-        {
+    out = []
+    for r in change_regions:
+        entry = {
             "id": int(r["id"]),
             "area": int(r["area"]),
             "center": {"x": round(float(r["center"][0])), "y": round(float(r["center"][1]))},
@@ -49,8 +76,13 @@ def _serialize_regions(change_regions) -> list:
             else None,
             "constructionStage": r.get("construction_stage"),
         }
-        for r in change_regions
-    ]
+        # Polygon is optional: regions without one serialize exactly as before,
+        # and every consumer falls back to bbox.
+        polygon = _serialize_polygon(r.get("polygon"))
+        if polygon:
+            entry["polygon"] = polygon
+        out.append(entry)
+    return out
 
 
 def _filter_weak_other_regions(regions: list) -> list:

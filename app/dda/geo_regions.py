@@ -181,6 +181,35 @@ def bbox_area_sq_m(
     return round(w_m * h_m, 1)
 
 
+def polygon_to_lat_lng(
+    polygon: List[List[float]],
+    img_width: int,
+    img_height: int,
+    bounds: Optional[BoundsWGS84],
+    *,
+    geo: Optional[GeoContext] = None,
+) -> Optional[List[Dict[str, float]]]:
+    """Project a pixel-space polygon ring to WGS84, vertex by vertex.
+
+    Uses the same transform as the bbox-centre ``latLng`` so a polygon and its
+    region always agree. Returns None when any vertex fails to project, since a
+    partially-projected ring would draw a wrong footprint on a map.
+    """
+    if not polygon:
+        return None
+    ring: List[Dict[str, float]] = []
+    for point in polygon:
+        try:
+            x, y = float(point[0]), float(point[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        coords = pixel_to_lat_lng(x, y, img_width, img_height, bounds, geo=geo)
+        if not coords:
+            return None
+        ring.append(coords)
+    return ring or None
+
+
 def enrich_regions_geo(
     regions: List[dict],
     *,
@@ -189,7 +218,7 @@ def enrich_regions_geo(
     bounds: Optional[BoundsWGS84],
     geo: Optional[GeoContext] = None,
 ) -> List[dict]:
-    """Add latLng, areaSqM, and DDA change type to each region."""
+    """Add latLng, polygonGeo, areaSqM, and DDA change type to each region."""
     effective_bounds = bounds or (geo.bounds if geo else None)
     out = []
     for region in regions:
@@ -204,6 +233,12 @@ def enrich_regions_geo(
             )
             if lat_lng:
                 enriched["latLng"] = lat_lng
+            polygon_geo = polygon_to_lat_lng(
+                region.get("polygon"), img_width, img_height, effective_bounds,
+                geo=geo,
+            )
+            if polygon_geo:
+                enriched["polygonGeo"] = polygon_geo
             bbox = region.get("bbox") or {}
             if effective_bounds:
                 area_sq_m = bbox_area_sq_m(

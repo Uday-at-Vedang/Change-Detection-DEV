@@ -48,6 +48,76 @@ def get_report(run_id: int, db: Session = Depends(get_db), user: User = Depends(
     return data
 
 
+def _region_geometry(region: dict) -> Optional[dict]:
+    """GeoJSON geometry for a region: true polygon footprint, else bbox corners.
+
+    ``polygonGeo`` is the projected outer ring (see geo_regions.polygon_to_lat_lng).
+    Older runs — and runs whose georeferencing could not resolve — have only a
+    ``latLng`` centre, so they degrade to a Point rather than being dropped.
+    """
+    ring = region.get("polygonGeo")
+    if ring and len(ring) >= 3:
+        coords = [[float(p["lng"]), float(p["lat"])] for p in ring
+                  if isinstance(p, dict) and "lat" in p and "lng" in p]
+        if len(coords) >= 3:
+            if coords[0] != coords[-1]:
+                coords.append(coords[0])  # GeoJSON rings must close
+            return {"type": "Polygon", "coordinates": [coords]}
+    ll = region.get("latLng") or {}
+    if isinstance(ll, dict) and ll.get("lat") is not None and ll.get("lng") is not None:
+        return {"type": "Point", "coordinates": [float(ll["lng"]), float(ll["lat"])]}
+    return None
+
+
+@router.get("/reports/{run_id}/export.geojson")
+def export_report_geojson(
+    run_id: int,
+    confirmed: int = 0,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Export detected regions as GeoJSON (polygon footprints, bbox/point fallback)."""
+    _require_dda()
+    run = _get_user_run(db, run_id, user.id)
+    regions = merge_reviews(db, run.id, load_regions(run))
+    if confirmed:
+        regions = [r for r in regions if (r.get("reviewStatus") or "") == "confirmed"]
+
+    features = []
+    for r in regions:
+        geometry = _region_geometry(r)
+        if geometry is None:
+            continue  # ungeoreferenced run — nothing meaningful to place on a map
+        features.append({
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": {
+                "id": r.get("id"),
+                "ddaChangeType": r.get("ddaChangeType"),
+                "objectType": r.get("objectType"),
+                "confidence": r.get("confidence"),
+                "areaPx": r.get("area"),
+                "areaSqM": r.get("areaSqM"),
+                "severity": r.get("severity"),
+                "reviewStatus": r.get("reviewStatus", "pending"),
+            },
+        })
+
+    payload = {
+        "type": "FeatureCollection",
+        "name": f"dda_run_{run.id}",
+        "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+        "features": features,
+    }
+    import json as _json
+    return Response(
+        content=_json.dumps(payload, indent=2),
+        media_type="application/geo+json",
+        headers={"Content-Disposition":
+                 f'attachment; filename="dda_run_{run.id}_regions.geojson"'},
+    )
+
+
 @router.get("/reports/{run_id}/pdf")
 def download_report_pdf(run_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     """Download detection report as PDF."""

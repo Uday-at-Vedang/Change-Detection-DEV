@@ -607,3 +607,11 @@
   margin: 6px 0;
   flex-wrap: wrap;
 }
+
+/* Polygon footprint layer over the compare viewer (sits under the bbox highlight) */
+.region-polygon-layer {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+  overflow: visible;
+}

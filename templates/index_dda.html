@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=32" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=18" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=19" />
 </head>
 <body>
   <div class="app dda-app">
@@ -254,6 +254,7 @@
                   </div>
                   <div class="compare-handle-line"></div>
                 </div>
+                <svg class="region-polygon-layer" id="region-polygon-layer" style="display:none"></svg>
                 <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
               </div>
             </div>
@@ -265,6 +266,7 @@
             <div class="dda-review-actions">
               <a class="btn btn-secondary btn-sm" id="dda-export-csv" href="#" download>Export CSV</a>
               <a class="btn btn-secondary btn-sm" id="dda-export-confirmed" href="#" download>Export confirmed</a>
+              <a class="btn btn-secondary btn-sm" id="dda-export-geojson" href="#" download>Export GeoJSON</a>
               <button type="button" class="btn btn-secondary btn-sm hidden" id="dda-export-pack" title="Export a paint-ready training-label pack for this pair/ROI">Export training pack</button>
               <button type="button" class="btn btn-primary btn-sm" id="dda-submit-dept">Submit confirmed</button>
             </div>
@@ -356,7 +358,7 @@
   <script src="/static/js/dda/app.js?v=16"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/library.js?v=12"></script>
-  <script src="/static/js/dda/result.js?v=11"></script>
+  <script src="/static/js/dda/result.js?v=12"></script>
   <script src="/static/js/dda/compare.js?v=16"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>

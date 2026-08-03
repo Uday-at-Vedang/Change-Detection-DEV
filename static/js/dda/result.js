@@ -83,6 +83,8 @@ function setupDdaReviewBar(runId, regions, geo) {
   const submitBtn = document.getElementById('dda-submit-dept');
   if (exportAll) exportAll.href = `/api/dda/reports/${runId}/export.csv`;
   if (exportConfirmed) exportConfirmed.href = `/api/dda/reports/${runId}/export.csv?confirmed=1`;
+  const exportGeo = document.getElementById('dda-export-geojson');
+  if (exportGeo) exportGeo.href = `/api/dda/reports/${runId}/export.geojson`;
   updateDdaReviewSummary(regions);
   setupTrainingPackButton(runId, geo);
 
@@ -303,6 +305,19 @@ function showDdaResult(data) {
   ddaRegionPage = 0;
   renderDdaRegionPage();
   if (data.id) setupDdaReviewBar(data.id, regions, data.statistics && data.statistics.geo);
+  // Polygons need the image laid out to scale correctly; draw once it's ready
+  // and again on resize so footprints stay locked to the image.
+  const drawPolys = () => renderRegionPolygons(regions);
+  const beforeImgEl = document.getElementById('compare-before-img');
+  if (beforeImgEl) {
+    if (beforeImgEl.complete && beforeImgEl.naturalWidth) drawPolys();
+    beforeImgEl.addEventListener('load', drawPolys, { once: true });
+  }
+  setTimeout(drawPolys, 550);  // after resetDdaCompareSlider/resetDdaZoom settle
+  if (!window._ddaPolyResizeBound) {
+    window._ddaPolyResizeBound = true;
+    window.addEventListener('resize', () => renderRegionPolygons(ddaRegionList));
+  }
   openDdaResultModal();
 }
 
@@ -390,6 +405,7 @@ function selectAndLocateRegion(tr, regions) {
   document.getElementById('dda-locate-btn')?.removeAttribute('disabled');
   tr.closest('tbody')?.querySelectorAll('tr').forEach((row) => row.classList.remove('region-selected'));
   tr.classList.add('region-selected');
+  highlightRegionPolygon(r && r.id);
   locateRegionOnViewer(r);
 }
 
@@ -426,6 +442,65 @@ function placeRegionHighlight(r, { pulse = false } = {}) {
   box.style.height = `${Math.max(2, r.bbox.h * m.scaleY)}px`;
   overlay.appendChild(box);
   return m;
+}
+
+// --- Polygon footprint layer -----------------------------------------------
+// Regions may carry `polygon` ([[x,y],...] in detection-image px). Draw them as
+// one SVG layer over the compare image, reusing getCompareImageMetrics() so the
+// footprints track the image's zoom/pan exactly like the bbox highlight does.
+// Regions without a polygon simply aren't drawn (the bbox highlight still works).
+const DDA_POLYGON_COLORS = {
+  'New Construction': '#ff8c1a',
+  Demolition: '#e03131',
+  Extension: '#2f7ed8',
+  'Vegetation Change': '#2f9e44',
+  Other: '#9e9e9e',
+};
+
+function polygonFillFor(r) {
+  return DDA_POLYGON_COLORS[r.ddaChangeType] || DDA_POLYGON_COLORS.Other;
+}
+
+function renderRegionPolygons(regions) {
+  const layer = document.getElementById('region-polygon-layer');
+  if (!layer) return;
+  const withPoly = (regions || []).filter((r) => Array.isArray(r.polygon) && r.polygon.length >= 3);
+  if (!withPoly.length) { layer.innerHTML = ''; layer.style.display = 'none'; return; }
+  const m = getCompareImageMetrics();
+  if (!m) return;  // image not laid out yet; re-called on load/resize
+
+  layer.style.display = '';
+  layer.setAttribute('width', m.dispW);
+  layer.setAttribute('height', m.dispH);
+  layer.style.left = `${m.offsetX}px`;
+  layer.style.top = `${m.offsetY}px`;
+
+  const svgNs = 'http://www.w3.org/2000/svg';
+  layer.innerHTML = '';
+  withPoly.forEach((r) => {
+    const pts = r.polygon
+      .map((p) => `${(p[0] * m.scaleX).toFixed(1)},${(p[1] * m.scaleY).toFixed(1)}`)
+      .join(' ');
+    const poly = document.createElementNS(svgNs, 'polygon');
+    poly.setAttribute('points', pts);
+    poly.setAttribute('fill', polygonFillFor(r));
+    poly.setAttribute('fill-opacity', '0.35');
+    poly.setAttribute('stroke', polygonFillFor(r));
+    poly.setAttribute('stroke-width', '2');
+    poly.dataset.regionId = r.id;
+    layer.appendChild(poly);
+  });
+}
+
+/** Emphasize one region's polygon (called alongside the bbox highlight). */
+function highlightRegionPolygon(regionId) {
+  const layer = document.getElementById('region-polygon-layer');
+  if (!layer) return;
+  layer.querySelectorAll('polygon').forEach((p) => {
+    const on = String(p.dataset.regionId) === String(regionId);
+    p.setAttribute('fill-opacity', on ? '0.6' : '0.35');
+    p.setAttribute('stroke-width', on ? '3' : '2');
+  });
 }
 
 function scrollViewerToRegion(r) {
