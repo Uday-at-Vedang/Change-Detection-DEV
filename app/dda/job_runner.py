@@ -125,6 +125,7 @@ def _run_job_sync(job_id: int) -> None:
             user_id=job.created_by,
             job_id=job_id,
             gsd_debug=gsd_debug,
+            shape_mode=params.get("shape_mode", "polygon"),
         )
 
         update_job_progress(job_id, 100, "Complete")
@@ -244,6 +245,7 @@ def create_local_folder_job(
     notify_email: str = "",
     created_by: Optional[int] = None,
     roi: Optional[dict] = None,
+    shape_mode: str = "polygon",
 ) -> DetectionJob:
     user = get_or_create_guest_user(db)
     params = {
@@ -261,6 +263,7 @@ def create_local_folder_job(
     }
     if roi:
         params["roi"] = roi
+    params["shape_mode"] = shape_mode
     job = DetectionJob(
         status="queued",
         base_image_id=None,

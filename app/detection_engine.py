@@ -2079,12 +2079,20 @@ _MAX_VISIBLE_BOXES = 30
 _POLYGON_FILL_ALPHA = 0.35
 
 
-def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
+def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None,
+                      shape_mode="polygon"):
     """
     Clean visualization: subtle tinted overlay for changed pixels,
     severity-colored polygon fills (0.35 alpha) with contour outlines,
     bbox rectangle fallback when polygon is absent, and numbered labels.
+
+    ``shape_mode`` selects the region outline style:
+      * ``"polygon"`` (default) — filled contour footprints, bbox fallback.
+      * ``"bbox"`` — classic bounding-box rectangles only, ignoring polygons.
+    Operators pick this per run; polygons trace true footprints while boxes
+    stay legible on dense scenes with many small regions.
     """
+    use_bbox_only = str(shape_mode or "polygon").lower() == "bbox"
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
     if change_mask.shape[:2] != img2.shape[:2]:
@@ -2117,7 +2125,7 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None):
             severity = r.get("severity") or _severity_from_region(r, total_px)
             color = _SEVERITY_COLORS.get(severity, (255, 255, 255))
 
-            poly = r.get("polygon")
+            poly = None if use_bbox_only else r.get("polygon")
             pts = None
             if poly and len(poly) >= 3:
                 try:
@@ -3888,8 +3896,14 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
                   enable_registration=True, enable_normalization=True,
                   detection_sensitivity=0.5, min_region_area=None,
                   max_size=None, on_progress=None,
-                  before_path=None, after_path=None):
-    """Run full detection pipeline; returns change_mask, result_image, stats, regions."""
+                  before_path=None, after_path=None, shape_mode="polygon"):
+    """Run full detection pipeline; returns change_mask, result_image, stats, regions.
+
+    ``shape_mode`` (``"polygon"`` | ``"bbox"``) only affects how regions are
+    drawn on the overlay — detection itself is identical either way, and region
+    data always carries both ``polygon`` and ``bbox`` so the choice can be
+    changed later without re-running detection.
+    """
     from .detection_config import (
         get_inference_mode, get_load_max_side, get_skip_preblur,
         get_windowed_threshold, get_tile_size, get_tile_overlap,
@@ -4114,7 +4128,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     _prog(85, "Building visualization")
     result_image = visualize_changes(
         before_array, after_array, change_mask,
-        regions=change_regions, total_pixels=total_pixels,
+        regions=change_regions, total_pixels=total_pixels, shape_mode=shape_mode,
     )
     changed_pixels = int(np.sum(change_mask > 127))
     change_pct = (changed_pixels / total_pixels * 100.0) if total_pixels else 0.0

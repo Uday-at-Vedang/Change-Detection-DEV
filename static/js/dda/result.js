@@ -307,7 +307,9 @@ function showDdaResult(data) {
   if (data.id) setupDdaReviewBar(data.id, regions, data.statistics && data.statistics.geo);
   // Polygons need the image laid out to scale correctly; draw once it's ready
   // and again on resize so footprints stay locked to the image.
-  const drawPolys = () => renderRegionPolygons(regions);
+  ddaShapeMode = (data.statistics && data.statistics.params
+    && data.statistics.params.shape_mode) || 'polygon';
+  const drawPolys = () => renderRegionPolygons(regions, ddaShapeMode);
   const beforeImgEl = document.getElementById('compare-before-img');
   if (beforeImgEl) {
     if (beforeImgEl.complete && beforeImgEl.naturalWidth) drawPolys();
@@ -449,6 +451,8 @@ function placeRegionHighlight(r, { pulse = false } = {}) {
 // one SVG layer over the compare image, reusing getCompareImageMetrics() so the
 // footprints track the image's zoom/pan exactly like the bbox highlight does.
 // Regions without a polygon simply aren't drawn (the bbox highlight still works).
+let ddaShapeMode = 'polygon';
+
 const DDA_POLYGON_COLORS = {
   'New Construction': '#ff8c1a',
   Demolition: '#e03131',
@@ -461,10 +465,24 @@ function polygonFillFor(r) {
   return DDA_POLYGON_COLORS[r.ddaChangeType] || DDA_POLYGON_COLORS.Other;
 }
 
-function renderRegionPolygons(regions) {
+function renderRegionPolygons(regions, shapeMode) {
   const layer = document.getElementById('region-polygon-layer');
   if (!layer) return;
-  const withPoly = (regions || []).filter((r) => Array.isArray(r.polygon) && r.polygon.length >= 3);
+  // Match the baked overlay: a run detected in "bbox" mode shows rectangles
+  // here too, even though every region still carries its polygon.
+  const mode = shapeMode || ddaShapeMode || 'polygon';
+  const asBox = (r) => {
+    const b = r.bbox; if (!b) return null;
+    return [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]];
+  };
+  const withPoly = (regions || [])
+    .map((r) => {
+      const ring = mode === 'bbox'
+        ? asBox(r)
+        : (Array.isArray(r.polygon) && r.polygon.length >= 3 ? r.polygon : asBox(r));
+      return ring ? { ...r, _ring: ring } : null;
+    })
+    .filter(Boolean);
   if (!withPoly.length) { layer.innerHTML = ''; layer.style.display = 'none'; return; }
   const m = getCompareImageMetrics();
   if (!m) return;  // image not laid out yet; re-called on load/resize
@@ -478,7 +496,7 @@ function renderRegionPolygons(regions) {
   const svgNs = 'http://www.w3.org/2000/svg';
   layer.innerHTML = '';
   withPoly.forEach((r) => {
-    const pts = r.polygon
+    const pts = r._ring
       .map((p) => `${(p[0] * m.scaleX).toFixed(1)},${(p[1] * m.scaleY).toFixed(1)}`)
       .join(' ');
     const poly = document.createElementNS(svgNs, 'polygon');

@@ -208,6 +208,7 @@ async def detect_from_library(
     min_region_area: Optional[int] = Form(150),
     notify_email: Optional[str] = Form(None),
     roi: Optional[str] = Form(None),
+    shape_mode: str = Form("polygon"),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
@@ -298,6 +299,7 @@ async def detect_from_library(
             base_path=base_norm,
             user_id=user.id,
             gsd_debug=gsd_debug,
+            shape_mode=shape_mode,
         )
     except Exception as exc:
         logger.exception("Library detection failed for %s vs %s", base_norm, comp_norm)

@@ -45,6 +45,7 @@ async def create_job(
     min_region_area: Optional[int] = Form(150),
     notify_email: Optional[str] = Form(None),
     roi: Optional[str] = Form(None),
+    shape_mode: str = Form("polygon"),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
@@ -114,6 +115,7 @@ async def create_job(
         notify_email=notify_email or "",
         created_by=user.id,
         roi=roi_dict,
+        shape_mode=shape_mode,
     )
 
     if not enqueue_detection_job(job.id):

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=32" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=19" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=20" />
 </head>
 <body>
   <div class="app dda-app">
@@ -167,6 +167,17 @@
               <div class="form-group">
                 <label for="dda-detect-min-area">Min region area (px)</label>
                 <input type="number" id="dda-detect-min-area" min="50" max="10000" step="10" value="150" />
+              </div>
+              <div class="form-group">
+                <label>Region shape</label>
+                <div class="dda-shape-toggle" role="radiogroup" aria-label="Region shape">
+                  <button type="button" class="dda-shape-btn is-active" data-shape="polygon"
+                          role="radio" aria-checked="true"
+                          title="Filled contour footprints that follow each region's true outline">Polygon</button>
+                  <button type="button" class="dda-shape-btn" data-shape="bbox"
+                          role="radio" aria-checked="false"
+                          title="Classic bounding-box rectangles — clearer on dense scenes">Box</button>
+                </div>
               </div>
               <label class="dda-check"><input type="checkbox" id="dda-detect-registration" checked /> Image registration</label>
               <label class="dda-check"><input type="checkbox" id="dda-detect-normalization" checked /> Normalization</label>
@@ -359,7 +370,7 @@
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/library.js?v=12"></script>
   <script src="/static/js/dda/result.js?v=13"></script>
-  <script src="/static/js/dda/compare.js?v=16"></script>
+  <script src="/static/js/dda/compare.js?v=17"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>
 </body>

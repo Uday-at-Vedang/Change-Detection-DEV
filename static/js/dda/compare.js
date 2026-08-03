@@ -1,6 +1,33 @@
 /** Change Detection tab — pick library images and run comparison. */
 
-const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [], roi: null };
+const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [], roi: null, shapeMode: 'polygon' };
+
+// --- Region shape toggle (polygon footprints vs classic bounding boxes) -----
+// Detection itself is identical either way; this only picks how regions are
+// drawn. Regions always carry both polygon and bbox, so the run can be
+// re-rendered in the other style later without re-detecting.
+function initShapeToggle() {
+  const wrap = document.querySelector('.dda-shape-toggle');
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  const saved = localStorage.getItem('ddaShapeMode');
+  if (saved === 'polygon' || saved === 'bbox') compareState.shapeMode = saved;
+  const apply = () => {
+    wrap.querySelectorAll('.dda-shape-btn').forEach((b) => {
+      const on = b.dataset.shape === compareState.shapeMode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  };
+  wrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dda-shape-btn');
+    if (!btn) return;
+    compareState.shapeMode = btn.dataset.shape === 'bbox' ? 'bbox' : 'polygon';
+    localStorage.setItem('ddaShapeMode', compareState.shapeMode);
+    apply();
+  });
+  apply();
+}
 
 function compareFormatBytes(n) {
   if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
@@ -610,6 +637,7 @@ async function runLibraryDetection() {
   if (compareState.roi) {
     form.append('roi', JSON.stringify(compareState.roi));
   }
+  form.append('shape_mode', compareState.shapeMode || 'polygon');
 
   try {
     const { result: data, jobId } = await runDetectionWithFallback(form);
@@ -632,6 +660,7 @@ async function runLibraryDetection() {
 let compareInitialized = false;
 
 function initCompareTab() {
+  initShapeToggle();
   if (!compareInitialized) {
     if (typeof registerCompareTreeSidebar === 'function') {
       registerCompareTreeSidebar({

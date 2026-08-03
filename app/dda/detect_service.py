@@ -206,6 +206,7 @@ def run_detection_and_save(
     user_id: Optional[int] = None,
     job_id: Optional[int] = None,
     gsd_debug: Optional[dict] = None,
+    shape_mode: str = "polygon",
 ) -> dict:
     from ..detection_engine import run_detection
     from .job_progress import update_job_progress
@@ -249,7 +250,11 @@ def run_detection_and_save(
         on_progress=_on_engine_progress,
         before_path=_geotiff_path(geo_bounds_path),
         after_path=_geotiff_path(comparison_file),
+        shape_mode=shape_mode,
     )
+    # Record the choice so the viewer can match the baked overlay's style.
+    if isinstance(stats.get("params"), dict):
+        stats["params"]["shape_mode"] = shape_mode
 
     # Pre-detection guard: surface identical / poorly-aligned pairs to the operator
     # instead of returning a silent empty or garbage mask (the UI already renders

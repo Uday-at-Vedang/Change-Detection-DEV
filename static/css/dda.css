@@ -615,3 +615,23 @@
   z-index: 4;
   overflow: visible;
 }
+
+/* Polygon / Box region-shape toggle in the detect options */
+.dda-shape-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.dda-shape-btn {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.dda-shape-btn + .dda-shape-btn { border-left: 1px solid var(--border, #d0d5dd); }
+.dda-shape-btn:hover { background: rgba(46, 84, 150, 0.08); }
+.dda-shape-btn.is-active { background: #2e5496; color: #fff; }
