@@ -506,6 +506,116 @@ def strip_shadow_only_from_mask(change_mask, img1, img2):
     return out
 
 
+def _ring_around(comp_mask, width, exclude=None):
+    """Lit collar just outside a component, for judging it against its surround."""
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (width * 2 + 1,) * 2)
+    ring = cv2.subtract(cv2.dilate(comp_mask, k), comp_mask)
+    if exclude is not None:
+        ring = cv2.bitwise_and(ring, cv2.bitwise_not(exclude))
+    return ring
+
+
+def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
+    """Judge one surviving change-mask component against its own local surround.
+
+    ``strip_shadow_only_from_mask`` already removed the cleanly brightness-only
+    core of a shadow; what is left after registration jitter on a low-NCC pair
+    is either thin penumbra fringe, or — just as often on real imagery — a
+    fairly solid-looking blob that is still nothing but a broad cast shadow
+    (a building's shadow falling across open ground isn't thin or branching).
+    Blob shape alone can't tell those apart, so the primary test is physical:
+
+      * ring comparison — a cast shadow makes existing material darker
+        without changing what it *is*: low chroma_shift (still reads as the
+        same surrounding surface) plus a clear darkness gap against its own
+        immediate lit surround (``dark_margin``). A genuinely new/removed
+        structure differs in kind, not just brightness, from what is next to
+        it in the AFTER frame — and never satisfies both at once.
+
+    That signature overrides blob geometry (a "solid" component can still be
+    a broad shadow); a thin/low-fill blob that DOESN'T match it is treated as
+    ordinary registration-jitter noise via the existing lighting-only test.
+    """
+    comp_px = comp > 0
+    area = int(comp_px.sum())
+    if area < 30:
+        return True  # speck-sized leftovers are exactly this fringe debris
+
+    contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return True
+    contour = max(contours, key=cv2.contourArea)
+    hull_area = max(cv2.contourArea(cv2.convexHull(contour)), 1.0)
+    solidity = cv2.contourArea(contour) / hull_area
+    x, y, w, h = cv2.boundingRect(contour)
+    fill_ratio = area / max(w * h, 1)
+
+    ring_px = ring > 0
+    if ring_px.sum() < 20:
+        return bool(solidity < 0.35 or fill_ratio < 0.20)  # geometry-only fallback
+
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    a_, b_, l_ = lab2[:, :, 1], lab2[:, :, 2], lab2[:, :, 0]
+    chroma_shift = float(np.hypot(a_[comp_px].mean() - a_[ring_px].mean(),
+                                  b_[comp_px].mean() - b_[ring_px].mean()))
+    # Positive: component sits darker than its own immediate (lit) surround.
+    dark_margin = float(l_[ring_px].mean() - l_[comp_px].mean())
+    same_material_darker = dark_margin > 9.0 and chroma_shift < 8.0
+
+    # Solid, blocky components (real footprints) are protected — unless they
+    # themselves carry the shadow signature, since a broad cast shadow can be
+    # just as solid-looking as a real building.
+    if solidity >= 0.55 and fill_ratio >= 0.35 and not same_material_darker:
+        return False
+
+    mean_dl = float(delta_l[comp_px].mean())
+    mean_chroma = float(chroma[comp_px].mean())
+    geometry_weak = solidity < 0.55 or fill_ratio < 0.35
+    lighting_only = mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
+    return bool(same_material_darker or (geometry_weak and lighting_only))
+
+
+def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
+    """Remove residual shadow-boundary fragments the pixel-level strip missed.
+
+    On well-aligned pairs ``strip_shadow_only_from_mask`` catches a shadow
+    cleanly, since every pixel of it satisfies the tight brightness-only test.
+    On a misregistered pair the shadow's edge blends with adjacent lit texture
+    across a few pixels of registration jitter, so the strict per-pixel test
+    only removes the interior and leaves thin, branching fragments along the
+    boundary — visually identical to real change until judged as a shape.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    if before_img.shape[:2] != change_mask.shape[:2] or after_img.shape[:2] != change_mask.shape[:2]:
+        return change_mask
+
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    delta_l = np.abs(lab1[:, :, 0] - lab2[:, :, 0])
+    chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
+
+    binary = (change_mask > 127).astype(np.uint8)
+    num, labels = cv2.connectedComponents(binary, connectivity=8)
+    if num <= 1:
+        return change_mask
+
+    out = change_mask.copy()
+    removed_px = removed_comps = 0
+    for i in range(1, num):
+        comp = ((labels == i).astype(np.uint8)) * 255
+        ring = _ring_around(comp, 10, exclude=change_mask)
+        if _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
+            removed_px += int((comp > 0).sum())
+            out[comp > 0] = 0
+            removed_comps += 1
+
+    if removed_comps:
+        _log.info("Stripped %d residual shadow-fragment component(s) (%d px)",
+                  removed_comps, removed_px)
+    return out
+
+
 def _is_blue_roof_like(feat) -> bool:
     """Saturated blue metal/paint roof signature common on Delhi industrial builds."""
     if not feat:
@@ -4085,6 +4195,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
 
     change_mask = strip_transient_from_mask(change_mask, before_array, after_array)
     change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
+    change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
     change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
     change_mask = strip_weak_seasonal_veg_from_mask(change_mask, before_array, after_array)
     # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs
@@ -4092,6 +4203,12 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask, before_chromatic, after_chromatic)
     change_mask = recover_dark_roof_construction(
         change_mask, before_chromatic, after_chromatic)
+    # The dark-roof recovery pass grows into any nearby strong-darkening seed —
+    # shadow meets that same "strong darkening, low chroma" signature, so it can
+    # regrow exactly what the shadow strips above just removed. Re-apply them
+    # so regrown shadow doesn't survive into the final mask.
+    change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
+    change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
 
     _prog(65, "Analyzing change regions")
     # Classify on pre-normalization color so blue roofs keep their true hue/chroma
