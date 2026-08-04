@@ -1,0 +1,12 @@
+{
+  "pair_id": "dda_before1_before",
+  "before": "C:\\Users\\Priyanka\\data\\library_sources\\central_delhi\\Images\\before1.tif",
+  "after": "C:\\Users\\Priyanka\\data\\library_sources\\central_delhi\\Images\\before.tif",
+  "preview_shape": [
+    620,
+    944
+  ],
+  "roi": null,
+  "seed_changed_px": 0,
+  "created_unix": 1785844158.1359713
+}

@@ -527,6 +527,50 @@
         1305,
         1024
       ]
+    },
+    {
+      "pair_id": "dda_before1_before",
+      "before_path": "C:/Users/Priyanka/data/library_sources/central_delhi/Images/before1.tif",
+      "after_path": "C:/Users/Priyanka/data/library_sources/central_delhi/Images/before.tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": null,
+      "roi": null,
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before1_before/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before1_before",
+      "label_preview_size": [
+        944,
+        620
+      ]
+    },
+    {
+      "pair_id": "dda_before3_1_after3_1",
+      "before_path": "C:/Users/Priyanka/data/library_sources/central_delhi/Images/before3 (1).tif",
+      "after_path": "C:/Users/Priyanka/data/library_sources/central_delhi/Images/after3 (1).tif",
+      "date_before": null,
+      "date_after": null,
+      "gsd": null,
+      "zone": "",
+      "change_types": [
+        "building",
+        "road",
+        "vegetation",
+        "mixed"
+      ],
+      "gt_mask": null,
+      "roi": null,
+      "notes": "Labeling pack. Paint docs/delhi_eval/dda_labeling/dda_before3_1_after3_1/gt_mask.png then run scripts/ingest_dda_gt_label.py --pair-id dda_before3_1_after3_1",
+      "label_preview_size": [
+        844,
+        1055
+      ]
     }
   ]
 }
