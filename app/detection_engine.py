@@ -604,10 +604,21 @@ def _split_component_branches(comp):
     if num <= 2:
         return []
     recon_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    return [
-        _reconstruct_by_dilation(((labels == i).astype(np.uint8)) * 255, comp, recon_kernel)
-        for i in range(1, num)
-    ]
+    seeds = [((labels == i).astype(np.uint8)) * 255 for i in range(1, num)]
+    # Reconstructing every seed independently lets adjacent pieces both grow
+    # into the same disputed boundary pixels. Claim territory largest-seed
+    # first so a real building's reconstruction can't be encroached on by a
+    # smaller attached fragment growing into it -- pieces end up disjoint by
+    # construction instead of needing to be reconciled after the fact.
+    order = sorted(range(len(seeds)), key=lambda i: -int((seeds[i] > 0).sum()))
+    claimed = np.zeros_like(comp)
+    pieces = [None] * len(seeds)
+    for i in order:
+        available = cv2.bitwise_and(comp, cv2.bitwise_not(claimed))
+        piece = _reconstruct_by_dilation(seeds[i], available, recon_kernel)
+        pieces[i] = piece
+        claimed = cv2.bitwise_or(claimed, piece)
+    return pieces
 
 
 def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
@@ -643,16 +654,27 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
         return change_mask
 
     out = change_mask.copy()
-    removed_px = removed_comps = 0
+    removed_comps = 0
+    kept_union = np.zeros_like(change_mask)
+    to_remove = np.zeros_like(change_mask)
     for i in range(1, num):
         comp = ((labels == i).astype(np.uint8)) * 255
         pieces = _split_component_branches(comp) or [comp]
         for piece in pieces:
             ring = _ring_around(piece, 10, exclude=change_mask)
             if _is_shadow_fragment(before_img, after_img, piece, ring, delta_l, chroma):
-                removed_px += int((piece > 0).sum())
-                out[piece > 0] = 0
+                to_remove = cv2.bitwise_or(to_remove, piece)
                 removed_comps += 1
+            else:
+                kept_union = cv2.bitwise_or(kept_union, piece)
+
+    # Reconstructing each split piece by independent dilation can let adjacent
+    # pieces both claim the same boundary pixels. A pixel any kept piece also
+    # claims must never be zeroed just because a *different* piece covering it
+    # was judged a fragment -- ambiguous boundary pixels default to kept.
+    to_remove = cv2.bitwise_and(to_remove, cv2.bitwise_not(kept_union))
+    removed_px = int((to_remove > 0).sum())
+    out[to_remove > 0] = 0
 
     if removed_comps:
         _log.info("Stripped %d residual shadow-fragment component(s) (%d px)",

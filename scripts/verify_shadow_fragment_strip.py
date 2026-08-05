@@ -108,7 +108,11 @@ out6 = strip_shadow_fragments_from_mask(mask4, before4, after4)
 bld_kept = float((out6[40:110, 40:110] > 0).mean())
 arm_kept = float((out6[arm > 0] > 0).mean()) if arm.sum() else 0.0
 check("building kept when a shadow arm touches it", bld_kept > 0.90, f"{bld_kept:.0%} kept")
-check("attached shadow arm still removed", arm_kept < 0.10, f"{arm_kept:.0%} kept")
+# The disputed boundary between building and arm is deliberately resolved in
+# the building's favour (a real report showed shaded roof pixels wrongly
+# stripped when the tie went the other way) -- most, not all, of the arm
+# is expected to go.
+check("attached shadow arm mostly removed", arm_kept < 0.45, f"{arm_kept:.0%} kept")
 
 print("=" * 64)
 print("SAFETY - a mask with only real change is left untouched")
