@@ -606,20 +606,15 @@ def _split_component_branches(comp):
     is judged as its own piece instead of riding along inside the real
     core's catchment.
     """
+    orig_comp = comp
     # A straight edge of an ordinary solid shape already reads as ~0.5 density
     # in a 15x15 window (half the window falls outside it) -- the threshold
     # has to sit well below that so normal boundaries aren't mistaken for
     # speckle, with a minimum size so a few stray low-density boundary
     # pixels can't form their own spurious "piece" either.
+    close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
     density = cv2.boxFilter((comp > 0).astype(np.float32), -1, (15, 15))
     sparse = ((comp > 0) & (density < 0.5)).astype(np.uint8) * 255
-    # A speckled patch's density varies pixel to pixel -- some sub-spots
-    # locally dense enough to dip back under the threshold -- so a straight
-    # per-pixel mask can still leave a thin dense thread linking the whole
-    # patch back to the real core through the noise. Close small gaps first
-    # so the patch is judged as the one coherent fringe it visually is,
-    # not fragmented by its own internal noise.
-    close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
     sparse = cv2.bitwise_and(cv2.morphologyEx(sparse, cv2.MORPH_CLOSE, close_k), comp)
 
     sparse_pieces = []
@@ -644,7 +639,8 @@ def _split_component_branches(comp):
         # was carved out, the component still decomposed overall (sparse
         # piece(s) + one dense lump); otherwise nothing changed at all.
         if sparse_pieces:
-            return sparse_pieces + ([dense] if np.any(dense) else [])
+            pieces = [dense] if np.any(dense) else []
+            return _absorb_fringe_near_anchors(comp, sparse_pieces, pieces, close_k)
         return []
     comp = dense
 
@@ -684,7 +680,50 @@ def _split_component_branches(comp):
                 if np.any(grown):
                     pieces[idx] = cv2.bitwise_or(piece, grown)
                     leftover = cv2.bitwise_and(leftover, cv2.bitwise_not(grown))
-    return sparse_pieces + pieces
+    return _absorb_fringe_near_anchors(orig_comp, sparse_pieces, pieces, close_k)
+
+
+def _absorb_fringe_near_anchors(orig_comp, sparse_pieces, other_pieces, close_k):
+    """Merge whatever non-core pieces were already found (density-carved
+    fringe, watershed branches, or both) with any additional low
+    local-density territory nearby, bounded to a neighbourhood around them.
+
+    Neither method above catches everything alone: fine per-pixel density
+    only isolates the sparsest spots (a speckled patch's own sub-areas can
+    read as locally dense, so a straight closing doesn't fully bridge it),
+    and watershed only separates pieces that already have their own rival
+    seed. A wider, more permissive density check would catch the rest, but
+    applied component-wide it flags every solid shape's whole perimeter as
+    "fringe" too (an ordinary straight edge already reads under-dense out
+    to roughly half of any window wide enough to matter). Anchoring it to
+    a bounded neighbourhood around pieces already confirmed non-core keeps
+    it from ever reaching a component's other, unrelated edges.
+    """
+    candidates = sparse_pieces + other_pieces
+    if len(candidates) <= 1:
+        return candidates
+    areas = [int((p > 0).sum()) for p in candidates]
+    core_idx = int(np.argmax(areas))
+    core = candidates[core_idx]
+    anchors = np.zeros_like(orig_comp)
+    for idx, p in enumerate(candidates):
+        if idx != core_idx:
+            anchors = cv2.bitwise_or(anchors, p)
+    if not np.any(anchors):
+        return candidates
+
+    anchor_zone = cv2.dilate(
+        anchors, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41)))
+    coarse_density = cv2.boxFilter((orig_comp > 0).astype(np.float32), -1, (25, 25))
+    absorbed = ((core > 0) & (anchor_zone > 0) & (coarse_density < 0.8))
+    if not np.any(absorbed):
+        return candidates
+
+    absorbed_u8 = absorbed.astype(np.uint8) * 255
+    fringe = cv2.bitwise_or(anchors, absorbed_u8)
+    fringe = cv2.bitwise_and(cv2.morphologyEx(fringe, cv2.MORPH_CLOSE, close_k), orig_comp)
+    core = cv2.bitwise_and(core, cv2.bitwise_not(absorbed_u8))
+    return [fringe, core] if np.any(core) else [fringe]
 
 
 def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
