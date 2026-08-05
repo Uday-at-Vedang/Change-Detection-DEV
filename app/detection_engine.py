@@ -569,7 +569,7 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
                                   b_[comp_px].mean() - b_[ring_px].mean()))
     # Positive: component sits darker than its own immediate (lit) surround.
     dark_margin = float(l_[ring_px].mean() - l_[comp_px].mean())
-    same_material_darker = dark_margin > 9.0 and chroma_shift < 8.0
+    same_material_darker = dark_margin > 4.0 and chroma_shift < 8.0
 
     # Solid, blocky components (real footprints) are protected — unless they
     # themselves carry the shadow signature, since a broad cast shadow can be
