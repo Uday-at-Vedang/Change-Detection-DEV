@@ -84,6 +84,14 @@ def preprocess_image(image, max_size=None, skip_blur=False):
 def _match_features_sift(gray1, gray2):
     """SIFT + FLANN matching with Lowe's ratio test. Returns (homography, inlier_ratio) or (None, 0)."""
     try:
+        # FLANN's randomized kd-trees and RANSAC's random subset sampling
+        # both draw on OpenCV's global RNG, which is seeded from the clock
+        # by default -- the same image pair can register with a slightly
+        # different sub-pixel warp on every run, shifting exactly the kind
+        # of borderline brightness reading the shadow tests threshold on.
+        # Fix the seed so registration (and everything downstream of it) is
+        # reproducible for a given input pair.
+        cv2.setRNGSeed(42)
         sift = cv2.SIFT_create(nfeatures=4000)
         kp1, des1 = sift.detectAndCompute(gray1, None)
         kp2, des2 = sift.detectAndCompute(gray2, None)
@@ -116,6 +124,7 @@ def _match_features_sift(gray1, gray2):
 
 def _match_features_orb(gray1, gray2, max_features=3000):
     """ORB fallback matching. Returns (homography, inlier_ratio) or (None, 0)."""
+    cv2.setRNGSeed(42)  # RANSAC's random subset sampling -- see _match_features_sift
     best_H, best_ir = None, 0.0
     for nf, ratio_thr in [(max_features, 0.75), (max_features * 2, 0.80)]:
         orb = cv2.ORB_create(nfeatures=nf, scoreType=cv2.ORB_HARRIS_SCORE,
