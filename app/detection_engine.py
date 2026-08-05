@@ -575,50 +575,116 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 
-def _reconstruct_by_dilation(seed, mask_limit, kernel):
-    """Grow ``seed`` back out by repeated dilation, clipped to ``mask_limit``,
-    until stable. Recovers a branch's true pixel footprint after an opening
-    seeded it, without distorting its shape the way a single fixed-size
-    re-dilation would."""
-    prev = seed
-    for _ in range(64):
-        nxt = cv2.bitwise_and(cv2.dilate(prev, kernel), mask_limit)
-        if np.array_equal(nxt, prev):
-            return prev
-        prev = nxt
-    return prev
-
-
 def _split_component_branches(comp):
     """Sever thin necks joining a component's parts (morphological opening),
-    then reconstruct each resulting piece to its true extent within the
-    original component. A real building that happens to touch an adjacent
-    shadow fragment along a narrow boundary is exactly this shape: one
-    connected component that is actually two unrelated blobs joined by a
-    sliver. Returns [] when the component doesn't decompose (already one
-    coherent blob) so the caller can fall back to whole-component judgment.
+    then partition the original component among the resulting seeds by
+    nearest-seed distance, so each pixel goes to whichever piece it's
+    actually closest to instead of whichever piece happens to reach it
+    first. A real building that happens to touch an adjacent shadow
+    fragment along a narrow boundary is exactly this shape: one connected
+    component that is actually two unrelated blobs joined by a sliver.
+    Returns [] when the component doesn't decompose (already one coherent
+    blob) so the caller can fall back to whole-component judgment.
+
+    Unbounded growth from each seed (e.g. repeated dilation to a fixed
+    point) doesn't work here: whichever seed is processed first has nothing
+    stopping it from reaching all the way across the component, swallowing
+    a genuinely separate attached piece whole rather than stopping at the
+    natural boundary between them. Watershed on the component's distance
+    transform gives each seed only its own catchment basin, splitting at
+    the saddle point of the connecting neck.
+
+    That still fails for a fringe with no clean neck at all: registration
+    jitter along a boundary often reads as a porous, speckled cloud of
+    partial detections (a real solid core fading out into scattered holes
+    at its edge, not a tidy dangling arm). Opening can't isolate it as a
+    rival seed -- it's genuinely low-density everywhere, so it never becomes
+    solid enough to survive erosion at any kernel size -- and without a
+    rival seed watershed just floods the whole reachable area, holes and
+    all, into the one real seed it can find. Carve out low local-density
+    territory first, before opening/watershed ever run, so speckled fringe
+    is judged as its own piece instead of riding along inside the real
+    core's catchment.
     """
+    # A straight edge of an ordinary solid shape already reads as ~0.5 density
+    # in a 15x15 window (half the window falls outside it) -- the threshold
+    # has to sit well below that so normal boundaries aren't mistaken for
+    # speckle, with a minimum size so a few stray low-density boundary
+    # pixels can't form their own spurious "piece" either.
+    density = cv2.boxFilter((comp > 0).astype(np.float32), -1, (15, 15))
+    sparse = ((comp > 0) & (density < 0.5)).astype(np.uint8) * 255
+    # A speckled patch's density varies pixel to pixel -- some sub-spots
+    # locally dense enough to dip back under the threshold -- so a straight
+    # per-pixel mask can still leave a thin dense thread linking the whole
+    # patch back to the real core through the noise. Close small gaps first
+    # so the patch is judged as the one coherent fringe it visually is,
+    # not fragmented by its own internal noise.
+    close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    sparse = cv2.bitwise_and(cv2.morphologyEx(sparse, cv2.MORPH_CLOSE, close_k), comp)
+
+    sparse_pieces = []
+    if np.any(sparse):
+        n_sparse, sparse_labels, sparse_stats, _ = cv2.connectedComponentsWithStats(
+            sparse, connectivity=8)
+        sparse_pieces = [
+            ((sparse_labels == i).astype(np.uint8)) * 255
+            for i in range(1, n_sparse)
+            if sparse_stats[i, cv2.CC_STAT_AREA] >= 80
+        ]
+    sparse_claimed = np.zeros_like(comp)
+    for p in sparse_pieces:
+        sparse_claimed = cv2.bitwise_or(sparse_claimed, p)
+    dense = cv2.bitwise_and(comp, cv2.bitwise_not(sparse_claimed))
+
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-    opened = cv2.morphologyEx(comp, cv2.MORPH_OPEN, k)
+    opened = cv2.morphologyEx(dense, cv2.MORPH_OPEN, k)
     num, labels = cv2.connectedComponents(opened, connectivity=8)
     if num <= 2:
+        # Dense part doesn't itself decompose further -- if sparse fringe
+        # was carved out, the component still decomposed overall (sparse
+        # piece(s) + one dense lump); otherwise nothing changed at all.
+        if sparse_pieces:
+            return sparse_pieces + ([dense] if np.any(dense) else [])
         return []
-    recon_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    seeds = [((labels == i).astype(np.uint8)) * 255 for i in range(1, num)]
-    # Reconstructing every seed independently lets adjacent pieces both grow
-    # into the same disputed boundary pixels. Claim territory largest-seed
-    # first so a real building's reconstruction can't be encroached on by a
-    # smaller attached fragment growing into it -- pieces end up disjoint by
-    # construction instead of needing to be reconciled after the fact.
-    order = sorted(range(len(seeds)), key=lambda i: -int((seeds[i] > 0).sum()))
+    comp = dense
+
+    dist = cv2.distanceTransform(comp, cv2.DIST_L2, 5)
+    elevation = 255 - cv2.normalize(dist, None, 0, 255, cv2.NORM_MINMAX)
+    elevation_bgr = cv2.cvtColor(elevation.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+
+    markers = labels.astype(np.int32)
+    markers[markers > 0] += 1          # seeds -> ids 2..num
+    markers[comp == 0] = 1             # outside the component: fixed, not floodable
+    # pixels inside comp but not in any opened seed (the neck) stay 0 =
+    # unknown, and get assigned to their nearest seed by the flood.
+    cv2.watershed(elevation_bgr, markers)
+
+    pieces = [
+        (((markers == seed_id) & (comp > 0)).astype(np.uint8)) * 255
+        for seed_id in range(2, num + 1)
+    ]
+    # Watershed marks the ridge between adjacent basins as -1 -- those
+    # boundary pixels belong to neither piece's mask. Left untested, they'd
+    # default to "kept" (the caller only zeroes pixels it explicitly judged
+    # a fragment), silently reassembling exactly the shape being split
+    # apart. Fold each boundary pixel into whichever piece is already
+    # touching it so every original pixel ends up claimed by exactly one
+    # piece.
     claimed = np.zeros_like(comp)
-    pieces = [None] * len(seeds)
-    for i in order:
-        available = cv2.bitwise_and(comp, cv2.bitwise_not(claimed))
-        piece = _reconstruct_by_dilation(seeds[i], available, recon_kernel)
-        pieces[i] = piece
+    for piece in pieces:
         claimed = cv2.bitwise_or(claimed, piece)
-    return pieces
+    leftover = cv2.bitwise_and(comp, cv2.bitwise_not(claimed))
+    if np.any(leftover):
+        grow_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        for _ in range(8):
+            if not np.any(leftover):
+                break
+            for idx, piece in enumerate(pieces):
+                grown = cv2.bitwise_and(cv2.dilate(piece, grow_kernel), leftover)
+                if np.any(grown):
+                    pieces[idx] = cv2.bitwise_or(piece, grown)
+                    leftover = cv2.bitwise_and(leftover, cv2.bitwise_not(grown))
+    return sparse_pieces + pieces
 
 
 def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
@@ -662,7 +728,14 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
         pieces = _split_component_branches(comp) or [comp]
         for piece in pieces:
             ring = _ring_around(piece, 10, exclude=change_mask)
-            if _is_shadow_fragment(before_img, after_img, piece, ring, delta_l, chroma):
+            frag = _is_shadow_fragment(before_img, after_img, piece, ring, delta_l, chroma)
+            if _log.isEnabledFor(logging.DEBUG):
+                ys, xs = np.where(piece > 0)
+                if len(ys):
+                    _log.debug("frag-piece area=%d bbox=(%d,%d,%d,%d) is_fragment=%s",
+                              int((piece > 0).sum()), int(xs.min()), int(ys.min()),
+                              int(xs.max() - xs.min()), int(ys.max() - ys.min()), frag)
+            if frag:
                 to_remove = cv2.bitwise_or(to_remove, piece)
                 removed_comps += 1
             else:
@@ -4272,9 +4345,18 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     # The dark-roof recovery pass grows into any nearby strong-darkening seed —
     # shadow meets that same "strong darkening, low chroma" signature, so it can
     # regrow exactly what the shadow strips above just removed. Re-apply them
-    # so regrown shadow doesn't survive into the final mask.
-    change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
-    change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
+    # so regrown shadow doesn't survive into the final mask. A single re-pass
+    # can still leave a residual: splitting a merged blob changes each piece's
+    # own geometry, so a fragment judged borderline-kept on one pass can look
+    # different (and get judged again) on the next once its neighbours have
+    # changed. Repeat until the mask stops changing rather than assuming one
+    # extra pass is always enough.
+    for _ in range(4):
+        before_pass = change_mask
+        change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
+        change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
+        if np.array_equal(change_mask, before_pass):
+            break
 
     _prog(65, "Analyzing change regions")
     # Classify on pre-normalization color so blue roofs keep their true hue/chroma
