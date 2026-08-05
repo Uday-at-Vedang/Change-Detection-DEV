@@ -575,6 +575,41 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 
+def _reconstruct_by_dilation(seed, mask_limit, kernel):
+    """Grow ``seed`` back out by repeated dilation, clipped to ``mask_limit``,
+    until stable. Recovers a branch's true pixel footprint after an opening
+    seeded it, without distorting its shape the way a single fixed-size
+    re-dilation would."""
+    prev = seed
+    for _ in range(64):
+        nxt = cv2.bitwise_and(cv2.dilate(prev, kernel), mask_limit)
+        if np.array_equal(nxt, prev):
+            return prev
+        prev = nxt
+    return prev
+
+
+def _split_component_branches(comp):
+    """Sever thin necks joining a component's parts (morphological opening),
+    then reconstruct each resulting piece to its true extent within the
+    original component. A real building that happens to touch an adjacent
+    shadow fragment along a narrow boundary is exactly this shape: one
+    connected component that is actually two unrelated blobs joined by a
+    sliver. Returns [] when the component doesn't decompose (already one
+    coherent blob) so the caller can fall back to whole-component judgment.
+    """
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    opened = cv2.morphologyEx(comp, cv2.MORPH_OPEN, k)
+    num, labels = cv2.connectedComponents(opened, connectivity=8)
+    if num <= 2:
+        return []
+    recon_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    return [
+        _reconstruct_by_dilation(((labels == i).astype(np.uint8)) * 255, comp, recon_kernel)
+        for i in range(1, num)
+    ]
+
+
 def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
     """Remove residual shadow-boundary fragments the pixel-level strip missed.
 
@@ -584,6 +619,13 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
     across a few pixels of registration jitter, so the strict per-pixel test
     only removes the interior and leaves thin, branching fragments along the
     boundary — visually identical to real change until judged as a shape.
+
+    A shadow fragment doesn't have to stand alone: it can be touching a real
+    change region (e.g. a building's own cast shadow reaching just past its
+    footprint), merging them into one connected component. Judging that whole
+    blob at once lets the real change's strong signal protect the attached
+    shadow too, so each component is first split at any thin necks and its
+    branches judged independently before falling back to whole-blob judgment.
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -604,11 +646,13 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
     removed_px = removed_comps = 0
     for i in range(1, num):
         comp = ((labels == i).astype(np.uint8)) * 255
-        ring = _ring_around(comp, 10, exclude=change_mask)
-        if _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
-            removed_px += int((comp > 0).sum())
-            out[comp > 0] = 0
-            removed_comps += 1
+        pieces = _split_component_branches(comp) or [comp]
+        for piece in pieces:
+            ring = _ring_around(piece, 10, exclude=change_mask)
+            if _is_shadow_fragment(before_img, after_img, piece, ring, delta_l, chroma):
+                removed_px += int((piece > 0).sum())
+                out[piece > 0] = 0
+                removed_comps += 1
 
     if removed_comps:
         _log.info("Stripped %d residual shadow-fragment component(s) (%d px)",

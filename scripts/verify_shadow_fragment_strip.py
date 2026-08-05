@@ -84,6 +84,33 @@ building_kept = float((out5[60:160, 60:160] > 0).mean())
 check("solid differently-coloured new block preserved", building_kept > 0.90, f"{building_kept:.0%} kept")
 
 print("=" * 64)
+print("MERGED BLOB - shadow arm touching a real building is still stripped")
+print("=" * 64)
+
+# A real building whose own cast shadow reaches just past its footprint and
+# touches a jagged fragment merges them into ONE connected component. The
+# building's strong colour signal must not protect the attached shadow arm.
+before4 = np.full((H, W, 3), 150, np.uint8)
+after4 = before4.copy()
+after4[40:110, 40:110] = [200, 140, 90]  # real, differently-coloured building
+mask4 = np.zeros((H, W), np.uint8)
+mask4[40:110, 40:110] = 255
+
+arm = np.zeros((H, W), np.uint8)
+cv2.line(arm, (108, 108), (108, 220), 255, 3)
+cv2.line(arm, (108, 200), (170, 230), 255, 4)
+cv2.line(arm, (108, 180), (150, 170), 255, 3)
+arm = cv2.dilate(arm, np.ones((3, 3), np.uint8))
+after4[arm > 0] = (before4[arm > 0].astype(np.float32) * 0.55).astype(np.uint8)
+mask4[arm > 0] = 255
+
+out6 = strip_shadow_fragments_from_mask(mask4, before4, after4)
+bld_kept = float((out6[40:110, 40:110] > 0).mean())
+arm_kept = float((out6[arm > 0] > 0).mean()) if arm.sum() else 0.0
+check("building kept when a shadow arm touches it", bld_kept > 0.90, f"{bld_kept:.0%} kept")
+check("attached shadow arm still removed", arm_kept < 0.10, f"{arm_kept:.0%} kept")
+
+print("=" * 64)
 print("SAFETY - a mask with only real change is left untouched")
 print("=" * 64)
 
