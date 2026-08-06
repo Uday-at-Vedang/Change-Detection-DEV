@@ -524,6 +524,29 @@ def _ring_around(comp_mask, width, exclude=None):
     return ring
 
 
+def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, chroma_thr=8.0):
+    """True if a region reads as its own local (lit) surround, just darker --
+    the physical signature of a cast shadow, which dims existing material
+    without changing what it is. A genuinely different/new material differs
+    in colour from its surround, not just brightness, and never satisfies
+    both thresholds at once.
+
+    Shared by the post-hoc shadow-fragment strip and the dark-roof recovery
+    gate below, so both apply the identical, already-tuned physical rule
+    instead of drifting into two different opinions about the same pixels.
+    Returns False (never "shadow") when there isn't enough ring context to
+    judge -- an absence of evidence, not evidence of shadow.
+    """
+    if int(np.sum(ring_px)) < 20:
+        return False
+    a_, b_, l_ = lab_after[:, :, 1], lab_after[:, :, 2], lab_after[:, :, 0]
+    chroma_shift = float(np.hypot(a_[comp_px].mean() - a_[ring_px].mean(),
+                                  b_[comp_px].mean() - b_[ring_px].mean()))
+    # Positive: component sits darker than its own immediate (lit) surround.
+    dark_margin = float(l_[ring_px].mean() - l_[comp_px].mean())
+    return dark_margin > dark_thr and chroma_shift < chroma_thr
+
+
 def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     """Judge one surviving change-mask component against its own local surround.
 
@@ -1015,6 +1038,14 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
     1. Grow existing change blobs into adjacent dark-roof seeds.
     2. Add only high-confidence standalone dark footprints (strong darkening,
        compact fill) that look like new tarp/metal/solar — not soft shadows.
+
+    Neither mode's own criteria (darkening, fill/aspect, exG) actually rules
+    out shadow: a compact, strongly-darkened cast shadow can pass the same
+    checks a real dark roof does. Gate both against the same
+    _same_material_darker_signature the post-hoc shadow-fragment strip uses,
+    so a candidate that reads as its own surround just darker is never
+    recovered in the first place, rather than being added here and fought
+    over by the strip pass afterward.
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -1064,6 +1095,15 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
             grown = nxt
         grown_add = cv2.bitwise_and(grown, local)
 
+        if np.any(grown_add):
+            n_grow, grow_labels = cv2.connectedComponents(grown_add, connectivity=8)
+            for gi in range(1, n_grow):
+                piece = (grow_labels == gi)
+                piece_u8 = piece.astype(np.uint8) * 255
+                ring = _ring_around(piece_u8, 10, exclude=change_mask) > 0
+                if _same_material_darker_signature(piece, ring, lab2):
+                    grown_add[piece] = 0
+
     # --- Mode 2: strict standalone dark-roof components ---
     # Strong darkening only — avoid heavy close (it merges city-wide shadows
     # into one mega-component and then everything fails max_area).
@@ -1097,6 +1137,10 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
             continue
         need = strong_area_thr if mean_dl >= 55.0 else area_thr
         if area < need:
+            continue
+        comp_u8 = comp.astype(np.uint8) * 255
+        ring = _ring_around(comp_u8, 10, exclude=change_mask) > 0
+        if _same_material_darker_signature(comp, ring, lab2):
             continue
         recovered[comp] = 255
         n_comps += 1
