@@ -544,6 +544,16 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     That signature overrides blob geometry (a "solid" component can still be
     a broad shadow); a thin/low-fill blob that DOESN'T match it is treated as
     ordinary registration-jitter noise via the existing lighting-only test.
+
+    Darkness and low chroma_shift alone aren't enough, though: a dark roof,
+    a dark/black vehicle, or shaded dense foliage all read the same way --
+    dark, and not much different in hue from a similarly dark/grey surround
+    -- yet are real objects, not shadow. What actually distinguishes them is
+    texture: a cast shadow is a smooth brightness multiplier over whatever
+    it falls on, while a real dark object has its own internal structure
+    (panel lines, corrugation, window edges, leaf detail) the shadow signature
+    alone can't see. Require low edge energy too, mirroring the same
+    protection ``strip_shadow_only_from_mask`` already applies per-pixel.
     """
     comp_px = comp > 0
     area = int(comp_px.sum())
@@ -569,7 +579,26 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
                                   b_[comp_px].mean() - b_[ring_px].mean()))
     # Positive: component sits darker than its own immediate (lit) surround.
     dark_margin = float(l_[ring_px].mean() - l_[comp_px].mean())
-    same_material_darker = dark_margin > 4.0 and chroma_shift < 8.0
+
+    # A thin sliver has almost every pixel within a step or two of its own
+    # boundary, where brightness jumps from the darkened region back to the
+    # untouched surround -- that boundary discontinuity reads as high Sobel
+    # energy regardless of whether the material itself has any texture.
+    # Erode to the component's core first so only genuine interior texture
+    # is measured, the same fix used for this exact failure mode in
+    # shadow_removal.py's flat-object test. A shape with no real interior
+    # (a thin fringe) has nothing to measure -- default to smooth, since a
+    # sliver that size was never going to be a real roof/vehicle anyway.
+    core_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    texture_core = cv2.erode(comp, core_k)
+    texture_px = texture_core > 0 if np.any(texture_core) else comp_px
+    gray2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    gx = cv2.Sobel(gray2, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray2, cv2.CV_32F, 0, 1, ksize=3)
+    mean_edge = float(np.hypot(gx, gy)[texture_px].mean())
+    smooth = (not np.any(texture_core)) or mean_edge < 20.0
+
+    same_material_darker = dark_margin > 4.0 and chroma_shift < 8.0 and smooth
 
     # Solid, blocky components (real footprints) are protected — unless they
     # themselves carry the shadow signature, since a broad cast shadow can be
@@ -580,7 +609,7 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     mean_dl = float(delta_l[comp_px].mean())
     mean_chroma = float(chroma[comp_px].mean())
     geometry_weak = solidity < 0.55 or fill_ratio < 0.35
-    lighting_only = mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
+    lighting_only = mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14 and smooth
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 

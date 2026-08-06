@@ -115,6 +115,58 @@ check("building kept when a shadow arm touches it", bld_kept > 0.90, f"{bld_kept
 check("attached shadow arm mostly removed", arm_kept < 0.45, f"{arm_kept:.0%} kept")
 
 print("=" * 64)
+print("DARK BUT TEXTURED - real dark objects must not read as shadow")
+print("=" * 64)
+
+# Darkness + low chroma_shift alone match a dark roof, a dark/black vehicle,
+# or shaded foliage just as well as an actual shadow -- what actually tells
+# them apart is texture. A real object has internal structure (panel lines,
+# window/reflection contrast, leaf detail); a cast shadow is a smooth
+# brightness multiplier over whatever it falls on. Each case here is as dark
+# as a shadow but textured, and must survive; the control has the same
+# darkness with zero texture and must not.
+_tex_rng = np.random.default_rng(0)
+
+
+def _textured(img, region, strength):
+    noise = _tex_rng.integers(-strength, strength, img[region].shape, dtype=np.int16)
+    img[region] = np.clip(img[region].astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+
+def _dark_case(color, region, strength):
+    b = np.full((H, W, 3), 150, np.uint8)
+    _textured(b, np.s_[:, :], 6)
+    a = b.copy()
+    a[region] = color
+    _textured(a, region, strength)
+    m = np.zeros((H, W), np.uint8)
+    m[region] = 255
+    return b, a, m
+
+
+roof_b, roof_a, roof_m = _dark_case([55, 55, 58], np.s_[60:180, 60:180], 14)
+roof_kept = float((strip_shadow_fragments_from_mask(roof_m, roof_b, roof_a)[roof_m > 0] > 0).mean())
+check("textured dark roof preserved", roof_kept > 0.90, f"{roof_kept:.0%} kept")
+
+veg_b, veg_a, veg_m = _dark_case([45, 85, 40], np.s_[60:180, 60:180], 20)
+veg_kept = float((strip_shadow_fragments_from_mask(veg_m, veg_b, veg_a)[veg_m > 0] > 0).mean())
+check("textured dense vegetation preserved", veg_kept > 0.90, f"{veg_kept:.0%} kept")
+
+# Windows/reflections give a real vehicle strong local contrast, not faint speckle.
+car_b, car_a, car_m = _dark_case([40, 40, 42], np.s_[130:150, 120:170], 25)
+car_kept = float((strip_shadow_fragments_from_mask(car_m, car_b, car_a)[car_m > 0] > 0).mean())
+check("textured dark vehicle preserved", car_kept > 0.90, f"{car_kept:.0%} kept")
+
+flat_b = np.full((H, W, 3), 150, np.uint8)
+_textured(flat_b, np.s_[:, :], 6)
+flat_a = flat_b.copy()
+flat_a[60:180, 60:180] = (flat_b[60:180, 60:180].astype(np.float32) * 0.5).astype(np.uint8)
+flat_m = np.zeros((H, W), np.uint8)
+flat_m[60:180, 60:180] = 255
+flat_kept = float((strip_shadow_fragments_from_mask(flat_m, flat_b, flat_a)[flat_m > 0] > 0).mean())
+check("smooth flat darkening (true shadow) still removed", flat_kept < 0.10, f"{flat_kept:.0%} kept")
+
+print("=" * 64)
 print("SAFETY - a mask with only real change is left untouched")
 print("=" * 64)
 
