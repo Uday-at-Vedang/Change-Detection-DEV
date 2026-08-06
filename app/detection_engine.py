@@ -552,6 +552,19 @@ def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, c
     one -- on flat/textureless ground there's no pattern to correlate, and
     the colour rule alone still applies, exactly as it did before this
     existed.
+
+    The multiplicative-dimming assumption only really holds for a close-to-
+    flat surface (a roof, pavement, bare ground): shadow across it is a
+    clean, uniform darkening. It's much less reliable over volumetric
+    structure like a tree canopy, where self-shadowing, wind-moved leaves,
+    and 3D geometry interacting with a different sun angle can all lower
+    the correlation even for a patch that's genuinely just shaded, not
+    changed -- confirmed directly: a real jagged, textured shadow fragment
+    read a low, "unrelated-looking" correlation and was wrongly protected
+    before this guard existed. Only trust the correlation veto for a
+    reasonably compact, solid-ish shape -- the kind a real roof or vehicle
+    actually is -- not a thin/branching one, which registration-jitter
+    shadow debris (and shaded foliage) typically is.
     """
     if int(np.sum(ring_px)) < 20:
         return False
@@ -565,12 +578,23 @@ def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, c
         return False
 
     if before_gray is not None and after_gray is not None:
-        b_vals = before_gray[comp_px]
-        a_vals = after_gray[comp_px]
-        if b_vals.std() > 2.0 and a_vals.std() > 2.0:
-            corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
-            if corr < 0.2:
-                return False  # unrelated texture pattern -> real new material
+        comp_u8 = comp_px.astype(np.uint8) * 255
+        contours, _ = cv2.findContours(comp_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        compact = False
+        if contours:
+            contour = max(contours, key=cv2.contourArea)
+            hull_area = max(cv2.contourArea(cv2.convexHull(contour)), 1.0)
+            solidity = cv2.contourArea(contour) / hull_area
+            _, _, w, h = cv2.boundingRect(contour)
+            fill_ratio = int(np.sum(comp_px)) / max(w * h, 1)
+            compact = solidity >= 0.55 and fill_ratio >= 0.35
+        if compact:
+            b_vals = before_gray[comp_px]
+            a_vals = after_gray[comp_px]
+            if b_vals.std() > 2.0 and a_vals.std() > 2.0:
+                corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
+                if corr < 0.2:
+                    return False  # unrelated texture pattern -> real new material
 
     return True
 
@@ -620,15 +644,14 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
                                   b_[comp_px].mean() - b_[ring_px].mean()))
     before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
     after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    # The correlation tie-breaker inside the shared signature helper only
+    # trusts compact, solid-ish shapes (a real dark roof/vehicle); it
+    # doesn't apply here regardless, since geometry_weak below is only
+    # reached for the opposite case -- a thin/branching shape, exactly the
+    # registration-jitter debris (or shaded foliage) where a shadow's
+    # before/after correlation isn't reliable in the first place.
     same_material_darker = _same_material_darker_signature(
         comp_px, ring_px, lab2, before_gray=before_gray, after_gray=after_gray)
-    # Same physical tie-breaker as the shared helper, for the geometry-weak
-    # path below: an unrelated before/after texture pattern means a real
-    # new material, not shadow, however dark and low-chroma it reads.
-    pattern_unrelated = False
-    b_vals, a_vals = before_gray[comp_px], after_gray[comp_px]
-    if b_vals.std() > 2.0 and a_vals.std() > 2.0:
-        pattern_unrelated = float(np.corrcoef(b_vals, a_vals)[0, 1]) < 0.2
 
     # Solid, blocky components (real footprints) are protected — unless they
     # themselves carry the shadow signature, since a broad cast shadow can be
@@ -639,8 +662,7 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     mean_dl = float(delta_l[comp_px].mean())
     mean_chroma = float(chroma[comp_px].mean())
     geometry_weak = solidity < 0.55 or fill_ratio < 0.35
-    lighting_only = (mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
-                     and not pattern_unrelated)
+    lighting_only = mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 
