@@ -524,7 +524,8 @@ def _ring_around(comp_mask, width, exclude=None):
     return ring
 
 
-def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, chroma_thr=8.0):
+def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, chroma_thr=8.0,
+                                     before_gray=None, after_gray=None):
     """True if a region reads as its own local (lit) surround, just darker --
     the physical signature of a cast shadow, which dims existing material
     without changing what it is. A genuinely different/new material differs
@@ -536,6 +537,21 @@ def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, c
     instead of drifting into two different opinions about the same pixels.
     Returns False (never "shadow") when there isn't enough ring context to
     judge -- an absence of evidence, not evidence of shadow.
+
+    Colour alone has a known blind spot: a genuinely grey/neutral dark roof
+    or vehicle on similarly grey/neutral ground reads statistically
+    identical to a cast shadow -- both dark, both low chroma_shift against
+    their surround. When ``before_gray``/``after_gray`` are supplied, a
+    physical tie-breaker resolves it: a shadow dims the *same* underlying
+    material, so the after-image brightness pattern at that exact spot
+    should correlate with the before-image pattern there (shadow is
+    approximately a multiplicative dimming, which preserves relative
+    texture). A genuinely new material's texture has nothing to do with
+    whatever used to be at that spot, even if both happen to be grey and
+    dark. This can only veto a colour-based "shadow" verdict, never create
+    one -- on flat/textureless ground there's no pattern to correlate, and
+    the colour rule alone still applies, exactly as it did before this
+    existed.
     """
     if int(np.sum(ring_px)) < 20:
         return False
@@ -544,7 +560,19 @@ def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, c
                                   b_[comp_px].mean() - b_[ring_px].mean()))
     # Positive: component sits darker than its own immediate (lit) surround.
     dark_margin = float(l_[ring_px].mean() - l_[comp_px].mean())
-    return dark_margin > dark_thr and chroma_shift < chroma_thr
+    color_says_shadow = dark_margin > dark_thr and chroma_shift < chroma_thr
+    if not color_says_shadow:
+        return False
+
+    if before_gray is not None and after_gray is not None:
+        b_vals = before_gray[comp_px]
+        a_vals = after_gray[comp_px]
+        if b_vals.std() > 2.0 and a_vals.std() > 2.0:
+            corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
+            if corr < 0.2:
+                return False  # unrelated texture pattern -> real new material
+
+    return True
 
 
 def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
@@ -587,12 +615,20 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
         return bool(solidity < 0.35 or fill_ratio < 0.20)  # geometry-only fallback
 
     lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
-    a_, b_, l_ = lab2[:, :, 1], lab2[:, :, 2], lab2[:, :, 0]
+    a_, b_ = lab2[:, :, 1], lab2[:, :, 2]
     chroma_shift = float(np.hypot(a_[comp_px].mean() - a_[ring_px].mean(),
                                   b_[comp_px].mean() - b_[ring_px].mean()))
-    # Positive: component sits darker than its own immediate (lit) surround.
-    dark_margin = float(l_[ring_px].mean() - l_[comp_px].mean())
-    same_material_darker = dark_margin > 4.0 and chroma_shift < 8.0
+    before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    same_material_darker = _same_material_darker_signature(
+        comp_px, ring_px, lab2, before_gray=before_gray, after_gray=after_gray)
+    # Same physical tie-breaker as the shared helper, for the geometry-weak
+    # path below: an unrelated before/after texture pattern means a real
+    # new material, not shadow, however dark and low-chroma it reads.
+    pattern_unrelated = False
+    b_vals, a_vals = before_gray[comp_px], after_gray[comp_px]
+    if b_vals.std() > 2.0 and a_vals.std() > 2.0:
+        pattern_unrelated = float(np.corrcoef(b_vals, a_vals)[0, 1]) < 0.2
 
     # Solid, blocky components (real footprints) are protected — unless they
     # themselves carry the shadow signature, since a broad cast shadow can be
@@ -603,7 +639,8 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     mean_dl = float(delta_l[comp_px].mean())
     mean_chroma = float(chroma[comp_px].mean())
     geometry_weak = solidity < 0.55 or fill_ratio < 0.35
-    lighting_only = mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
+    lighting_only = (mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
+                     and not pattern_unrelated)
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 
@@ -1066,6 +1103,10 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
         - after_img[:, :, 0].astype(np.float32)
         - after_img[:, :, 2].astype(np.float32)
     )
+    # Colour alone can't tell a grey/neutral dark roof from a shadow on
+    # similarly grey/neutral ground -- see _same_material_darker_signature.
+    before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
 
     img_h, img_w = change_mask.shape[:2]
     img_area = img_h * img_w
@@ -1101,7 +1142,8 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
                 piece = (grow_labels == gi)
                 piece_u8 = piece.astype(np.uint8) * 255
                 ring = _ring_around(piece_u8, 10, exclude=change_mask) > 0
-                if _same_material_darker_signature(piece, ring, lab2):
+                if _same_material_darker_signature(
+                        piece, ring, lab2, before_gray=before_gray, after_gray=after_gray):
                     grown_add[piece] = 0
 
     # --- Mode 2: strict standalone dark-roof components ---
@@ -1140,7 +1182,8 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
             continue
         comp_u8 = comp.astype(np.uint8) * 255
         ring = _ring_around(comp_u8, 10, exclude=change_mask) > 0
-        if _same_material_darker_signature(comp, ring, lab2):
+        if _same_material_darker_signature(
+                comp, ring, lab2, before_gray=before_gray, after_gray=after_gray):
             continue
         recovered[comp] = 255
         n_comps += 1

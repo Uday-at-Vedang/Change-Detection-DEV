@@ -115,6 +115,60 @@ check("building kept when a shadow arm touches it", bld_kept > 0.90, f"{bld_kept
 check("attached shadow arm mostly removed", arm_kept < 0.45, f"{arm_kept:.0%} kept")
 
 print("=" * 64)
+print("GREY/NEUTRAL DARK OBJECT - colour can't tell it from shadow, texture can")
+print("=" * 64)
+
+# A dark roof, a dark/black vehicle, or shaded dense foliage can all read as
+# dark and low-chroma_shift against a similarly grey/neutral surround --
+# statistically identical to a cast shadow on colour alone. The physical
+# tie-breaker: a shadow dims the SAME material, so its after-image pattern
+# correlates with the before-image pattern at that exact spot; a genuinely
+# new material's texture is unrelated to whatever used to be there.
+_tex_rng = np.random.default_rng(0)
+
+
+def _textured(img, region, strength):
+    noise = _tex_rng.integers(-strength, strength, img[region].shape, dtype=np.int16)
+    img[region] = np.clip(img[region].astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+
+def _grey_object_case(color, region, strength):
+    b = np.full((H, W, 3), 150, np.uint8)
+    _textured(b, np.s_[:, :], 6)
+    a = b.copy()
+    a[region] = color
+    _textured(a, region, strength)
+    m = np.zeros((H, W), np.uint8)
+    m[region] = 255
+    return b, a, m
+
+
+roof_b, roof_a, roof_m = _grey_object_case([55, 55, 58], np.s_[60:180, 60:180], 14)
+roof_kept = float((strip_shadow_fragments_from_mask(roof_m, roof_b, roof_a)[roof_m > 0] > 0).mean())
+check("grey dark roof preserved (unrelated texture pattern)", roof_kept > 0.90, f"{roof_kept:.0%} kept")
+
+car_b, car_a, car_m = _grey_object_case([40, 40, 42], np.s_[130:150, 120:170], 25)
+car_kept = float((strip_shadow_fragments_from_mask(car_m, car_b, car_a)[car_m > 0] > 0).mean())
+check("dark vehicle preserved (unrelated texture pattern)", car_kept > 0.90, f"{car_kept:.0%} kept")
+
+# Shadow on strongly textured ground (gravel/debris) -- same material, just
+# dimmed, so before/after patterns correlate highly. This is the exact case
+# that defeated an earlier (reverted) Sobel-edge-based texture check, since
+# a real cast shadow on rough ground is not visually "smooth" either.
+sh_rng = np.random.default_rng(1)
+sh_b = np.full((H, W, 3), 150, np.uint8)
+sh_region = np.s_[60:180, 60:180]
+sh_noise = sh_rng.integers(-40, 40, sh_b[sh_region].shape, dtype=np.int16)
+sh_b[sh_region] = np.clip(sh_b[sh_region].astype(np.int16) + sh_noise, 0, 255).astype(np.uint8)
+sh_a = sh_b.copy()
+sh_a[sh_region] = (sh_b[sh_region].astype(np.float32) * 0.45).astype(np.uint8)
+sh_m = np.zeros((H, W), np.uint8)
+sh_m[sh_region] = 255
+sh_kept = float((strip_shadow_fragments_from_mask(sh_m, sh_b, sh_a)[sh_region] > 0).mean())
+check("shadow on strongly textured ground still removed (correlated pattern)",
+      sh_kept < 0.10, f"{sh_kept:.0%} kept")
+
+print("=" * 64)
 print("SAFETY - a mask with only real change is left untouched")
 print("=" * 64)
 
