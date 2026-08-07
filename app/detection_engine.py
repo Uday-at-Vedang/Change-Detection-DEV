@@ -5128,11 +5128,18 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         registration_ok=registration_ok)
     # A new light/neutral (grey concrete) roof brightens rather than
     # darkens, so it falls through both recovery passes above -- confirmed
-    # on a real report where this left a large new roof almost entirely
-    # undetected. Shares the same registration_ok-aware grow/strict split.
-    change_mask = recover_light_roof_construction(
-        change_mask, before_chromatic, after_chromatic,
-        registration_ok=registration_ok)
+    # on a real, ground-truth-verified report where this left a large new
+    # roof almost entirely undetected. On weak alignment, registration
+    # jitter itself brightens/darkens pixels all along every existing
+    # light-roof edge in the scene, and this recovery is new and untested
+    # against that specific failure mode (unlike dark/chromatic recovery,
+    # tuned by hand against it over several report iterations) -- confirmed
+    # directly: on a real weak-alignment scene it recovered 81k px across
+    # 18 new standalone components, visibly painting most of the frame's
+    # existing light rooftops rather than just the one real change. Keep it
+    # well-aligned-only until it's been through the same tuning.
+    if registration_ok:
+        change_mask = recover_light_roof_construction(change_mask, before_chromatic, after_chromatic)
     # Re-strip shadow that recovery may have regrown. On well-aligned pairs,
     # repeat until stable (split pieces can change judgment across passes).
     # On poorly aligned pairs, skip aggressive shadow-only re-strip (it undoes
