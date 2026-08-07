@@ -997,6 +997,80 @@ def strip_alignment_edge_ribbons_from_mask(change_mask):
     return out
 
 
+def strip_brightening_noise_from_mask(change_mask, before_img, after_img):
+    """Remove change-mask pixels that got much brighter with little colour
+    shift, when that brightening pattern correlates with what was there
+    before (same material, just lit differently -- not real change).
+
+    A cast shadow can only ever darken a pixel, so strip_shadow_only_from_mask
+    correctly only ever targets darkening now (it used to catch this pattern
+    too via an abs() bug, fixed separately). Registration jitter on a
+    weak-alignment pair produces the mirror-image artifact just as often: a
+    boundary shifts a few pixels between before/after and a strip of what
+    used to be shaded reads as strongly brightened, with the same low-chroma
+    signature a shadow has in reverse. Only used on weak alignment, where
+    recover_light_roof_construction (which needs that identical brightening
+    signal to find genuine new light construction) is disabled -- this is
+    its mirror-image cleanup counterpart on that same path.
+
+    Correlation is the safeguard, exactly as in that recovery function: only
+    strip when the before/after texture pattern at that spot actually
+    matches (same material, now lit differently); a genuinely new material's
+    texture has nothing to do with what used to be there, and survives even
+    though it triggers the same raw brightening/chroma signature.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    if before_img.shape[:2] != change_mask.shape[:2] or after_img.shape[:2] != change_mask.shape[:2]:
+        return change_mask
+
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    delta_l = lab1[:, :, 0] - lab2[:, :, 0]  # negative: got brighter
+
+    before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+
+    binary = (change_mask > 127).astype(np.uint8)
+    num, labels = cv2.connectedComponents(binary, connectivity=8)
+    if num <= 1:
+        return change_mask
+
+    out = change_mask.copy()
+    removed_px = removed_comps = 0
+    for i in range(1, num):
+        comp = labels == i
+        comp_area = int(comp.sum())
+        # A per-pixel low-chroma gate (mirroring the darkening test) turned
+        # out too strict here: brightening a colour via a simple gain
+        # pushes channels toward their ceiling non-linearly, shifting
+        # LAB a/b more than uniform darkening does even for the same
+        # underlying material -- confirmed on a synthetic same-material
+        # brightening case that correlated at 0.9996 but read mean chroma
+        # ~21, well above the darkening test's threshold. Correlation
+        # alone is the reliable signal here; require only that the
+        # component is meaningfully brighter overall.
+        if float(delta_l[comp].mean()) > -16:
+            continue
+        b_vals = before_gray[comp]
+        a_vals = after_gray[comp]
+        if b_vals.std() <= 4.0 or a_vals.std() <= 4.0:
+            continue  # no texture to judge by -- don't strip on an absence of evidence
+        corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
+        if corr <= 0.5:
+            continue  # unrelated texture pattern -> genuinely new material, keep it
+        out[comp] = 0
+        removed_px += comp_area
+        removed_comps += 1
+
+    if removed_comps:
+        _log.info(
+            "Stripped %d brightening-noise component(s) (%d px)",
+            removed_comps, removed_px,
+        )
+    return out
+
+
 def split_weakly_bridged_change_blobs(change_mask):
     """Break thin bridges that glue distinct roof footprints into one blob.
 
@@ -5156,10 +5230,18 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     else:
         change_mask = strip_shadow_fragments_from_mask(
             change_mask, before_array, after_array, registration_ok=False)
+        # Mirror-image counterpart of the darkening strip above: registration
+        # jitter brightens pixels along existing edges just as often as it
+        # darkens them, and light-roof recovery (the only thing that would
+        # otherwise need this same brightening signal) is disabled on this
+        # path -- see recover_light_roof_construction.
+        change_mask = strip_brightening_noise_from_mask(
+            change_mask, before_array, after_array)
         change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
         change_mask = split_weakly_bridged_change_blobs(change_mask)
         _log.info(
-            "Weak registration: soft fragment strip + edge-ribbon cleanup + bridge split"
+            "Weak registration: soft fragment strip + brightening-noise cleanup "
+            "+ edge-ribbon cleanup + bridge split"
         )
 
     _prog(65, "Analyzing change regions")
