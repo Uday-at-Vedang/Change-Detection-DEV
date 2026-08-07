@@ -272,11 +272,6 @@ def run_detection_and_save(
         stats["threshold_debug"]["gsdHarmonization"] = gsd_debug
 
     _report(80, "Saving results")
-    from ..detection_engine import preprocess_image, get_detection_max_size
-
-    before_for_slider = Image.fromarray(
-        preprocess_image(before_pil, max_size=max_size or get_detection_max_size())
-    )
 
     base_name = f"{user.id}_{uuid.uuid4().hex}"
     overlay_filename = base_name + ".png"
@@ -304,10 +299,24 @@ def run_detection_and_save(
     relative_before_thumb = ""
     relative_after_thumb = ""
     relative_after_full = ""
+    before_for_slider = None
     try:
-        after_for_slider = Image.fromarray(
-            preprocess_image(after_pil, max_size=max_size or get_detection_max_size())
-        )
+        # Prefer the detection working grid (registered + same resolution as
+        # region polygons). Falling back to a fresh preprocess only if the
+        # engine did not provide slider frames (keeps older callers safe).
+        slider_before = stats.pop("_slider_before", None)
+        slider_after = stats.pop("_slider_after", None)
+        if slider_before is not None and slider_after is not None:
+            before_for_slider = Image.fromarray(slider_before)
+            after_for_slider = Image.fromarray(slider_after)
+        else:
+            from ..detection_engine import preprocess_image, get_detection_max_size
+            before_for_slider = Image.fromarray(
+                preprocess_image(before_pil, max_size=max_size or get_detection_max_size())
+            )
+            after_for_slider = Image.fromarray(
+                preprocess_image(after_pil, max_size=max_size or get_detection_max_size())
+            )
         before_full_file = OVERLAYS_DIR / f"{base_name}_before.png"
         before_for_slider.save(before_full_file)
         relative_before_full = f"overlays/{base_name}_before.png"
@@ -324,12 +333,20 @@ def run_detection_and_save(
         relative_after_thumb = f"overlays/{base_name}_after_thumb.png"
     except Exception as exc:
         logger.warning("Failed to save thumbnails: %s", exc)
+        # Ensure det size fallback still has a slider image reference
+        from ..detection_engine import preprocess_image, get_detection_max_size
+        before_for_slider = Image.fromarray(
+            preprocess_image(before_pil, max_size=max_size or get_detection_max_size())
+        )
 
     regions_serializable = _serialize_regions(change_regions)
     det_w = int(stats.get("image_width") or 0)
     det_h = int(stats.get("image_height") or 0)
     if det_w <= 0 or det_h <= 0:
-        det_w, det_h = before_for_slider.size
+        if before_for_slider is not None:
+            det_w, det_h = before_for_slider.size
+        else:
+            det_w, det_h = before_pil.size
 
     geo_ctx = None
     bounds = None

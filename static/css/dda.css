@@ -616,6 +616,21 @@
   overflow: visible;
 }
 
+/* Area chip shown when a region is located/selected on the compare viewer */
+.region-area-label {
+  position: absolute;
+  z-index: 6;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #fff;
+  background: rgba(20, 20, 20, 0.82);
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Polygon / Box region-shape toggle in the detect options */
 .dda-shape-toggle {
   display: inline-flex;

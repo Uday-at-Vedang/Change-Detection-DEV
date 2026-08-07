@@ -1,8 +1,9 @@
-"""Pixel coordinates → WGS84 lat/lng for geo-referenced images (FR-04, FR-06)."""
+"""Pixel coordinates â†’ WGS84 lat/lng for geo-referenced images (FR-04, FR-06)."""
 from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -75,7 +76,7 @@ def resolve_geo_context(
 ) -> GeoContext:
     """Resolve bounds and affine georef for detection geo enrichment.
 
-    Priority: embedded/world-file affine georef → DB manual bounds → linear
+    Priority: embedded/world-file affine georef â†’ DB manual bounds â†’ linear
     bounds inferred from the image sidecars. Tracks which source was used.
     """
     georef = read_georef(base_file)
@@ -154,6 +155,33 @@ def pixel_to_lat_lng(
     return {"lat": round(lat, 6), "lng": round(lng, 6)}
 
 
+def _ground_m_per_px(
+    img_width: int,
+    img_height: int,
+    bounds: BoundsWGS84,
+    *,
+    geo: Optional[GeoContext] = None,
+) -> Optional[Tuple[float, float]]:
+    """Metres per detection-image pixel along X (east) and Y (south)."""
+    if img_width <= 0 or img_height <= 0 or not bounds:
+        return None
+    west, south, east, north = bounds
+    ref_w = geo.georef_width if geo and geo.georef_width > 0 else img_width
+    ref_h = geo.georef_height if geo and geo.georef_height > 0 else img_height
+    if ref_w <= 0 or ref_h <= 0:
+        return None
+    scale_x = ref_w / float(img_width)
+    scale_y = ref_h / float(img_height)
+    mid_lat = (north + south) / 2.0
+    lat_scale = 111_320.0
+    lng_scale = 111_320.0 * math.cos(math.radians(mid_lat))
+    m_per_px_x = abs(east - west) / ref_w * scale_x * lng_scale
+    m_per_px_y = abs(north - south) / ref_h * scale_y * lat_scale
+    if m_per_px_x <= 0 or m_per_px_y <= 0:
+        return None
+    return m_per_px_x, m_per_px_y
+
+
 def bbox_area_sq_m(
     bbox: Dict[str, int],
     img_width: int,
@@ -162,23 +190,56 @@ def bbox_area_sq_m(
     *,
     geo: Optional[GeoContext] = None,
 ) -> Optional[float]:
-    """Approximate region area in square metres using geographic bounds."""
-    if img_width <= 0 or img_height <= 0 or not bounds:
+    """Approximate region area in square metres using the axis-aligned bbox."""
+    scales = _ground_m_per_px(img_width, img_height, bounds, geo=geo)
+    if not scales:
         return None
-    west, south, east, north = bounds
-    ref_w = geo.georef_width if geo and geo.georef_width > 0 else img_width
-    ref_h = geo.georef_height if geo and geo.georef_height > 0 else img_height
-    scale_x = ref_w / float(img_width)
-    scale_y = ref_h / float(img_height)
-    m_per_px_x = abs(east - west) / ref_w
-    m_per_px_y = abs(north - south) / ref_h
-    import math
-    mid_lat = (north + south) / 2.0
-    lat_scale = 111_320.0
-    lng_scale = 111_320.0 * math.cos(math.radians(mid_lat))
-    w_m = bbox.get("w", 0) * scale_x * m_per_px_x * lng_scale
-    h_m = bbox.get("h", 0) * scale_y * m_per_px_y * lat_scale
+    m_per_px_x, m_per_px_y = scales
+    w_m = float(bbox.get("w", 0)) * m_per_px_x
+    h_m = float(bbox.get("h", 0)) * m_per_px_y
     return round(w_m * h_m, 1)
+
+
+def polygon_area_px(polygon: Optional[List]) -> Optional[float]:
+    """Shoelace area of an image-pixel ring (absolute value, closed or open)."""
+    if not polygon or len(polygon) < 3:
+        return None
+    try:
+        pts = [(float(p[0]), float(p[1])) for p in polygon]
+    except (TypeError, ValueError, IndexError):
+        return None
+    if pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        return None
+    area2 = 0.0
+    n = len(pts)
+    for i in range(n):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % n]
+        area2 += x1 * y2 - x2 * y1
+    return abs(area2) * 0.5
+
+
+def polygon_area_sq_m(
+    polygon: Optional[List],
+    img_width: int,
+    img_height: int,
+    bounds: Optional[BoundsWGS84],
+    *,
+    geo: Optional[GeoContext] = None,
+) -> Optional[float]:
+    """Ground area of a pixel-space polygon footprint (preferred over bbox)."""
+    if not bounds:
+        return None
+    scales = _ground_m_per_px(img_width, img_height, bounds, geo=geo)
+    if not scales:
+        return None
+    m_per_px_x, m_per_px_y = scales
+    px_area = polygon_area_px(polygon)
+    if px_area is None:
+        return None
+    return round(px_area * m_per_px_x * m_per_px_y, 1)
 
 
 def polygon_to_lat_lng(
@@ -226,6 +287,10 @@ def enrich_regions_geo(
         center = region.get("center") or {}
         cx = center.get("x", 0)
         cy = center.get("y", 0)
+        poly = region.get("polygon")
+        poly_px = polygon_area_px(poly)
+        if poly_px is not None:
+            enriched["polygonAreaPx"] = round(poly_px, 1)
         if effective_bounds or (geo and geo.georef):
             lat_lng = pixel_to_lat_lng(
                 cx, cy, img_width, img_height, effective_bounds,
@@ -234,16 +299,21 @@ def enrich_regions_geo(
             if lat_lng:
                 enriched["latLng"] = lat_lng
             polygon_geo = polygon_to_lat_lng(
-                region.get("polygon"), img_width, img_height, effective_bounds,
+                poly, img_width, img_height, effective_bounds,
                 geo=geo,
             )
             if polygon_geo:
                 enriched["polygonGeo"] = polygon_geo
             bbox = region.get("bbox") or {}
             if effective_bounds:
-                area_sq_m = bbox_area_sq_m(
-                    bbox, img_width, img_height, effective_bounds, geo=geo,
+                # Prefer true polygon footprint area; bbox is the fallback.
+                area_sq_m = polygon_area_sq_m(
+                    poly, img_width, img_height, effective_bounds, geo=geo,
                 )
+                if area_sq_m is None:
+                    area_sq_m = bbox_area_sq_m(
+                        bbox, img_width, img_height, effective_bounds, geo=geo,
+                    )
                 if area_sq_m is not None:
                     enriched["areaSqM"] = area_sq_m
         else:

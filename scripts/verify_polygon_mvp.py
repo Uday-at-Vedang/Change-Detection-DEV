@@ -12,7 +12,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.dda.detect_service import _serialize_polygon, _serialize_regions
-from app.dda.geo_regions import enrich_regions_geo, polygon_to_lat_lng
+from app.dda.geo_regions import (
+    bbox_area_sq_m,
+    enrich_regions_geo,
+    polygon_area_px,
+    polygon_area_sq_m,
+    polygon_to_lat_lng,
+)
 from app.dda.reports_routes import _region_geometry
 
 _fails = []
@@ -82,6 +88,29 @@ check("no polygon -> no polygonGeo (backward compatible)", "polygonGeo" not in e
 enr_nogeo = enrich_regions_geo(_serialize_regions([engine_region(polygon=SQUARE)]),
                                img_width=100, img_height=100, bounds=None)[0]
 check("ungeoreferenced run handled without crashing", "polygonGeo" not in enr_nogeo)
+
+print("=" * 64)
+print("Polygon footprint area")
+print("=" * 64)
+
+check("shoelace pixel area of 100x100 square", polygon_area_px(SQUARE) == 10000.0,
+      str(polygon_area_px(SQUARE)))
+poly_m2 = polygon_area_sq_m(SQUARE, 100, 100, BOUNDS)
+bbox_m2 = bbox_area_sq_m({"x": 0, "y": 0, "w": 100, "h": 100}, 100, 100, BOUNDS)
+check("full-frame polygon area matches bbox area",
+      poly_m2 is not None and bbox_m2 is not None and abs(poly_m2 - bbox_m2) < 0.2,
+      f"poly={poly_m2} bbox={bbox_m2}")
+# Triangle covering half the frame should be ~half the bbox area
+triangle = [[0, 0], [100, 0], [0, 100]]
+tri_m2 = polygon_area_sq_m(triangle, 100, 100, BOUNDS)
+check("triangle footprint ~ half of full-frame area",
+      tri_m2 is not None and bbox_m2 is not None and abs(tri_m2 - bbox_m2 * 0.5) < 1.0,
+      f"tri={tri_m2} half_bbox={None if bbox_m2 is None else round(bbox_m2 * 0.5, 1)}")
+enr_area = enrich_regions_geo(_serialize_regions([engine_region(polygon=SQUARE)]),
+                              img_width=100, img_height=100, bounds=BOUNDS)[0]
+check("enrich attaches polygonAreaPx + areaSqM from polygon",
+      enr_area.get("polygonAreaPx") == 10000.0 and enr_area.get("areaSqM") == poly_m2,
+      f"px={enr_area.get('polygonAreaPx')} m2={enr_area.get('areaSqM')}")
 
 print("=" * 64)
 print("TASK 3 - GeoJSON export")
