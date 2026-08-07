@@ -481,7 +481,13 @@ def strip_shadow_only_from_mask(change_mask, img1, img2, registration_ok=True):
         return change_mask
     lab1 = cv2.cvtColor(img1, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
-    delta_l = np.abs(lab1[:, :, 0] - lab2[:, :, 0])
+    # Signed, not abs: a cast shadow can only ever make a pixel darker, never
+    # brighter. Using abs() here treated a strong *brightening* (e.g. a new
+    # light-coloured roof over dark dirt/debris) exactly like a shadow too,
+    # so recover_light_roof_construction's own recovery was immediately
+    # stripped right back out by this pass -- confirmed on the real report
+    # that motivated that function (before6/after6, ground-truth-verified).
+    delta_l = lab1[:, :, 0] - lab2[:, :, 0]
     chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
     if registration_ok:
         brightness_only = (delta_l > 16) & (chroma < 14)
@@ -882,7 +888,11 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
 
     lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
-    delta_l = np.abs(lab1[:, :, 0] - lab2[:, :, 0])
+    # Signed, not abs -- see strip_shadow_only_from_mask. A brightened
+    # fragment (mean_dl would otherwise read as a large positive "shadow-like"
+    # darkening) now correctly fails the lighting_only fallback below instead
+    # of being treated the same as an actual darkening.
+    delta_l = lab1[:, :, 0] - lab2[:, :, 0]
     chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
 
     binary = (change_mask > 127).astype(np.uint8)
@@ -1390,6 +1400,207 @@ def recover_dark_roof_construction(change_mask, before_img, after_img,
     if added:
         _log.info(
             "Recovered %d dark-roof/solar pixel(s) (%d grow, %d new comps)%s",
+            added, added_grow, n_comps,
+            "" if registration_ok else " [weak-align: selective]",
+        )
+    return out
+
+
+def _light_roof_gain_mask(before_img, after_img):
+    """Seed mask for new light/neutral (grey concrete) roofs (dark->bright)."""
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    d_l = lab1[:, :, 0] - lab2[:, :, 0]
+    l2 = lab2[:, :, 0]
+    hsv_a = cv2.cvtColor(after_img, cv2.COLOR_RGB2HSV)
+    sat = hsv_a[:, :, 1]
+    val = hsv_a[:, :, 2]
+    hue = hsv_a[:, :, 0]
+    exg = (
+        2.0 * after_img[:, :, 1].astype(np.float32)
+        - after_img[:, :, 0].astype(np.float32)
+        - after_img[:, :, 2].astype(np.float32)
+    )
+    # Exclude vivid recreational paint (court blue/green/red) -- same list as
+    # the dark-roof seed, just checked at the bright end too.
+    court = (
+        (sat > 90)
+        & (
+            ((hue >= 90) & (hue <= 140))
+            | ((hue >= 35) & (hue <= 85))
+            | ((hue <= 12) | (hue >= 168))
+        )
+        & (val > 100)
+    )
+    # Light after, strong brightening, neutral (not a saturated colour --
+    # recover_chromatic_roof_construction already covers those), not veg.
+    seed = (
+        (l2 > 110)
+        & (val > 140)
+        & (d_l < -28)
+        & (exg < 18)
+        & (~court)
+        & (sat < 90)
+    )
+    return seed.astype(np.uint8) * 255
+
+
+def recover_light_roof_construction(change_mask, before_img, after_img,
+                                    registration_ok=True):
+    """Recover new light/neutral (grey concrete) roofs AdaptFormer under-fires on.
+
+    Mirrors recover_dark_roof_construction for the opposite brightness
+    direction: a new concrete roof built over dirt, debris, or a dark lot
+    brightens rather than darkens, so neither the dark-roof recovery (needs
+    L < 88 after) nor the chromatic-roof recovery (needs a saturated
+    colour) ever treats it as a candidate. Confirmed on a real,
+    ground-truth-verified report (before6/after6): a large new concrete
+    roof (before mean L ~60, after mean L ~136) was left almost entirely
+    undetected -- 1.9% flagged change against a ~22% ground-truth footprint.
+
+    Brightening carries the mirror image of the darkening false-positive
+    risk solved earlier today: an area that was shadowed in "before" and
+    isn't in "after" (sun moved, a shadow-casting object removed, a
+    different time of day) also brightens, with no real change at all --
+    it's the SAME underlying material, just lit differently now. The same
+    before/after texture-correlation idea resolves it in reverse: a lifted
+    shadow preserves the underlying material's texture pattern (high
+    correlation with what was there before); a genuinely new material's
+    texture has nothing to do with whatever used to be at that spot (low
+    correlation). Only recover a brightened candidate when there's no such
+    correlation.
+    """
+    if change_mask is None or before_img is None or after_img is None:
+        return change_mask
+    if before_img.shape[:2] != change_mask.shape[:2] or after_img.shape[:2] != change_mask.shape[:2]:
+        return change_mask
+
+    seed = _light_roof_gain_mask(before_img, after_img)
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    seed = cv2.morphologyEx(seed, cv2.MORPH_CLOSE, k, iterations=2)
+    seed = cv2.morphologyEx(
+        seed, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+
+    lab1 = cv2.cvtColor(before_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab2 = cv2.cvtColor(after_img, cv2.COLOR_RGB2LAB).astype(np.float32)
+    d_l = lab1[:, :, 0] - lab2[:, :, 0]
+    exg = (
+        2.0 * after_img[:, :, 1].astype(np.float32)
+        - after_img[:, :, 0].astype(np.float32)
+        - after_img[:, :, 2].astype(np.float32)
+    )
+    before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+
+    def _shadow_lifted(comp_mask):
+        """True if this brightened patch is more likely a lifted shadow
+        (same material, now lit) than a genuinely new material."""
+        b_vals = before_gray[comp_mask]
+        a_vals = after_gray[comp_mask]
+        if b_vals.std() > 4.0 and a_vals.std() > 4.0:
+            corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
+            return corr > 0.5
+        return False  # no texture to judge by -- don't block on an absence of evidence
+
+    img_h, img_w = change_mask.shape[:2]
+    img_area = img_h * img_w
+    min_area = max(2200, int(img_area * 0.00005))
+    max_car = _max_vehicle_area(img_area)
+    area_thr = max(min_area, int(max_car * 0.40))
+    # A large new roof can legitimately be huge -- the real report that
+    # motivated this function had a single new-roof footprint covering
+    # ~22% of the frame, which a tighter cap would silently skip entirely.
+    max_area = int(img_area * 0.35)
+
+    # --- Mode 1: grow existing detections into nearby light seeds only ---
+    existing = (change_mask > 127).astype(np.uint8) * 255
+    grown_add = np.zeros_like(change_mask)
+    if int(existing.sum()) > 0 and int(seed.sum()) > 0:
+        if registration_ok:
+            band_k, band_it, grow_it = 15, 2, 4
+        else:
+            band_k, band_it, grow_it = 5, 1, 2
+        band = cv2.dilate(
+            existing,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (band_k, band_k)),
+            iterations=band_it,
+        )
+        local = cv2.bitwise_and(seed, band)
+        grown = existing.copy()
+        dk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        allowed = cv2.bitwise_or(existing, local)
+        for _ in range(grow_it):
+            nxt = cv2.dilate(grown, dk, iterations=1)
+            nxt = cv2.bitwise_and(nxt, allowed)
+            if np.array_equal(nxt, grown):
+                break
+            grown = nxt
+        grown_add = cv2.bitwise_and(grown, local)
+
+        if np.any(grown_add):
+            n_grow, grow_labels = cv2.connectedComponents(grown_add, connectivity=8)
+            for gi in range(1, n_grow):
+                piece = (grow_labels == gi)
+                if _shadow_lifted(piece):
+                    grown_add[piece] = 0
+
+    # --- Mode 2: strict standalone light-roof components ---
+    recovered = np.zeros_like(change_mask)
+    n_comps = 0
+    strict = ((seed > 127) & (d_l < -45)).astype(np.uint8)
+    strict = cv2.morphologyEx(
+        strict, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        strict, connectivity=8)
+    strong_area_thr = max(400, int(img_area * 0.00002))
+    for i in range(1, num_labels):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if area > max_area:
+            continue
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        fill = area / max(w * h, 1)
+        aspect = max(w, h) / max(min(w, h), 1)
+        if fill < 0.30 or aspect > 6.5:
+            continue
+        if not registration_ok:
+            if area < 1200 or fill < 0.32 or aspect > 5.0:
+                continue
+            if _is_alignment_edge_ribbon(area, w, h, fill):
+                continue
+        comp = labels == i
+        mean_dl = float(np.mean(d_l[comp]))
+        if mean_dl > -45.0:
+            continue
+        if float(np.mean(exg[comp])) > 14.0:
+            continue
+        need = strong_area_thr if mean_dl <= -55.0 else area_thr
+        if not registration_ok:
+            need = max(need, 1200)
+        if area < need:
+            continue
+        if _shadow_lifted(comp):
+            continue
+        recovered[comp] = 255
+        n_comps += 1
+
+    if n_comps:
+        close_k = 5 if not registration_ok else 7
+        recovered = cv2.morphologyEx(
+            recovered, cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_k, close_k)),
+            iterations=1)
+
+    out = change_mask.copy()
+    added_grow = int(np.sum((out <= 127) & (grown_add > 127)))
+    out[grown_add > 127] = 255
+    added_new = int(np.sum((out <= 127) & (recovered > 127)))
+    out[recovered > 127] = 255
+    added = added_grow + added_new
+    if added:
+        _log.info(
+            "Recovered %d light-roof pixel(s) (%d grow, %d new comps)%s",
             added, added_grow, n_comps,
             "" if registration_ok else " [weak-align: selective]",
         )
@@ -4913,6 +5124,13 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask, before_chromatic, after_chromatic,
         registration_ok=registration_ok)
     change_mask = recover_dark_roof_construction(
+        change_mask, before_chromatic, after_chromatic,
+        registration_ok=registration_ok)
+    # A new light/neutral (grey concrete) roof brightens rather than
+    # darkens, so it falls through both recovery passes above -- confirmed
+    # on a real report where this left a large new roof almost entirely
+    # undetected. Shares the same registration_ok-aware grow/strict split.
+    change_mask = recover_light_roof_construction(
         change_mask, before_chromatic, after_chromatic,
         registration_ok=registration_ok)
     # Re-strip shadow that recovery may have regrown. On well-aligned pairs,
