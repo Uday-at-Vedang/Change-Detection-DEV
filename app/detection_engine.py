@@ -621,7 +621,6 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma,
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 
-<<<<<<< HEAD
 def _split_component_branches(comp):
     """Sever thin necks joining a component's parts (morphological opening),
     then partition the original component among the resulting seeds by
@@ -773,11 +772,8 @@ def _absorb_fringe_near_anchors(orig_comp, sparse_pieces, other_pieces, close_k)
     return [fringe, core] if np.any(core) else [fringe]
 
 
-def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
-=======
 def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
                                      registration_ok=True):
->>>>>>> b04d2d6 (Improve weak-alignment change masks and tighten polygon footprints.)
     """Remove residual shadow-boundary fragments the pixel-level strip missed.
 
     On well-aligned pairs ``strip_shadow_only_from_mask`` catches a shadow
@@ -787,17 +783,15 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
     only removes the interior and leaves thin, branching fragments along the
     boundary — visually identical to real change until judged as a shape.
 
-<<<<<<< HEAD
     A shadow fragment doesn't have to stand alone: it can be touching a real
     change region (e.g. a building's own cast shadow reaching just past its
     footprint), merging them into one connected component. Judging that whole
     blob at once lets the real change's strong signal protect the attached
     shadow too, so each component is first split at any thin necks and its
     branches judged independently before falling back to whole-blob judgment.
-=======
+
     ``registration_ok`` softens the solid-blob ``same_material_darker`` rule so
     poorly aligned construction pairs keep major dark-roof footprints.
->>>>>>> b04d2d6 (Improve weak-alignment change masks and tighten polygon footprints.)
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -820,17 +814,19 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
     to_remove = np.zeros_like(change_mask)
     for i in range(1, num):
         comp = ((labels == i).astype(np.uint8)) * 255
-<<<<<<< HEAD
         pieces = _split_component_branches(comp) or [comp]
         for piece in pieces:
             ring = _ring_around(piece, 10, exclude=change_mask)
-            frag = _is_shadow_fragment(before_img, after_img, piece, ring, delta_l, chroma)
+            frag = _is_shadow_fragment(
+                before_img, after_img, piece, ring, delta_l, chroma,
+                registration_ok=registration_ok)
             if _log.isEnabledFor(logging.DEBUG):
                 ys, xs = np.where(piece > 0)
                 if len(ys):
-                    _log.debug("frag-piece area=%d bbox=(%d,%d,%d,%d) is_fragment=%s",
-                              int((piece > 0).sum()), int(xs.min()), int(ys.min()),
-                              int(xs.max() - xs.min()), int(ys.max() - ys.min()), frag)
+                    _log.debug(
+                        "frag-piece area=%d bbox=(%d,%d,%d,%d) is_fragment=%s",
+                        int((piece > 0).sum()), int(xs.min()), int(ys.min()),
+                        int(xs.max() - xs.min()), int(ys.max() - ys.min()), frag)
             if frag:
                 to_remove = cv2.bitwise_or(to_remove, piece)
                 removed_comps += 1
@@ -844,15 +840,6 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
     to_remove = cv2.bitwise_and(to_remove, cv2.bitwise_not(kept_union))
     removed_px = int((to_remove > 0).sum())
     out[to_remove > 0] = 0
-=======
-        ring = _ring_around(comp, 10, exclude=change_mask)
-        if _is_shadow_fragment(
-                before_img, after_img, comp, ring, delta_l, chroma,
-                registration_ok=registration_ok):
-            removed_px += int((comp > 0).sum())
-            out[comp > 0] = 0
-            removed_comps += 1
->>>>>>> b04d2d6 (Improve weak-alignment change masks and tighten polygon footprints.)
 
     if removed_comps:
         _log.info("Stripped %d residual shadow-fragment component(s) (%d px)",
@@ -4817,45 +4804,29 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask, before_chromatic, after_chromatic,
         registration_ok=registration_ok)
     change_mask = recover_dark_roof_construction(
-<<<<<<< HEAD
-        change_mask, before_chromatic, after_chromatic)
-    # The dark-roof recovery pass grows into any nearby strong-darkening seed —
-    # shadow meets that same "strong darkening, low chroma" signature, so it can
-    # regrow exactly what the shadow strips above just removed. Re-apply them
-    # so regrown shadow doesn't survive into the final mask. A single re-pass
-    # can still leave a residual: splitting a merged blob changes each piece's
-    # own geometry, so a fragment judged borderline-kept on one pass can look
-    # different (and get judged again) on the next once its neighbours have
-    # changed. Repeat until the mask stops changing rather than assuming one
-    # extra pass is always enough.
-    for _ in range(4):
-        before_pass = change_mask
-        change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
-        change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
-        if np.array_equal(change_mask, before_pass):
-            break
-=======
         change_mask, before_chromatic, after_chromatic,
         registration_ok=registration_ok)
-    # Re-strip shadow that recovery may have regrown. On poorly aligned pairs
-    # (Report #73 before6/after6), skip shadow-only re-strip entirely — it undoes
-    # recover_dark_roof (~18k px). Soft fragment strip still runs below.
+    # Re-strip shadow that recovery may have regrown. On well-aligned pairs,
+    # repeat until stable (split pieces can change judgment across passes).
+    # On poorly aligned pairs, skip aggressive shadow-only re-strip (it undoes
+    # dark-roof recovery) and apply soft fragment + edge-ribbon cleanup.
     if registration_ok:
-        change_mask = strip_shadow_only_from_mask(
-            change_mask, before_array, after_array, registration_ok=True)
-        change_mask = strip_shadow_fragments_from_mask(
-            change_mask, before_array, after_array, registration_ok=True)
+        for _ in range(4):
+            before_pass = change_mask
+            change_mask = strip_shadow_only_from_mask(
+                change_mask, before_array, after_array, registration_ok=True)
+            change_mask = strip_shadow_fragments_from_mask(
+                change_mask, before_array, after_array, registration_ok=True)
+            if np.array_equal(change_mask, before_pass):
+                break
     else:
         change_mask = strip_shadow_fragments_from_mask(
             change_mask, before_array, after_array, registration_ok=False)
-        # Peel parapet / shadow-edge ribbons that soft fragment strip keeps
-        # (Report #75: long orange strips along roof edges).
         change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
         change_mask = split_weakly_bridged_change_blobs(change_mask)
         _log.info(
             "Weak registration: soft fragment strip + edge-ribbon cleanup + bridge split"
         )
->>>>>>> b04d2d6 (Improve weak-alignment change masks and tighten polygon footprints.)
 
     _prog(65, "Analyzing change regions")
     # Classify on pre-normalization color so blue roofs keep their true hue/chroma
