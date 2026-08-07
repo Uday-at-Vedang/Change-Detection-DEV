@@ -12,6 +12,9 @@ let ddaZoom = 1;
 const DDA_ZOOM_MIN = 0.5;
 const DDA_ZOOM_MAX = 3;
 const DDA_ZOOM_STEP = 0.25;
+let ddaShapeMode = 'polygon';
+// Detection working size for region/polygon coords (legacy compare PNG mismatch guard).
+let ddaDetSize = null;
 
 function formatCompact(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -151,6 +154,23 @@ async function patchRegionReview(runId, regionId, reviewStatus) {
   return res.region;
 }
 
+/** Format polygon/mask area for the regions table (m² preferred when georeferenced). */
+function formatRegionAreaCell(r) {
+  const polyPx = r.polygonAreaPx != null ? Number(r.polygonAreaPx) : null;
+  const maskPx = r.area != null ? Number(r.area) : null;
+  const tipParts = [];
+  if (polyPx != null) tipParts.push(`Polygon ${Math.round(polyPx).toLocaleString()} px`);
+  if (maskPx != null) tipParts.push(`Mask ${Math.round(maskPx).toLocaleString()} px`);
+  const tip = tipParts.join(' · ');
+  if (r.areaSqM != null && !Number.isNaN(Number(r.areaSqM))) {
+    return `<td class="region-area" title="${tip || 'Polygon footprint area'}">${Number(r.areaSqM).toLocaleString()} m²</td>`;
+  }
+  const px = polyPx != null ? polyPx : maskPx;
+  if (px == null || Number.isNaN(px)) return '<td class="region-area">—</td>';
+  const unit = polyPx != null ? 'px (polygon)' : 'px';
+  return `<td class="region-area" title="${tip}">${Math.round(px).toLocaleString()} ${unit}</td>`;
+}
+
 function buildDdaRegionRow(r) {
   const tr = document.createElement('tr');
   tr.dataset.regionId = r.id;
@@ -178,7 +198,7 @@ function buildDdaRegionRow(r) {
       <td>${subType}</td>
       <td><span class="severity-badge ${severity}">${severity}</span></td>
       <td>${(r.confidence * 100).toFixed(1)}%</td>
-      <td>${r.areaSqM != null ? r.areaSqM.toLocaleString() + ' m²' : r.area.toLocaleString()}</td>
+      ${formatRegionAreaCell(r)}
       <td>(${r.center.x}, ${r.center.y})</td>
       <td>${stories}</td>
       <td>${height}</td>
@@ -309,6 +329,10 @@ function showDdaResult(data) {
   // and again on resize so footprints stay locked to the image.
   ddaShapeMode = (data.statistics && data.statistics.params
     && data.statistics.params.shape_mode) || 'polygon';
+  const geoStats = data.statistics && data.statistics.geo;
+  ddaDetSize = (geoStats && geoStats.detectionWidth && geoStats.detectionHeight)
+    ? { w: Number(geoStats.detectionWidth), h: Number(geoStats.detectionHeight) }
+    : null;
   const drawPolys = () => renderRegionPolygons(regions, ddaShapeMode);
   const beforeImgEl = document.getElementById('compare-before-img');
   if (beforeImgEl) {
@@ -418,15 +442,19 @@ function getCompareImageMetrics() {
   const dispW = beforeImg.clientWidth;
   const dispH = beforeImg.clientHeight;
   if (dispW <= 0 || dispH <= 0) return null;
+  // Prefer detection working size when available so polygon/bbox coords stay locked
+  // even if a legacy compare PNG was saved at a different resolution.
+  const coordW = (ddaDetSize && ddaDetSize.w > 0) ? ddaDetSize.w : beforeImg.naturalWidth;
+  const coordH = (ddaDetSize && ddaDetSize.h > 0) ? ddaDetSize.h : beforeImg.naturalHeight;
   return {
-    scaleX: dispW / beforeImg.naturalWidth,
-    scaleY: dispH / beforeImg.naturalHeight,
+    scaleX: dispW / coordW,
+    scaleY: dispH / coordH,
     offsetX: beforeImg.offsetLeft || 0,
     offsetY: beforeImg.offsetTop || 0,
     dispW,
     dispH,
-    imgW: beforeImg.naturalWidth,
-    imgH: beforeImg.naturalHeight,
+    imgW: coordW,
+    imgH: coordH,
   };
 }
 
@@ -443,6 +471,12 @@ function placeRegionHighlight(r, { pulse = false } = {}) {
   box.style.width = `${Math.max(2, r.bbox.w * m.scaleX)}px`;
   box.style.height = `${Math.max(2, r.bbox.h * m.scaleY)}px`;
   overlay.appendChild(box);
+  const label = document.createElement('div');
+  label.className = 'region-area-label';
+  label.textContent = regionAreaLabel(r);
+  label.style.left = `${m.offsetX + r.bbox.x * m.scaleX}px`;
+  label.style.top = `${Math.max(0, m.offsetY + r.bbox.y * m.scaleY - 22)}px`;
+  overlay.appendChild(label);
   return m;
 }
 
@@ -451,8 +485,6 @@ function placeRegionHighlight(r, { pulse = false } = {}) {
 // one SVG layer over the compare image, reusing getCompareImageMetrics() so the
 // footprints track the image's zoom/pan exactly like the bbox highlight does.
 // Regions without a polygon simply aren't drawn (the bbox highlight still works).
-let ddaShapeMode = 'polygon';
-
 const DDA_POLYGON_COLORS = {
   'New Construction': '#ff8c1a',
   Demolition: '#e03131',
@@ -502,12 +534,30 @@ function renderRegionPolygons(regions, shapeMode) {
     const poly = document.createElementNS(svgNs, 'polygon');
     poly.setAttribute('points', pts);
     poly.setAttribute('fill', polygonFillFor(r));
-    poly.setAttribute('fill-opacity', '0.35');
+    // Outline-first: fill is a light cue; stroke carries the footprint.
+    poly.setAttribute('fill-opacity', '0.12');
     poly.setAttribute('stroke', polygonFillFor(r));
     poly.setAttribute('stroke-width', '2');
+    poly.setAttribute('stroke-opacity', '0.95');
     poly.dataset.regionId = r.id;
+    const tip = document.createElementNS(svgNs, 'title');
+    tip.textContent = regionAreaLabel(r);
+    poly.appendChild(tip);
     layer.appendChild(poly);
   });
+}
+
+/** Human-readable area for tooltips / highlight labels. */
+function regionAreaLabel(r) {
+  if (!r) return 'Region';
+  if (r.areaSqM != null && !Number.isNaN(Number(r.areaSqM))) {
+    return `#${r.id}: ${Number(r.areaSqM).toLocaleString()} m²`;
+  }
+  if (r.polygonAreaPx != null) {
+    return `#${r.id}: ${Math.round(Number(r.polygonAreaPx)).toLocaleString()} px (polygon)`;
+  }
+  if (r.area != null) return `#${r.id}: ${Number(r.area).toLocaleString()} px`;
+  return `#${r.id}`;
 }
 
 /** Emphasize one region's polygon (called alongside the bbox highlight). */

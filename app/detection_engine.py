@@ -464,12 +464,16 @@ def compute_shadow_suppression(img1, img2):
     return suppression.astype(np.float32)
 
 
-def strip_shadow_only_from_mask(change_mask, img1, img2):
+def strip_shadow_only_from_mask(change_mask, img1, img2, registration_ok=True):
     """Hard-remove illumination/shadow-only pixels from a binary change mask.
 
     Classical fusion already multiplies scores by ``compute_shadow_suppression``;
     the DL-only path skipped that, so blue-roof / parking scenes (Report #42 crop)
     kept long shadow edges as false change.
+
+    On poorly aligned pairs (``registration_ok=False``), brightness-only looks a
+    lot like real dark-roof / construction change, so we use a stricter test and
+    wider dark-new protect (Report #73 before6/after6 under-detect).
     """
     if change_mask is None or img1 is None or img2 is None:
         return change_mask
@@ -479,7 +483,12 @@ def strip_shadow_only_from_mask(change_mask, img1, img2):
     lab2 = cv2.cvtColor(img2, cv2.COLOR_RGB2LAB).astype(np.float32)
     delta_l = np.abs(lab1[:, :, 0] - lab2[:, :, 0])
     chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
-    brightness_only = (delta_l > 16) & (chroma < 14)
+    if registration_ok:
+        brightness_only = (delta_l > 16) & (chroma < 14)
+    else:
+        # Require stronger pure-L shift and near-zero chroma so misaligned
+        # structural darkening is not treated as cast shadow.
+        brightness_only = (delta_l > 28) & (chroma < 8)
     # Never strip newly appeared saturated blue roof (chroma can look low in shade)
     hsv2 = cv2.cvtColor(img2, cv2.COLOR_RGB2HSV)
     hsv1 = cv2.cvtColor(img1, cv2.COLOR_RGB2HSV)
@@ -499,19 +508,32 @@ def strip_shadow_only_from_mask(change_mask, img1, img2):
     gx = cv2.Sobel(gray2, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray2, cv2.CV_32F, 0, 1, ksize=3)
     edge2 = np.sqrt(gx * gx + gy * gy)
-    dark_new = (
-        (lab2[:, :, 0] < 88)
-        & ((lab1[:, :, 0] - lab2[:, :, 0]) > 28)
-        & (edge2 > 16)
-        & (hsv2[:, :, 1] < 120)
-    )
+    if registration_ok:
+        dark_new = (
+            (lab2[:, :, 0] < 88)
+            & ((lab1[:, :, 0] - lab2[:, :, 0]) > 28)
+            & (edge2 > 16)
+            & (hsv2[:, :, 1] < 120)
+        )
+    else:
+        # Soften edge/L gates — smooth tarps / construction pads have weak edges.
+        dark_new = (
+            (lab2[:, :, 0] < 100)
+            & ((lab1[:, :, 0] - lab2[:, :, 0]) > 18)
+            & (edge2 > 6)
+            & (hsv2[:, :, 1] < 140)
+        )
     protect = protect | dark_new
     brightness_only = brightness_only & (~protect)
     out = change_mask.copy()
     removed = int(np.sum((out > 127) & brightness_only))
     out[brightness_only] = 0
     if removed:
-        _log.info("Stripped %d shadow/illumination-only pixel(s) from change mask", removed)
+        _log.info(
+            "Stripped %d shadow/illumination-only pixel(s) from change mask%s",
+            removed,
+            "" if registration_ok else " (soft; weak alignment)",
+        )
     return out
 
 
@@ -599,7 +621,8 @@ def _same_material_darker_signature(comp_px, ring_px, lab_after, dark_thr=4.0, c
     return True
 
 
-def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
+def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma,
+                        registration_ok=True):
     """Judge one surviving change-mask component against its own local surround.
 
     ``strip_shadow_only_from_mask`` already removed the cleanly brightness-only
@@ -619,6 +642,12 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     That signature overrides blob geometry (a "solid" component can still be
     a broad shadow); a thin/low-fill blob that DOESN'T match it is treated as
     ordinary registration-jitter noise via the existing lighting-only test.
+
+    When ``registration_ok`` is False (low-NCC / sift-rejected pairs such as
+    before6/after6), solid darkening footprints are protected: the same
+    ``same_material_darker`` cue also matches real dark-roof / tarp construction
+    and was wiping major true changes (Report #71 ablation: fragment strip
+    removed ~68k of ~101k px).
     """
     comp_px = comp > 0
     area = int(comp_px.sum())
@@ -659,10 +688,18 @@ def _is_shadow_fragment(before_img, after_img, comp, ring, delta_l, chroma):
     if solidity >= 0.55 and fill_ratio >= 0.35 and not same_material_darker:
         return False
 
+    # Poor alignment: do not delete solid darkening via same_material_darker —
+    # that signature collides with new dark roofs / construction materials.
+    if not registration_ok and solidity >= 0.45 and fill_ratio >= 0.28 and area >= 120:
+        return False
+
     mean_dl = float(delta_l[comp_px].mean())
     mean_chroma = float(chroma[comp_px].mean())
     geometry_weak = solidity < 0.55 or fill_ratio < 0.35
     lighting_only = mean_dl > 8 and mean_chroma < 30 and chroma_shift < 14
+    if not registration_ok:
+        # Only thin fringe / lighting-only debris when alignment is weak.
+        return bool(geometry_weak and lighting_only and mean_chroma < 18)
     return bool(same_material_darker or (geometry_weak and lighting_only))
 
 
@@ -817,7 +854,8 @@ def _absorb_fringe_near_anchors(orig_comp, sparse_pieces, other_pieces, close_k)
     return [fringe, core] if np.any(core) else [fringe]
 
 
-def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
+def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
+                                     registration_ok=True):
     """Remove residual shadow-boundary fragments the pixel-level strip missed.
 
     On well-aligned pairs ``strip_shadow_only_from_mask`` catches a shadow
@@ -833,6 +871,9 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
     blob at once lets the real change's strong signal protect the attached
     shadow too, so each component is first split at any thin necks and its
     branches judged independently before falling back to whole-blob judgment.
+
+    ``registration_ok`` softens the solid-blob ``same_material_darker`` rule so
+    poorly aligned construction pairs keep major dark-roof footprints.
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -858,13 +899,16 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
         pieces = _split_component_branches(comp) or [comp]
         for piece in pieces:
             ring = _ring_around(piece, 10, exclude=change_mask)
-            frag = _is_shadow_fragment(before_img, after_img, piece, ring, delta_l, chroma)
+            frag = _is_shadow_fragment(
+                before_img, after_img, piece, ring, delta_l, chroma,
+                registration_ok=registration_ok)
             if _log.isEnabledFor(logging.DEBUG):
                 ys, xs = np.where(piece > 0)
                 if len(ys):
-                    _log.debug("frag-piece area=%d bbox=(%d,%d,%d,%d) is_fragment=%s",
-                              int((piece > 0).sum()), int(xs.min()), int(ys.min()),
-                              int(xs.max() - xs.min()), int(ys.max() - ys.min()), frag)
+                    _log.debug(
+                        "frag-piece area=%d bbox=(%d,%d,%d,%d) is_fragment=%s",
+                        int((piece > 0).sum()), int(xs.min()), int(ys.min()),
+                        int(xs.max() - xs.min()), int(ys.max() - ys.min()), frag)
             if frag:
                 to_remove = cv2.bitwise_or(to_remove, piece)
                 removed_comps += 1
@@ -883,6 +927,89 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img):
         _log.info("Stripped %d residual shadow-fragment component(s) (%d px)",
                   removed_comps, removed_px)
     return out
+
+
+def _is_alignment_edge_ribbon(area, w, h, fill_ratio=None):
+    """True for thin elongated strips typical of misregistration / shadow edges.
+
+    Report #75 before6/after6: long orange ribbons along parapets (regions
+    10/12/13/17/19) are not discrete construction footprints.
+    """
+    thickness = int(min(w, h))
+    length = int(max(w, h))
+    if thickness < 1 or length < 1:
+        return True
+    asp = length / float(thickness)
+    fill = 1.0 if fill_ratio is None else float(fill_ratio)
+    # Solid thin lines along roof edges (high fill, tiny thickness).
+    if thickness <= 22 and asp >= 3.0:
+        return True
+    if thickness <= 28 and asp >= 4.0:
+        return True
+    if thickness <= 36 and asp >= 5.5:
+        return True
+    if thickness <= 60 and asp >= 4.0 and fill < 0.40:
+        return True
+    # Sparse snakes that only look large because of a long bbox.
+    if asp >= 4.0 and fill < 0.45 and area < 5000:
+        return True
+    if asp >= 6.0 and area < 4000:
+        return True
+    if asp >= 2.8 and fill < 0.33 and area < 12000:
+        return True
+    return False
+
+
+def strip_alignment_edge_ribbons_from_mask(change_mask):
+    """Delete thin elongated change components (weak-alignment edge halos)."""
+    if change_mask is None:
+        return change_mask
+    binary = (change_mask > 127).astype(np.uint8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    if num <= 1:
+        return change_mask
+    out = change_mask.copy()
+    removed_px = removed_comps = 0
+    for i in range(1, num):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        fill = area / float(max(w * h, 1))
+        if _is_alignment_edge_ribbon(area, w, h, fill):
+            out[labels == i] = 0
+            removed_px += area
+            removed_comps += 1
+    if removed_comps:
+        _log.info(
+            "Stripped %d alignment-edge ribbon component(s) (%d px)",
+            removed_comps, removed_px,
+        )
+    return out
+
+
+def split_weakly_bridged_change_blobs(change_mask):
+    """Break thin bridges that glue distinct roof footprints into one blob.
+
+    Used only on weak-alignment pairs so Report #75-style mega-polygons split
+    into tighter per-footprint rings without dissolving compact construction.
+    """
+    if change_mask is None:
+        return change_mask
+    before_px = int(np.sum(change_mask > 127))
+    if before_px < 500:
+        return change_mask
+    # Prefer k=5; fall back only if that wiped too much signal.
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    opened = cv2.morphologyEx(change_mask, cv2.MORPH_OPEN, k)
+    after_px = int(np.sum(opened > 127))
+    # Abort if opening wiped most of the signal (too aggressive for this scene).
+    if after_px < max(200, int(0.55 * before_px)):
+        return change_mask
+    if after_px < before_px:
+        _log.info(
+            "Split weakly-bridged change blobs (%d → %d px)", before_px, after_px
+        )
+    return opened
 
 
 def _is_blue_roof_like(feat) -> bool:
@@ -931,7 +1058,8 @@ def _chromatic_roof_gain_mask(before_img, after_img):
     return strong_blue.astype(np.uint8) * 255
 
 
-def recover_chromatic_roof_construction(change_mask, before_img, after_img):
+def recover_chromatic_roof_construction(change_mask, before_img, after_img,
+                                        registration_ok=True):
     """Recover large new blue-roof footprints that AdaptFormer under-detects.
 
     Report #43 / industrial Delhi pairs: lawn+dirt → bright blue metal roof. The
@@ -942,6 +1070,10 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
     can merge them into one component that looks "already blue before". In that
     case keep only the *novel* (non-blue-before) pixels so solar/new roofs are
     not discarded with the pre-existing blue surface.
+
+    When ``registration_ok`` is False, apply the same recovery but with a
+    higher size/fill floor so mid-size misaligned color noise is skipped
+    (Report #77 flood vs #78 starve).
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -969,7 +1101,11 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
     img_h, img_w = change_mask.shape[:2]
     img_area = img_h * img_w
     # Lower floor so mid-size roofs / solar arrays (~2.5k–5k px) are eligible.
-    min_area = max(2500, int(img_area * 0.00005))
+    # Weak alignment: raise floor so color-noise patches stay out.
+    if registration_ok:
+        min_area = max(2500, int(img_area * 0.00005))
+    else:
+        min_area = max(4500, int(img_area * 0.00012))
     max_car = _max_vehicle_area(img_area)
     area_thr = max(min_area, int(max_car * 0.45))
 
@@ -986,6 +1122,10 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
         fill = area / max(w * h, 1)
         aspect = max(w, h) / max(min(w, h), 1)
         if fill < 0.18 or aspect > 8.0:
+            continue
+        if (not registration_ok) and (fill < 0.32 or aspect > 4.5):
+            continue
+        if (not registration_ok) and _is_alignment_edge_ribbon(area, w, h, fill):
             continue
         comp = labels == i
         novel = comp & (~blue_b)
@@ -1012,7 +1152,9 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img):
 
     recovered = cv2.morphologyEx(
         recovered, cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)), iterations=2)
+        cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (5, 5) if not registration_ok else (9, 9)),
+        iterations=1 if not registration_ok else 2)
     # Grow into softer blue (shaded roof panels) without leaving the roof color
     hsv_a = cv2.cvtColor(after_img, cv2.COLOR_RGB2HSV)
     soft_blue = (
@@ -1090,7 +1232,8 @@ def _dark_roof_gain_mask(before_img, after_img):
     return seed.astype(np.uint8) * 255
 
 
-def recover_dark_roof_construction(change_mask, before_img, after_img):
+def recover_dark_roof_construction(change_mask, before_img, after_img,
+                                   registration_ok=True):
     """Recover new dark/grey roofs and solar arrays AdaptFormer under-fires on.
 
     Two modes (keeps city-wide shadow FP low):
@@ -1105,6 +1248,10 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
     so a candidate that reads as its own surround just darker is never
     recovered in the first place, rather than being added here and fought
     over by the strip pass afterward.
+
+    When ``registration_ok`` is False, use a tighter grow neighborhood so
+    dark-roof recovery cannot flood into misaligned roof texture
+    (Report #75 blob bleed).
     """
     if change_mask is None or before_img is None or after_img is None:
         return change_mask
@@ -1143,14 +1290,22 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
     existing = (change_mask > 127).astype(np.uint8) * 255
     grown_add = np.zeros_like(change_mask)
     if int(existing.sum()) > 0 and int(seed.sum()) > 0:
+        if registration_ok:
+            band_k, band_it, grow_it = 15, 2, 4
+        else:
+            # Modest local grow — enough for tarp edges, not city-wide flood.
+            band_k, band_it, grow_it = 5, 1, 2
         band = cv2.dilate(
-            existing, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)), iterations=2)
+            existing,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (band_k, band_k)),
+            iterations=band_it,
+        )
         local = cv2.bitwise_and(seed, band)
         # Small geodesic fill inside the local band
         grown = existing.copy()
         dk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         allowed = cv2.bitwise_or(existing, local)
-        for _ in range(4):
+        for _ in range(grow_it):
             nxt = cv2.dilate(grown, dk, iterations=1)
             nxt = cv2.bitwise_and(nxt, allowed)
             if np.array_equal(nxt, grown):
@@ -1169,17 +1324,15 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
                     grown_add[piece] = 0
 
     # --- Mode 2: strict standalone dark-roof components ---
-    # Strong darkening only — avoid heavy close (it merges city-wide shadows
-    # into one mega-component and then everything fails max_area).
+    recovered = np.zeros_like(change_mask)
+    n_comps = 0
     strict = ((seed > 127) & (d_l > 45)).astype(np.uint8)
     strict = cv2.morphologyEx(
         strict, cv2.MORPH_CLOSE,
         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
     binary = strict
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
-    recovered = np.zeros_like(change_mask)
-    n_comps = 0
-    # Tarp/solar patches can be smaller than a vehicle; require stronger dL.
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary, connectivity=8)
     strong_area_thr = max(400, int(img_area * 0.00002))
     for i in range(1, num_labels):
         area = int(stats[i, cv2.CC_STAT_AREA])
@@ -1191,15 +1344,25 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
         aspect = max(w, h) / max(min(w, h), 1)
         if fill < 0.30 or aspect > 6.5:
             continue
+        # Weak alignment: only large, compact dark footprints (true tarp/roof),
+        # never thin edge ribbons (Report #77 flood vs #78 starve).
+        if not registration_ok:
+            if area < 1200 or fill < 0.32 or aspect > 5.0:
+                continue
+            if _is_alignment_edge_ribbon(area, w, h, fill):
+                continue
         comp = labels == i
         mean_dl = float(np.mean(d_l[comp]))
-        if mean_dl < 45.0:
+        need_dl = 45.0
+        if mean_dl < need_dl:
             continue
         if float(np.mean(exg[comp])) > 14.0:
             continue
         if float(np.mean(lab2[:, :, 0][comp])) > 80.0:
             continue
         need = strong_area_thr if mean_dl >= 55.0 else area_thr
+        if not registration_ok:
+            need = max(need, 1200)
         if area < need:
             continue
         comp_u8 = comp.astype(np.uint8) * 255
@@ -1211,9 +1374,11 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
         n_comps += 1
 
     if n_comps:
+        close_k = 5 if not registration_ok else 7
         recovered = cv2.morphologyEx(
             recovered, cv2.MORPH_CLOSE,
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)), iterations=1)
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_k, close_k)),
+            iterations=1)
 
     out = change_mask.copy()
     # Apply local dark-adjacent fill
@@ -1224,8 +1389,9 @@ def recover_dark_roof_construction(change_mask, before_img, after_img):
     added = added_grow + added_new
     if added:
         _log.info(
-            "Recovered %d dark-roof/solar pixel(s) (%d grow, %d new comps)",
+            "Recovered %d dark-roof/solar pixel(s) (%d grow, %d new comps)%s",
             added, added_grow, n_comps,
+            "" if registration_ok else " [weak-align: selective]",
         )
     return out
 
@@ -2139,8 +2305,12 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
             hyst = _hysteresis_threshold(dl_score, high_thr=threshold, low_thr=low_thr)
             if hyst is not None and int(np.sum(hyst > 127)) > 0:
                 model_mask = cv2.bitwise_or(model_mask, hyst)
-        combined = _clean_mask(model_mask, sensitivity=sensitivity, for_dl=True)
-        combined = recover_chromatic_roof_construction(combined, img1, img2)
+        combined = _clean_mask(
+            model_mask, sensitivity=sensitivity, for_dl=True,
+            registration_ok=registration_ok,
+        )
+        combined = recover_chromatic_roof_construction(
+            combined, img1, img2, registration_ok=registration_ok)
         # Dark-roof recovery runs once after transient/shadow strip in
         # ``run_detection`` so local grow cannot compound twice.
         debug = {
@@ -2350,7 +2520,8 @@ ALIGNMENT_WARNING_MSG = (
 # 11. Robust post-processing
 # ---------------------------------------------------------------------------
 
-def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False):
+def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False,
+                registration_ok=True):
     """
     Robust morphological cleaning:
     1. Zero-out border pixels (registration artifacts)
@@ -2365,6 +2536,9 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False):
     mode so genuine edge changes are not discarded).
     ``for_dl`` uses a stronger close so AdaptFormer jagged roof strips coalesce
     into coherent footprints (blue-roof industrial FP/FN noise).
+    On weak alignment (``registration_ok=False``), use a milder close and drop
+    thin edge-ribbon components so polygons don't paint parapet halos
+    (Report #75 before6/after6).
     """
     if border_margin is None:
         from .detection_config import get_border_margin
@@ -2383,7 +2557,11 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False):
     # DL no-retrain recipe (val F1 0.67→0.71): close k=9 then drop comps <50px.
     # Skip the classical open/erode bridge-break so we don't undo that gain.
     if for_dl:
-        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        # Keep k=9 coalescing for AdaptFormer jagged roofs; edge ribbons are
+        # removed later (strip_alignment_edge_ribbons) so we don't need a
+        # weaker close that also erases true footprints (Report #78).
+        close_k = 9
+        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_k, close_k))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k_close)
         filled = mask
         min_component_px = 50
@@ -2420,11 +2598,14 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False):
         ch = stats[i, cv2.CC_STAT_HEIGHT]
         bbox_area = max(cw * ch, 1)
         aspect = max(cw, ch) / (min(cw, ch) + 1e-8)
+        fill_ratio = area / float(bbox_area)
         perimeter_approx = 2 * (cw + ch)
         circularity = (perimeter_approx ** 2) / (bbox_area + 1e-8)
         if circularity > 80 and area < min_component_px * 3:
             continue
         if aspect > 12 and area < min_component_px * 2:
+            continue
+        if (not registration_ok) and _is_alignment_edge_ribbon(area, cw, ch, fill_ratio):
             continue
         clean[labels == i] = 255
 
@@ -2508,11 +2689,11 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None,
     mask_bool = change_mask > 127
     mask_float = mask_bool.astype(np.float32)
 
-    # Subtle warm tint on changed pixels (18% alpha) — enough to see, not enough to hide
+    # Subtle warm tint on changed pixels — keep light so severity polygons dominate
     tint = np.zeros_like(img2, dtype=np.float32)
     tint[:, :, 0] = 255
     tint[:, :, 1] = 80
-    alpha = 0.18
+    alpha = 0.12
     for c in range(3):
         overlay[:, :, c] = (overlay[:, :, c] * (1 - mask_float * alpha)
                             + tint[:, :, c] * mask_float * alpha)
@@ -2540,13 +2721,23 @@ def visualize_changes(img1, img2, change_mask, regions=None, total_pixels=None,
                     pts = None
 
             if pts is not None and len(pts) >= 3:
-                filled = overlay_uint8.copy()
-                cv2.fillPoly(filled, [pts], color)
-                cv2.addWeighted(
-                    filled, _POLYGON_FILL_ALPHA,
-                    overlay_uint8, 1.0 - _POLYGON_FILL_ALPHA,
-                    0, overlay_uint8,
-                )
+                # Color only change pixels inside the ring — never paint empty
+                # rooftop / courtyard that a coarse outer contour would enclose.
+                color_layer = np.zeros_like(overlay_uint8)
+                cv2.fillPoly(color_layer, [pts], color)
+                change_u8 = mask_bool.astype(np.uint8) * 255
+                poly_u8 = np.zeros(change_u8.shape, dtype=np.uint8)
+                cv2.fillPoly(poly_u8, [pts], 255)
+                paint = (change_u8 > 0) & (poly_u8 > 0)
+                if np.any(paint):
+                    blended = overlay_uint8.astype(np.float32)
+                    src = color_layer.astype(np.float32)
+                    a = _POLYGON_FILL_ALPHA
+                    for c in range(3):
+                        ch = blended[:, :, c]
+                        ch[paint] = ch[paint] * (1.0 - a) + src[:, :, c][paint] * a
+                        blended[:, :, c] = ch
+                    overlay_uint8 = np.clip(blended, 0, 255).astype(np.uint8)
                 cv2.drawContours(overlay_uint8, [pts], -1, color, line_thickness)
             else:
                 # Contract: absent / invalid polygon → bbox outline fallback
@@ -2829,8 +3020,13 @@ def _should_suppress_transient_region(area, w, h, feat_a, diff=None, feat_b=None
     return False
 
 
-def strip_transient_from_mask(change_mask, before_img, after_img):
-    """Erase vehicle / fleeting-object components from a binary change mask."""
+def strip_transient_from_mask(change_mask, before_img, after_img,
+                              registration_ok=True):
+    """Erase vehicle / fleeting-object components from a binary change mask.
+
+    On weak-alignment pairs, keep large components — misregistration makes
+    real roof change look vehicle-like and was wiping majors (Report #78).
+    """
     if before_img is None or after_img is None or change_mask is None:
         return change_mask
     out = change_mask.copy()
@@ -2862,6 +3058,9 @@ def strip_transient_from_mask(change_mask, before_img, after_img):
         if _should_suppress_transient_region(
                 raw_area, w, h, feat_a, diff=diff, feat_b=feat_b,
                 img_area=img_area, fill_ratio=fill):
+            # Protect building-scale blobs when registration is poor.
+            if (not registration_ok) and raw_area >= 900:
+                continue
             out[labels == i] = 0
             removed += 1
     if removed:
@@ -4050,8 +4249,42 @@ def _iou(boxA, boxB):
     return inter / max(union, 1)
 
 
+def _point_in_poly(x, y, ring):
+    """Ray-cast point-in-polygon for a closed or open ring [[x,y],...]."""
+    if not ring or len(ring) < 3:
+        return False
+    pts = ring[:-1] if ring[0] == ring[-1] else ring
+    n = len(pts)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if ((yi > y) != (yj > y)) and (
+            x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi
+        ):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _polygon_containment_score(inner, outer):
+    """Fraction of ``inner`` vertices that lie inside ``outer`` (0..1)."""
+    if not inner or not outer or len(inner) < 3 or len(outer) < 3:
+        return 0.0
+    pts = inner[:-1] if inner[0] == inner[-1] else inner
+    if not pts:
+        return 0.0
+    hits = sum(1 for p in pts if _point_in_poly(p[0], p[1], outer))
+    return hits / float(len(pts))
+
+
 def _nms_regions(regions, iou_thresh=0.45):
-    """Non-maximum suppression: keep the highest-area box when two overlap."""
+    """Non-maximum suppression: keep the highest-area box when two overlap.
+
+    Uses bbox IoU, and also suppresses a smaller region when most of its
+    polygon vertices sit inside a larger region's polygon (nested fragments).
+    """
     if len(regions) < 2:
         return regions
     keep = []
@@ -4063,13 +4296,38 @@ def _nms_regions(regions, iou_thresh=0.45):
         for j in range(i + 1, len(regions)):
             if j in used:
                 continue
-            if _iou(r["bbox"], regions[j]["bbox"]) > iou_thresh:
+            other = regions[j]
+            if _iou(r["bbox"], other["bbox"]) > iou_thresh:
                 used.add(j)
+                continue
+            # Nested / fragmented detection: small polygon mostly inside a larger one
+            if r.get("polygon") and other.get("polygon"):
+                if other["area"] < r["area"] * 0.55:
+                    score = _polygon_containment_score(other["polygon"], r["polygon"])
+                    if score >= 0.75:
+                        used.add(j)
     return keep
+
+
+def _stabilize_tiny_region_polygons(regions, min_area):
+    """Only replace truly degenerate micro-rings with a bbox (never a good contour)."""
+    floor = max(50, int(min_area))
+    for r in regions:
+        if r.get("area", 0) > floor * 2:
+            continue
+        x, y, w, h = r["bbox"]
+        poly = r.get("polygon") or []
+        uniq = len({(p[0], p[1]) for p in poly}) if poly else 0
+        # Keep real footprints; bbox only when the ring collapsed (<3 unique corners).
+        if uniq < 3:
+            r["polygon"] = _bbox_as_polygon(x, y, w, h)
+    return regions
 
 
 # Closed image-px ring: at most this many corner vertices (closing dup allowed).
 _MAX_POLYGON_VERTICES = 60
+# Max fraction of polygon-interior pixels that may be unchanged (Report #74/#75).
+_MAX_POLYGON_EMPTY_FRAC = 0.06
 
 
 def _bbox_as_polygon(x, y, w, h):
@@ -4084,13 +4342,64 @@ def _bbox_as_polygon(x, y, w, h):
     ]
 
 
+def _polygon_shoelace_area(pts):
+    """Absolute shoelace area for an open or closed ring of (x, y) points."""
+    if len(pts) < 3:
+        return 0.0
+    if pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        return 0.0
+    area2 = 0.0
+    n = len(pts)
+    for i in range(n):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % n]
+        area2 += x1 * y2 - x2 * y1
+    return abs(area2) * 0.5
+
+
+def _subsample_contour(contour, max_verts):
+    """Uniformly keep ≤ max_verts points from a dense OpenCV contour."""
+    n = int(len(contour))
+    if n <= max_verts:
+        return contour
+    idx = np.linspace(0, n - 1, num=max_verts, dtype=np.int32)
+    return contour[idx]
+
+
+def _polygon_empty_fraction(ring, mask_u8, x1, y1, x2, y2):
+    """Fraction of filled-polygon pixels inside the crop that are not in mask."""
+    if not ring or len(ring) < 3:
+        return 1.0
+    ch, cw = y2 - y1, x2 - x1
+    if ch < 1 or cw < 1:
+        return 1.0
+    local = []
+    for px, py in ring:
+        local.append([int(px) - x1, int(py) - y1])
+    if local[0] != local[-1]:
+        local.append(local[0][:])
+    canvas = np.zeros((ch, cw), dtype=np.uint8)
+    pts = np.asarray(local, dtype=np.int32).reshape(-1, 1, 2)
+    cv2.fillPoly(canvas, [pts], 255)
+    interior = canvas > 0
+    inside_n = int(interior.sum())
+    if inside_n < 1:
+        return 1.0
+    crop_mask = mask_u8 > 0
+    empty = int((interior & ~crop_mask).sum())
+    return empty / float(inside_n)
+
+
 def _extract_region_polygon(labels, label_id, bbox):
     """
     Approximate the external contour of one connected component.
 
     Contract: closed ring ``[[x, y], ...]`` in image pixels, <= 60 corner
-    vertices. Falls back to the bbox rectangle when contours are missing or
-    degenerate. No holes (RETR_EXTERNAL only).
+    vertices. Prefer a tight footprint (low empty interior vs the change mask);
+    fall back to the bbox only when contours are missing/degenerate.
+    No holes (RETR_EXTERNAL only) — fill is clipped to the mask at draw time.
     """
     x, y, w, h = [int(v) for v in bbox]
     fallback = _bbox_as_polygon(x, y, w, h)
@@ -4103,35 +4412,95 @@ def _extract_region_polygon(labels, label_id, bbox):
         return fallback
 
     crop = (labels[y1:y2, x1:x2] == int(label_id)).astype(np.uint8) * 255
+    # Peel 1px spikes / hairline bridges so the ring hugs the solid change core
+    # (still validated against the original crop for empty-fraction).
+    crop_core = crop
+    if cv2.countNonZero(crop) >= 400:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        opened = cv2.morphologyEx(crop, cv2.MORPH_OPEN, k)
+        if cv2.countNonZero(opened) >= max(80, int(0.55 * cv2.countNonZero(crop))):
+            crop_core = opened
+    # NONE keeps every boundary pixel so approxPolyDP can hug concave change.
     contours, _ = cv2.findContours(
-        crop, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        crop_core, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not contours:
         return fallback
 
     contour = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(contour) < 1.0:
+    mask_area = float(cv2.countNonZero(crop))
+    if mask_area < 1.0:
         return fallback
 
     peri = float(cv2.arcLength(contour, True))
-    epsilon = max(1.0, 0.01 * peri)
-    approx = cv2.approxPolyDP(contour, epsilon, True)
+    # Start tight — Report #74 coarse epsilons left empty rooftop inside fills.
+    rel = 0.0025 if mask_area < 2500 else (0.0035 if mask_area < 20000 else 0.005)
+    epsilon = max(0.35, rel * peri)
+
+    def _ring_from_approx(approx_pts):
+        pts_local = approx_pts.reshape(-1, 2)
+        if len(pts_local) < 3:
+            return None
+        ring_local = [[int(px) + x1, int(py) + y1] for px, py in pts_local]
+        if ring_local[0] != ring_local[-1]:
+            ring_local.append(ring_local[0][:])
+        return ring_local
+
+    def _try_epsilon(eps):
+        approx = cv2.approxPolyDP(contour, eps, True)
+        # If still over budget, subsample the dense contour instead of
+        # coarsening further (coarsening is what creates empty chords).
+        if len(approx) > _MAX_POLYGON_VERTICES:
+            approx = _subsample_contour(contour, _MAX_POLYGON_VERTICES)
+        if len(approx) < 3:
+            return None, None, 1.0
+        ring = _ring_from_approx(approx)
+        if ring is None:
+            return None, None, 1.0
+        empty = _polygon_empty_fraction(ring, crop, x1, y1, x2, y2)
+        return approx, ring, empty
+
+    best_ring = None
+    best_empty = 1.0
+    eps = epsilon
     for _ in range(10):
-        if len(approx) <= _MAX_POLYGON_VERTICES:
+        approx, ring, empty = _try_epsilon(eps)
+        if ring is not None and empty <= best_empty:
+            best_ring, best_empty = ring, empty
+        if ring is not None and empty <= _MAX_POLYGON_EMPTY_FRAC:
+            best_ring, best_empty = ring, empty
             break
-        epsilon *= 1.5
-        approx = cv2.approxPolyDP(contour, epsilon, True)
+        # Finer approximation
+        eps = max(0.25, eps * 0.65)
 
-    pts = approx.reshape(-1, 2)
-    if len(pts) < 3:
+    # Last resort: uniform subsample of the raw contour (still ≤60 verts).
+    if best_ring is None or best_empty > _MAX_POLYGON_EMPTY_FRAC:
+        approx = _subsample_contour(contour, _MAX_POLYGON_VERTICES)
+        ring = _ring_from_approx(approx)
+        if ring is not None:
+            empty = _polygon_empty_fraction(ring, crop, x1, y1, x2, y2)
+            if best_ring is None or empty < best_empty:
+                best_ring, best_empty = ring, empty
+
+    if best_ring is None:
         return fallback
-    if len(pts) > _MAX_POLYGON_VERTICES:
-        idx = np.linspace(0, len(pts) - 1, _MAX_POLYGON_VERTICES, dtype=int)
-        pts = pts[idx]
 
-    ring = [[int(px) + x1, int(py) + y1] for px, py in pts]
-    if ring[0] != ring[-1]:
-        ring.append(ring[0][:])
-    return ring
+    poly_area = _polygon_shoelace_area([(p[0], p[1]) for p in best_ring])
+
+    # Reject rings that escape the region bbox (bad crop / wrong component).
+    pad = max(3, int(0.08 * max(w, h)))
+    for px, py in best_ring:
+        if px < x - pad or py < y - pad or px > x + w + pad or py > y + h + pad:
+            return fallback
+
+    bbox_area = float(max(1, w * h))
+    if poly_area < 1.0:
+        return fallback
+    if poly_area > bbox_area * 1.50:
+        return fallback
+    if mask_area >= 25 and poly_area < mask_area * 0.15:
+        return fallback
+
+    return best_ring
 
 
 def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
@@ -4172,6 +4541,22 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
         # Reject very sparse regions (bbox is mostly empty)
         if fill_ratio < 0.15:
             continue
+
+        # Weak alignment: drop thin edge-halo ribbons (parapet / shadow edges)
+        # before they become numbered polygons in the report.
+        if not registration_ok and _is_alignment_edge_ribbon(
+                raw_area, w, h, fill_ratio):
+            continue
+        if not registration_ok:
+            asp = max(w, h) / float(max(min(w, h), 1))
+            # Sparse elongated strips along building edges / alleys.
+            if fill_ratio < 0.34 and asp >= 2.6:
+                continue
+            if fill_ratio < 0.42 and asp >= 3.5 and min(w, h) <= 70:
+                continue
+            # Far-edge vertical alley halos only when clearly ribbon-like.
+            if min(x, img_w - (x + w)) <= 8 and asp >= 3.5 and fill_ratio < 0.45:
+                continue
 
         # Keep large real changes; only suppress near-full-frame artifacts.
         # When registration failed, allow larger regions to avoid missing true changes.
@@ -4278,9 +4663,10 @@ def analyze_change_regions(change_mask, image, min_area=400, use_ensemble=True,
 
         change_regions.append(region)
 
-    # Sort by area descending, apply NMS, cap at 60
+    # Sort by area descending, apply NMS (bbox + nested-polygon fragments), cap at 60
     change_regions.sort(key=lambda r: r["area"], reverse=True)
     change_regions = _nms_regions(change_regions, iou_thresh=0.45)
+    change_regions = _stabilize_tiny_region_polygons(change_regions, min_area)
     change_regions = change_regions[:60]
 
     # Re-number after filtering
@@ -4388,9 +4774,30 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     do_register = bool(enable_registration)
     if do_register and should_skip_registration_for_paths(before_path, after_path):
         do_register = False
-        registration_ok = True
-        reg_meta = {"skipped": True, "reason": "geotiff_auto_skip"}
-        _log.info("Skipping registration for GeoTIFF pair (DETECTION_SKIP_REGISTRATION_GEOTIFF)")
+        # GeoTIFF skip avoids a bad warp, but must NOT pretend the pair is
+        # well-aligned. before6/after6 (Report #71/#72) has NCC≈0.36–0.52 after
+        # resize; treating that as registration_ok=True kept the aggressive
+        # shadow-fragment strip and deleted major dark-roof construction.
+        after_for_ncc = after_array
+        if after_array.shape[:2] != before_array.shape[:2]:
+            after_for_ncc = cv2.resize(
+                after_array,
+                (before_array.shape[1], before_array.shape[0]),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        ncc = float(_alignment_ncc(before_array, after_for_ncc))
+        registration_ok = bool(ncc >= 0.55)
+        reg_meta = {
+            "skipped": True,
+            "reason": "geotiff_auto_skip",
+            "ncc": ncc,
+            "homography_used": False,
+        }
+        _log.info(
+            "Skipping registration for GeoTIFF pair "
+            "(DETECTION_SKIP_REGISTRATION_GEOTIFF, NCC=%.3f, ok=%s)",
+            ncc, registration_ok,
+        )
     if do_register:
         _prog(20, "Registering images")
         before_array, after_array, registration_ok, reg_meta = register_images(
@@ -4489,31 +4896,46 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
     )
 
-    change_mask = strip_transient_from_mask(change_mask, before_array, after_array)
-    change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
-    change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
+    change_mask = strip_transient_from_mask(
+        change_mask, before_array, after_array, registration_ok=registration_ok)
+    change_mask = strip_shadow_only_from_mask(
+        change_mask, before_array, after_array, registration_ok=registration_ok)
+    change_mask = strip_shadow_fragments_from_mask(
+        change_mask, before_array, after_array, registration_ok=registration_ok)
+    if not registration_ok:
+        change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
     change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
     change_mask = strip_weak_seasonal_veg_from_mask(change_mask, before_array, after_array)
-    # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs
+    # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs.
+    # On weak alignment, chromatic recover is skipped (see function) — it was
+    # re-painting large misaligned roof areas (Report #77).
     change_mask = recover_chromatic_roof_construction(
-        change_mask, before_chromatic, after_chromatic)
+        change_mask, before_chromatic, after_chromatic,
+        registration_ok=registration_ok)
     change_mask = recover_dark_roof_construction(
-        change_mask, before_chromatic, after_chromatic)
-    # The dark-roof recovery pass grows into any nearby strong-darkening seed —
-    # shadow meets that same "strong darkening, low chroma" signature, so it can
-    # regrow exactly what the shadow strips above just removed. Re-apply them
-    # so regrown shadow doesn't survive into the final mask. A single re-pass
-    # can still leave a residual: splitting a merged blob changes each piece's
-    # own geometry, so a fragment judged borderline-kept on one pass can look
-    # different (and get judged again) on the next once its neighbours have
-    # changed. Repeat until the mask stops changing rather than assuming one
-    # extra pass is always enough.
-    for _ in range(4):
-        before_pass = change_mask
-        change_mask = strip_shadow_only_from_mask(change_mask, before_array, after_array)
-        change_mask = strip_shadow_fragments_from_mask(change_mask, before_array, after_array)
-        if np.array_equal(change_mask, before_pass):
-            break
+        change_mask, before_chromatic, after_chromatic,
+        registration_ok=registration_ok)
+    # Re-strip shadow that recovery may have regrown. On well-aligned pairs,
+    # repeat until stable (split pieces can change judgment across passes).
+    # On poorly aligned pairs, skip aggressive shadow-only re-strip (it undoes
+    # dark-roof recovery) and apply soft fragment + edge-ribbon cleanup.
+    if registration_ok:
+        for _ in range(4):
+            before_pass = change_mask
+            change_mask = strip_shadow_only_from_mask(
+                change_mask, before_array, after_array, registration_ok=True)
+            change_mask = strip_shadow_fragments_from_mask(
+                change_mask, before_array, after_array, registration_ok=True)
+            if np.array_equal(change_mask, before_pass):
+                break
+    else:
+        change_mask = strip_shadow_fragments_from_mask(
+            change_mask, before_array, after_array, registration_ok=False)
+        change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
+        change_mask = split_weakly_bridged_change_blobs(change_mask)
+        _log.info(
+            "Weak registration: soft fragment strip + edge-ribbon cleanup + bridge split"
+        )
 
     _prog(65, "Analyzing change regions")
     # Classify on pre-normalization color so blue roofs keep their true hue/chroma
@@ -4579,5 +5001,12 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     }
     if score_map is not None:
         stats["_score_map"] = score_map  # numpy; not serialized, consumed downstream
+    # Compare-slider images MUST share the detection working grid (registration +
+    # resolution). Re-preprocessing the originals for the slider previously put
+    # SVG polygons in a different coordinate space — they looked random/offset.
+    # Prefer pre-normalization chromatic so roofs keep true color while geometry
+    # still matches region polygons / overlay.
+    stats["_slider_before"] = before_chromatic
+    stats["_slider_after"] = after_chromatic
 
     return change_mask, result_image, stats, change_regions

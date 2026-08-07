@@ -52,7 +52,7 @@ def _region_geometry(region: dict) -> Optional[dict]:
     """GeoJSON geometry for a region: true polygon footprint, else bbox corners.
 
     ``polygonGeo`` is the projected outer ring (see geo_regions.polygon_to_lat_lng).
-    Older runs — and runs whose georeferencing could not resolve — have only a
+    Older runs â€” and runs whose georeferencing could not resolve â€” have only a
     ``latLng`` centre, so they degrade to a Point rather than being dropped.
     """
     ring = region.get("polygonGeo")
@@ -87,7 +87,7 @@ def export_report_geojson(
     for r in regions:
         geometry = _region_geometry(r)
         if geometry is None:
-            continue  # ungeoreferenced run — nothing meaningful to place on a map
+            continue  # ungeoreferenced run â€” nothing meaningful to place on a map
         features.append({
             "type": "Feature",
             "geometry": geometry,
@@ -97,6 +97,7 @@ def export_report_geojson(
                 "objectType": r.get("objectType"),
                 "confidence": r.get("confidence"),
                 "areaPx": r.get("area"),
+                "polygonAreaPx": r.get("polygonAreaPx"),
                 "areaSqM": r.get("areaSqM"),
                 "severity": r.get("severity"),
                 "reviewStatus": r.get("reviewStatus", "pending"),
