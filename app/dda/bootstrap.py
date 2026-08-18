@@ -19,7 +19,16 @@ logger = logging.getLogger(__name__)
 
 
 def _migrate_detection_jobs_nullable() -> None:
-    """SQLite legacy schema required image asset FKs; tree library jobs use paths only."""
+    """SQLite legacy schema required image asset FKs; tree library jobs use paths only.
+
+    SQLite-only: rebuilds the table via SQLite's PRAGMA/copy-and-rename
+    pattern because SQLite can't ALTER COLUMN to drop NOT NULL directly.
+    Irrelevant on MySQL/PostgreSQL — a fresh create_all() there already
+    creates the column with the current (nullable) definition, and neither
+    speaks SQLite's PRAGMA dialect, so skip cleanly instead of erroring.
+    """
+    if engine.dialect.name != "sqlite":
+        return
     try:
         with engine.connect() as conn:
             rows = conn.execute(sa_text("PRAGMA table_info(dda_detection_jobs)")).fetchall()

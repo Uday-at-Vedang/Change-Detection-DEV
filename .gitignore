@@ -31,3 +31,5 @@ data/large_geotiff_test.zip
 # Third-party CD clones + DSIFN Drive downloads (hundreds of MB)
 third_party/
 models/dsifn_proxy/*.pt
+# Building-footprint reference data (461MB geojson — exceeds GitHub's 100MB limit)
+data/building_footprints/

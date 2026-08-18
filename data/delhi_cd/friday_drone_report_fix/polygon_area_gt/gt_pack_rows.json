@@ -1,0 +1,30 @@
+[
+  {
+    "pack": "dda_before5_after5_v2",
+    "gt_px": 62268,
+    "n_regions": 2,
+    "mask_area_sum": 62268,
+    "polygon_area_sum": 61570.0,
+    "retained_vs_gt": 1.0,
+    "poly_vs_mask_err": 0.0112
+  },
+  {
+    "pack": "dda_before6_after6_v2",
+    "gt_px": 292966,
+    "n_regions": 1,
+    "mask_area_sum": 292966,
+    "polygon_area_sum": 291253.5,
+    "retained_vs_gt": 1.0,
+    "poly_vs_mask_err": 0.0058
+  },
+  {
+    "pack": "dda_before3_1_after3_1",
+    "gt_px": 0,
+    "note": "blank_or_tiny"
+  },
+  {
+    "pack": "dda_before1_before",
+    "gt_px": 0,
+    "note": "blank_or_tiny"
+  }
+]

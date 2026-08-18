@@ -88,7 +88,7 @@ cp .env.example .env
 |----------|----------------|---------|
 | `APP_MODE` | `dda` (set by `run.py`) | `dda` = full dev UI; `legacy` = simple upload UI |
 | `SECRET_KEY` | random fallback | Set in production |
-| `DATABASE_URL` | SQLite in `data/` | PostgreSQL optional |
+| `DATABASE_URL` | SQLite in `data/` | Set to MySQL (`mysql+pymysql://...`) for production; PostgreSQL also supported |
 | `LOCAL_LIBRARY_ROOT` | `library_sources/` | Custom image library folder |
 | `MAX_GEOTIFF_MB` | `5120` | Max GeoTIFF upload size (MB) |
 | `DETECTION_MAX_SIDE` | `4096` local / `2048` HF | Max pixel side for detection |

@@ -1,0 +1,45 @@
+{
+  "checks": [
+    {
+      "name": "shoelace 100x100",
+      "pass": true,
+      "detail": "10000.0"
+    },
+    {
+      "name": "full-frame poly == bbox m2",
+      "pass": true,
+      "detail": "109365311.8 vs 109365311.8"
+    },
+    {
+      "name": "triangle ~ half frame",
+      "pass": true,
+      "detail": "tri=54682655.9 half=54682655.9"
+    },
+    {
+      "name": "circle shoelace within 2%",
+      "pass": true,
+      "detail": "got=5012.2 exp=5026.5 err=0.285%"
+    },
+    {
+      "name": "poly_tracks_mask_dda_before5_after5_v2",
+      "pass": true,
+      "detail": "err=1.1% poly=61570 mask=62268"
+    },
+    {
+      "name": "poly_tracks_mask_dda_before6_after6_v2",
+      "pass": true,
+      "detail": "err=0.6% poly=291254 mask=292966"
+    },
+    {
+      "name": "pack_has_paint_dda_before3_1_after3_1",
+      "pass": true,
+      "detail": "SKIP blank GT (0 px) \u2014 not yet labeled"
+    },
+    {
+      "name": "pack_has_paint_dda_before1_before",
+      "pass": true,
+      "detail": "SKIP blank GT (0 px) \u2014 not yet labeled"
+    }
+  ],
+  "discrepancies": []
+}

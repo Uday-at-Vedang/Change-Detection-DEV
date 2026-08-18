@@ -46,7 +46,7 @@ Standalone web application for satellite image change detection with **database 
 
 - **DDA dev UI** — Library, comparison, jobs, reports, PDF (when `APP_MODE=dda`)
 - **Direct access** — upload and run detection immediately (no login)
-- **Database** — SQLite (or set `DATABASE_URL` for PostgreSQL); stores detection runs
+- **Database** — SQLite by default; MySQL in production via `DATABASE_URL` (PostgreSQL also supported); stores detection runs
 - **Change detection** — AdaptFormer deep learning + hybrid / difference methods
 - **GeoTIFF library** — Year-folder library, 5 GB upload limit, lat/lng on regions
 - **Object classification** — Changed regions labeled (Water, Vegetation, Building, Road, etc.)
@@ -82,7 +82,7 @@ See **[DEV_SETUP.md](DEV_SETUP.md)** for the complete guide. Minimal steps:
 
 ## First run
 
-- The SQLite DB and `data/` (overlay images) are created automatically on first use.
+- The DB (SQLite locally, or the configured `DATABASE_URL`) and `data/` (overlay images) are created automatically on first use.
 - **DDA mode:** place images in `library_sources/YYYY/` and use the Library tab.
 - **Legacy mode:** upload Before/After PNGs on the detection page.
 - AdaptFormer model downloads from Hugging Face on first detection (~500 MB).
@@ -90,7 +90,7 @@ See **[DEV_SETUP.md](DEV_SETUP.md)** for the complete guide. Minimal steps:
 ## Configuration
 
 - **DDA mode:** `APP_MODE=dda` (default when using `run.py`). Copy `.env.example` → `.env` for optional overrides.
-- **Database**: set `DATABASE_URL` (e.g. `postgresql://user:pass@host/db`) to use another DB; otherwise SQLite under `data/satellite_app.db` is used.
+- **Database**: set `DATABASE_URL` to use another DB — MySQL (production for this project): `mysql+pymysql://user:pass@host:3306/db`, or PostgreSQL: `postgresql://user:pass@host/db`. Otherwise SQLite under `data/satellite_app.db` is used.
 - **JWT**: set `SECRET_KEY` via env in production.
 - **Email**: `EMAIL_API_URL` or `SMTP_USER` / `SMTP_PASS` — see `.env.example`.
 

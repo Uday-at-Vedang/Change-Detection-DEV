@@ -22,7 +22,7 @@ AI Change Detection is a full-stack web application that detects, classifies, an
 │ auth.py  │ models.py│  detection_engine.py       │
 │ JWT auth │ ORM      │  Image processing pipeline │
 ├──────────┴──────────┤                            │
-│   database.py       │  SQLite (local/HF Spaces)  │
+│   database.py       │  SQLite (local) / MySQL    │
 └─────────────────────┴───────────────────────────┘
 ```
 
@@ -74,7 +74,7 @@ AI Change Detection is a full-stack web application that detects, classifies, an
 
 **Use cases solved:**
 - **Environment-aware storage** — Detects Hugging Face Spaces (via `SPACE_ID` env var) and uses a writable home directory; falls back to a local `data/` directory for development.
-- **Database portability** — Defaults to SQLite for zero-config local development. Supports PostgreSQL via `DATABASE_URL` environment variable for production (with automatic `postgres://` → `postgresql://` rewrite for SQLAlchemy 2.x compatibility).
+- **Database portability** — Defaults to SQLite for zero-config local development. Production uses MySQL via `DATABASE_URL` (`mysql+pymysql://...`); PostgreSQL is also supported (with automatic `postgres://` → `postgresql://` rewrite for SQLAlchemy 2.x compatibility). `pool_pre_ping` is enabled for any non-SQLite backend so stale/dropped remote connections are transparently recycled.
 - **Session lifecycle** — The `get_db()` generator provides request-scoped database sessions with automatic cleanup.
 
 ---
@@ -314,7 +314,7 @@ This is the core of the application. It contains all image analysis algorithms o
 | `gunicorn` | Process manager for production deployment |
 | `python-multipart` | Handles multipart/form-data file uploads |
 | `sqlalchemy` | ORM for database operations |
-| `psycopg2-binary` | PostgreSQL driver (for production databases) |
+| `pymysql` | MySQL driver (production database) |
 | `python-jose` | JWT token encoding/decoding |
 | `passlib` + `bcrypt` | Password hashing (bcrypt pinned to 4.0.1 for compatibility) |
 | `pillow` | Image loading and format conversion |
@@ -381,6 +381,7 @@ This is the core of the application. It contains all image analysis algorithms o
 
 ## Deployment
 
-- **Local development:** Run `uvicorn app.main:app --reload` from the project root. SQLite database is created in `data/satellite_app.db`.
-- **Hugging Face Spaces:** Push to the linked HF repo. The Dockerfile builds and deploys automatically. Database is stored at `/home/appuser/data/` (ephemeral — resets on container restart).
-- **Production with PostgreSQL:** Set `DATABASE_URL` environment variable to a PostgreSQL connection string. Set `SECRET_KEY` to a strong random value.
+- **Local development:** Run `uvicorn app.main:app --reload` from the project root. Uses `DATABASE_URL` if set (MySQL for this project), otherwise SQLite in `data/satellite_app.db`.
+- **Hugging Face Spaces:** Push to the linked HF repo. The Dockerfile builds and deploys automatically. Falls back to SQLite at `/home/appuser/data/` (ephemeral — resets on container restart) unless `DATABASE_URL` is set.
+- **Production with MySQL:** Set `DATABASE_URL` to a `mysql+pymysql://user:pass@host:3306/dbname` connection string (`pymysql` driver is in `requirements.txt`). Set `SECRET_KEY` to a strong random value. On Render, set `DATABASE_URL` manually in the dashboard (Environment tab) — it's `sync: false` in `render.yaml`, not committed to git.
+- **Production with PostgreSQL** (also supported): same pattern with a `postgresql://` URL — requires adding `psycopg2-binary` to `requirements.txt` first (not installed by default).

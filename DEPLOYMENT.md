@@ -138,7 +138,7 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 | `MAX_GEOTIFF_MB` | Library GeoTIFF upload cap (default **5120** = 5 GB on dev) |
 | `MAX_IMAGE_MB` | PNG/JPEG library cap (default 50 MB) |
 | `SECRET_KEY` | Optional legacy JWT setting (login disabled) |
-| `DATABASE_URL` | PostgreSQL instead of SQLite (optional) |
+| `DATABASE_URL` | MySQL (production) instead of SQLite — `mysql+pymysql://user:pass@host:3306/db`; PostgreSQL also supported |
 | `SMTP_USER` / `SMTP_PASS` | Email notifications via Gmail SMTP |
 | `EMAIL_API_URL` | Custom email API (default in code) |
 | `DEPT_API_URL` / `DEPT_API_KEY` | Departmental submit API (optional) |
