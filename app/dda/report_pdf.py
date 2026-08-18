@@ -70,13 +70,13 @@ def generate_report_pdf(run: DetectionRun, *, regions: Optional[List[dict]] = No
     sub_style = ParagraphStyle("ReportSub", parent=styles["Normal"], fontSize=10, textColor=colors.grey)
     body = styles["Normal"]
 
-    location = ", ".join(filter(None, [run.village, run.zone])) or "â€”"
+    location = ", ".join(filter(None, [run.village, run.zone])) or "—"
     story = [
         Paragraph("DDA Change Detection Report", title_style),
         Paragraph(run.title or f"Run #{run.id}", styles["Heading2"]),
         Paragraph(f"Generated {_isoformat_ist(run.created_at)} IST", sub_style),
         Spacer(1, 8),
-        Paragraph(f"<b>Method:</b> {run.method or 'â€”'}", body),
+        Paragraph(f"<b>Method:</b> {run.method or '—'}", body),
         Paragraph(f"<b>Location:</b> {location}", body),
         Paragraph(f"<b>Change:</b> {run.change_percentage:.2f}% ({run.changed_pixels:,} / {run.total_pixels:,} px)", body),
         Paragraph(f"<b>Regions detected:</b> {run.regions_count}", body),
@@ -106,26 +106,43 @@ def generate_report_pdf(run: DetectionRun, *, regions: Optional[List[dict]] = No
 
     story.append(Paragraph("Detected regions", styles["Heading3"]))
     if regions:
-        table_data = [["#", "DDA type", "Internal type", "Conf.", "Area", "Lat", "Lng", "Review"]]
+        # Plain strings don't wrap in reportlab Tables — a long value just
+        # overflows visually into the next cell instead of breaking onto a
+        # second line (this is why "DDA type"/"Classification" text used to
+        # run into the "Conf." column). Wrap the long-text columns in
+        # Paragraph so they wrap within their own column width instead.
+        cell_style = ParagraphStyle("TableCell", parent=styles["Normal"], fontSize=8, leading=9.5)
+
+        def cell(text: str) -> Paragraph:
+            return Paragraph(text, cell_style)
+
+        table_data = [["#", "Severity", "DDA type", "Classification", "Conf.", "Area (m²)", "Lat", "Lng", "Review"]]
         for r in regions[:50]:
             lat, lng = region_lat_lng(r)
             if r.get("areaSqM") is not None:
-                area_txt = f'{r["areaSqM"]:,.1f} mÂ²'
+                # Unit lives in the header ("Area (m²)") now, not repeated
+                # every row — matches the live review table's convention.
+                area_txt = f'{r["areaSqM"]:,.1f}'
             elif r.get("polygonAreaPx") is not None:
+                # Different unit than the header claims (no georeferencing
+                # available for this region) — keep it explicit inline so
+                # it isn't mistaken for m².
                 area_txt = f'{int(round(r["polygonAreaPx"])):,} px'
             else:
-                area_txt = f'{r.get("area", 0):,}'
+                area_txt = f'{r.get("area", 0):,} px'
+            severity_txt = (r.get("severity") or "Minor").strip().capitalize()
             table_data.append([
                 str(r.get("id", "")),
-                r.get("ddaChangeType") or r.get("objectType") or "â€”",
-                r.get("internalObjectType") or r.get("objectType") or "â€”",
+                severity_txt,
+                cell(r.get("ddaChangeType") or r.get("objectType") or "—"),
+                cell(r.get("internalObjectType") or r.get("objectType") or "—"),
                 f'{(r.get("confidence", 0) or 0) * 100:.0f}%',
                 area_txt,
-                f"{lat:.5f}" if lat is not None else "â€”",
-                f"{lng:.5f}" if lng is not None else "â€”",
+                f"{lat:.5f}" if lat is not None else "—",
+                f"{lng:.5f}" if lng is not None else "—",
                 r.get("reviewStatus") or "pending",
             ])
-        tbl = Table(table_data, repeatRows=1, colWidths=[22, 72, 72, 36, 58, 48, 48])
+        tbl = Table(table_data, repeatRows=1, colWidths=[18, 40, 68, 82, 30, 52, 44, 44, 46])
         tbl.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2e33c5")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),

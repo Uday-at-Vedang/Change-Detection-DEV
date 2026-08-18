@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — DDA Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=32" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=22" />
+  <style>
+    .auth-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 380px;
+    }
+    .auth-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .auth-toggle {
+      text-align: center;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .auth-toggle a {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .auth-toggle a:hover { text-decoration: underline; }
+    .register-only.hidden, .login-only.hidden, .field-error.hidden, .field-hint.hidden { display: none; }
+    .field-error { color: var(--danger); font-size: 0.78rem; margin-top: 0.35rem; }
+    .field-hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 0.35rem; }
+    .form-group input.invalid { border-color: var(--danger); }
+    .auth-remember-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span>DDA Change Detection</span>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 id="auth-title">Sign in</h3>
+        </div>
+
+        <div id="dda-error" class="alert alert-error hidden"></div>
+        <div id="dda-success" class="alert alert-success hidden"></div>
+
+        <form id="auth-form" novalidate>
+          <div class="form-group register-only hidden">
+            <label for="full_name">Full name</label>
+            <input type="text" id="full_name" autocomplete="name" />
+            <div class="field-error hidden" id="err-full_name"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" autocomplete="username" required />
+            <div class="field-error hidden" id="err-email"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" autocomplete="current-password" required />
+            <div class="field-hint register-only hidden" id="hint-password">At least 8 characters</div>
+            <div class="field-error hidden" id="err-password"></div>
+          </div>
+
+          <div class="form-group register-only hidden">
+            <label for="confirm_password">Confirm password</label>
+            <input type="password" id="confirm_password" autocomplete="new-password" />
+            <div class="field-error hidden" id="err-confirm_password"></div>
+          </div>
+
+          <div class="auth-remember-row login-only">
+            <label class="checkbox-group" style="margin-bottom: 0;">
+              <input type="checkbox" id="remember_me" />
+              Remember me
+            </label>
+          </div>
+
+          <button type="submit" id="auth-submit" class="btn btn-primary btn-block">Sign in</button>
+        </form>
+
+        <div class="auth-toggle">
+          <span id="toggle-to-register">Need an account? <a id="show-register">Create one</a></span>
+          <span id="toggle-to-login" class="hidden">Already have an account? <a id="show-login">Sign in</a></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=1"></script>
+  <script src="/static/js/dda/login.js?v=3"></script>
+</body>
+</html>

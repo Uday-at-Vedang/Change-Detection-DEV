@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=32" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=21" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=23" />
 </head>
 <body>
   <div class="app dda-app">
@@ -26,6 +26,10 @@
           <span id="dda-notify-badge" class="dda-notify-badge hidden">0</span>
         </button>
         <div id="dda-notify-panel" class="dda-notify-panel hidden" role="menu"></div>
+      </div>
+      <div class="dda-user-wrap">
+        <span id="dda-user-email" class="dim"></span>
+        <button type="button" id="dda-logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
       </div>
     </header>
 
@@ -287,13 +291,13 @@
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>Severity</th>
                   <th>Change Type</th>
                   <th>DDA Type</th>
                   <th>Lat/Lng</th>
                   <th>Sub-Type</th>
-                  <th>Severity</th>
                   <th>Confidence</th>
-                  <th title="Polygon footprint area (m² when georeferenced)">Area</th>
+                  <th title="Polygon footprint area (m² when georeferenced; px when not)">Area (m²)</th>
                   <th>Coordinates</th>
                   <th>Stories</th>
                   <th>Height</th>
@@ -366,10 +370,11 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/app.js?v=16"></script>
+  <script src="/static/js/dda/shared.js?v=1"></script>
+  <script src="/static/js/dda/app.js?v=18"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/library.js?v=12"></script>
-  <script src="/static/js/dda/result.js?v=16"></script>
+  <script src="/static/js/dda/result.js?v=17"></script>
   <script src="/static/js/dda/compare.js?v=17"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>

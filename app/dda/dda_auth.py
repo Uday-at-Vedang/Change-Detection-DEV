@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import os
-from typing import Iterable, Optional
+from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from ..auth import get_or_create_guest_user, get_user_by_id, get_user_from_token
+from ..auth import get_user_from_token
 from ..database import get_db
 from ..models import User
 
-DDA_SESSION_COOKIE = "dda_session_id"
 COOKIE_NAME = "satellite_token"
 
 ROLE_RANK = {
@@ -22,11 +21,6 @@ ROLE_RANK = {
 }
 
 TRAINING_EXPORT_KEY = os.environ.get("DDA_TRAINING_EXPORT_KEY", "").strip()
-
-
-def _session_email(session_id: str) -> str:
-    safe = "".join(c for c in session_id if c.isalnum() or c in "-_")[:64]
-    return f"session-{safe}@dda.local"
 
 
 def get_user_role(db: Session, user: User) -> str:
@@ -47,7 +41,11 @@ def get_user_role(db: Session, user: User) -> str:
 
 
 def get_dda_user(request: Request, db: Session) -> User:
-    """Resolve user: JWT login > per-browser session > shared guest."""
+    """Resolve the logged-in user from a Bearer token or the auth cookie.
+
+    Login is required — no anonymous per-browser session or shared-guest
+    fallback anymore (removed; see git history for the prior behavior).
+    """
     auth_header = request.headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
@@ -61,33 +59,7 @@ def get_dda_user(request: Request, db: Session) -> User:
         if user and not user.email.startswith("__guest__"):
             return user
 
-    session_id = request.cookies.get(DDA_SESSION_COOKIE)
-    if session_id:
-        email = _session_email(session_id)
-        from ..auth import get_user_by_email, get_password_hash
-        user = get_user_by_email(db, email)
-        if user:
-            return user
-        user = User(
-            email=email,
-            hashed_password=get_password_hash("session-not-used"),
-            full_name=f"Session {session_id[:8]}",
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        try:
-            from sqlalchemy import text as sa_text
-            db.execute(
-                sa_text("UPDATE users SET role = 'analyst' WHERE id = :uid"),
-                {"uid": user.id},
-            )
-            db.commit()
-        except Exception:
-            db.rollback()
-        return user
-
-    return get_or_create_guest_user(db)
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 def current_dda_user(request: Request, db: Session = Depends(get_db)) -> User:
