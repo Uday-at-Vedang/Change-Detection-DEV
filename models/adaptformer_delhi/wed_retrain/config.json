@@ -5,7 +5,7 @@
   "auto_map": {
     "AutoConfig": "configuration_adaptformer.AdaptFormerConfig",
     "AutoImageProcessor": "deepang/adaptformer-LEVIR-CD--preprocessing_adaptformer.AdaptFormerImageProcessor",
-    "AutoModel": "deepang/adaptformer-LEVIR-CD--modeling_adaptformer.AdaptFormerForChangeDetection"
+    "AutoModel": "modeling_adaptformer.AdaptFormerForChangeDetection"
   },
   "depths": [
     3,

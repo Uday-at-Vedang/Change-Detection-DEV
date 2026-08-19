@@ -15,7 +15,8 @@ DETECTION_FULLRES_MAX_SIDE Cap for full-resolution tiled mode (0 = native).
 DETECTION_TILE_SIZE       Tile size for full-res scoring (256..2048).
 DETECTION_TILE_OVERLAP    Fractional tile overlap (0.0..0.5; default 0.35).
 DETECTION_SKIP_REGISTRATION_GEOTIFF  ``true``|``false``|``auto`` (default auto:
-                          skip SIFT registration when both inputs are GeoTIFF).
+                          candidate skip for GeoTIFF pairs; detection_engine
+                          still NCC-gates and runs registration when NCC is low).
 ADAPTFORMER_WEIGHTS       Local fine-tuned AdaptFormer dir or .pt (Day 6+).
 DETECTION_MULTISCALE      ``off`` | comma list e.g. ``0.5,1.0,1.5``.
 DETECTION_FUSION          ``smart_union`` (default) | ``hysteresis`` | ``dl_only``.
