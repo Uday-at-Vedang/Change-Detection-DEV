@@ -144,6 +144,8 @@ def get_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(cur
     if job.status == "completed" and run:
         try:
             data["result"] = _run_detail(db, run, user.id)
+            if data.get("preflightWarnings"):
+                data["result"].setdefault("statistics", {})["preflightWarnings"] = data["preflightWarnings"]
         except HTTPException:
             raise
         except Exception as exc:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from datetime import date, datetime
 from pathlib import Path
@@ -73,6 +74,12 @@ def _delete_related_sidecars(path: Path) -> None:
 
 def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
     encoded = quote(img.file_path, safe="/")
+    bounds = None
+    if img.bounds_json:
+        try:
+            bounds = json.loads(img.bounds_json)
+        except json.JSONDecodeError:
+            bounds = None
     return {
         "id": img.id,
         "nodeId": img.node_id,
@@ -88,7 +95,9 @@ def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
         "uploadedOn": img.uploaded_on.isoformat() if img.uploaded_on else None,
         "thumbUrl": f"/api/dda/local/thumb?path={encoded}",
         "previewUrl": f"/api/dda/local/preview?path={encoded}",
+        "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
         "hasGeoref": img.has_georef,
+        "bounds": bounds,
         "width": img.width,
         "height": img.height,
         "format": img.format,

@@ -390,6 +390,52 @@ function closePicker() {
   compareState.pickingSlot = null;
 }
 
+// Shows the preflight result centered over the page so it can't be missed
+// before a multi-minute detection run starts.
+// - Hard fail: red item, single "Close" button, always resolves false.
+// - Soft warnings: amber items, "Stop"/"Continue anyway" — resolves true only
+//   if the user chooses to proceed anyway.
+function showPreflightModal({ hardFail, failReason, warnings }) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('dda-preflight-modal');
+    const title = document.getElementById('dda-preflight-title');
+    const list = document.getElementById('dda-preflight-list');
+    const continueBtn = document.getElementById('dda-preflight-continue');
+    const cancelBtn = document.getElementById('dda-preflight-cancel');
+    if (!modal || !list || !continueBtn || !cancelBtn) {
+      resolve(!hardFail); // fail open — never silently block detection on a UI glitch
+      return;
+    }
+    if (hardFail) {
+      if (title) title.textContent = 'These images can’t be used for detection';
+      list.innerHTML = `<li class="fail">${escapeHtml(failReason || 'These images are not suitable for change detection.')}</li>`;
+      continueBtn.classList.add('hidden');
+      cancelBtn.textContent = 'Close';
+    } else {
+      if (title) title.textContent = 'Check these images before running detection';
+      list.innerHTML = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('');
+      continueBtn.classList.remove('hidden');
+      cancelBtn.textContent = 'Stop';
+    }
+    modal.classList.remove('hidden');
+
+    const cleanup = (result) => {
+      modal.classList.add('hidden');
+      continueBtn.removeEventListener('click', onContinue);
+      cancelBtn.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onBackdrop);
+      resolve(result);
+    };
+    const onContinue = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onBackdrop = (e) => { if (e.target === modal) cleanup(false); };
+
+    continueBtn.addEventListener('click', onContinue);
+    cancelBtn.addEventListener('click', onCancel);
+    modal.addEventListener('click', onBackdrop);
+  });
+}
+
 function setupCompareInteractions() {
   const slotsWrap = document.querySelector('.dda-compare-slots');
   if (slotsWrap) {
@@ -617,6 +663,29 @@ async function runLibraryDetection() {
   const btn = document.getElementById('btn-run-job');
   if (typeof hideDdaError === 'function') hideDdaError();
   btn.disabled = true;
+
+  try {
+    const preflightForm = new FormData();
+    preflightForm.append('base_path', compareState.t1.path);
+    preflightForm.append('comparison_path', compareState.t2.path);
+    const preflight = await ddaApi('POST', '/api/dda/detect/preflight', { body: preflightForm });
+    if (preflight.hardFail) {
+      await showPreflightModal(preflight);
+      btn.disabled = false;
+      return;
+    }
+    if (preflight.warnings && preflight.warnings.length) {
+      const proceed = await showPreflightModal(preflight);
+      if (!proceed) {
+        btn.disabled = false;
+        return;
+      }
+    }
+  } catch (err) {
+    // Preflight check itself failing (network hiccup etc.) shouldn't silently
+    // block detection — fall through and let the real detect call surface it.
+  }
+
   showDetectProgress();
 
   const form = new FormData();

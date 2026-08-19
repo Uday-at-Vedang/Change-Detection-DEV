@@ -306,14 +306,38 @@ def _register_images_ecc_multiscale(img1, img2):
             flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
             borderMode=cv2.BORDER_REFLECT)
 
-        # Check alignment quality via normalized cross-correlation
+        # Check alignment quality via normalized cross-correlation.
+        # Use the same 0.55 gate as SIFT; borderline ECC (0.50–0.54) was marking
+        # pairs "ok" and enabling aggressive shadow strip that wiped true change
+        # (before6/after6 → ~0.5% after force-register).
         g_aligned = cv2.cvtColor(aligned, cv2.COLOR_RGB2GRAY).astype(np.float32)
         g_ref = gray1.astype(np.float32)
         ncc = float(np.corrcoef(g_ref.ravel(), g_aligned.ravel())[0, 1])
         if not np.isfinite(ncc):
             ncc = 0.0
-        meta = {"method": "ecc_multiscale", "inlier_ratio": 0.0, "ncc": ncc, "homography_used": False}
-        return img1, aligned, bool(ncc >= 0.50), meta
+        ncc_src = float(np.corrcoef(
+            g_ref.ravel(),
+            cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY).astype(np.float32).ravel(),
+        )[0, 1])
+        if not np.isfinite(ncc_src):
+            ncc_src = 0.0
+        meta = {
+            "method": "ecc_multiscale",
+            "inlier_ratio": 0.0,
+            "ncc": ncc,
+            "ncc_src": ncc_src,
+            "homography_used": False,
+        }
+        if ncc >= 0.55:
+            return img1, aligned, True, meta
+        # Keep a modest ECC improvement under the weak-align path; otherwise
+        # reject the warp (same policy as SIFT_rejected).
+        if ncc >= ncc_src + 0.03 and ncc >= 0.40:
+            meta["method"] = "ecc_multiscale_weak"
+            return img1, aligned, False, meta
+        meta["method"] = "ecc_rejected"
+        meta["ncc"] = ncc_src
+        return img1, img2, False, meta
     except Exception:
         return img1, img2, False, {
             "method": "ecc_failed", "inlier_ratio": 0.0, "ncc": 0.0, "homography_used": False,
@@ -2594,10 +2618,9 @@ def ai_deep_learning_method(img1, img2, sensitivity=0.5, registration_ok=True,
             model_mask, sensitivity=sensitivity, for_dl=True,
             registration_ok=registration_ok,
         )
-        combined = recover_chromatic_roof_construction(
-            combined, img1, img2, registration_ok=registration_ok)
-        # Dark-roof recovery runs once after transient/shadow strip in
-        # ``run_detection`` so local grow cannot compound twice.
+        # Chromatic/dark roof recovery runs once in ``run_detection`` *after*
+        # transient/shadow strip — doing it here double-applied recovery and
+        # fought the later strip (Reports #75–#78).
         debug = {
             "method": "AI-Based Deep Learning (AdaptFormer DL-only)",
             "model": "adaptformer-delhi-v3",
@@ -5057,12 +5080,11 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     registration_ok = False
     reg_meta = {}
     do_register = bool(enable_registration)
+    # GeoTIFF "auto" skip is NCC-gated: only skip when the pair is already
+    # well-aligned after size-match. Low-NCC packs (before6/after6 ≈0.36) must
+    # still run SIFT/ECC — skipping left permanent misregistration and made
+    # shadow/edge post-process fight true construction.
     if do_register and should_skip_registration_for_paths(before_path, after_path):
-        do_register = False
-        # GeoTIFF skip avoids a bad warp, but must NOT pretend the pair is
-        # well-aligned. before6/after6 (Report #71/#72) has NCC≈0.36–0.52 after
-        # resize; treating that as registration_ok=True kept the aggressive
-        # shadow-fragment strip and deleted major dark-roof construction.
         after_for_ncc = after_array
         if after_array.shape[:2] != before_array.shape[:2]:
             after_for_ncc = cv2.resize(
@@ -5070,23 +5092,40 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
                 (before_array.shape[1], before_array.shape[0]),
                 interpolation=cv2.INTER_LINEAR,
             )
-        ncc = float(_alignment_ncc(before_array, after_for_ncc))
-        registration_ok = bool(ncc >= 0.55)
-        reg_meta = {
-            "skipped": True,
-            "reason": "geotiff_auto_skip",
-            "ncc": ncc,
-            "homography_used": False,
-        }
-        _log.info(
-            "Skipping registration for GeoTIFF pair "
-            "(DETECTION_SKIP_REGISTRATION_GEOTIFF, NCC=%.3f, ok=%s)",
-            ncc, registration_ok,
-        )
+            after_array = after_for_ncc
+        ncc = float(_alignment_ncc(before_array, after_array))
+        if ncc >= 0.55:
+            do_register = False
+            registration_ok = True
+            reg_meta = {
+                "skipped": True,
+                "reason": "geotiff_ncc_ok",
+                "ncc": ncc,
+                "homography_used": False,
+            }
+            _log.info(
+                "Skipping registration for well-aligned GeoTIFF pair "
+                "(DETECTION_SKIP_REGISTRATION_GEOTIFF, NCC=%.3f)",
+                ncc,
+            )
+        else:
+            _log.info(
+                "GeoTIFF auto-skip deferred: NCC=%.3f < 0.55 — running registration",
+                ncc,
+            )
+            reg_meta = {
+                "skipped": False,
+                "reason": "geotiff_ncc_low_force_register",
+                "ncc_pre": ncc,
+            }
+    ncc_pre = (reg_meta or {}).get("ncc_pre")
     if do_register:
         _prog(20, "Registering images")
         before_array, after_array, registration_ok, reg_meta = register_images(
             before_array, after_array)
+        if ncc_pre is not None and isinstance(reg_meta, dict):
+            reg_meta["ncc_pre"] = ncc_pre
+            reg_meta["reason"] = "geotiff_ncc_low_force_register"
     # Keep registered (pre-normalization) copies for chromatic roof recovery —
     # brightness matching must not be required to see saturated new paint.
     before_chromatic = before_array.copy()
@@ -5191,34 +5230,19 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
     change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
     change_mask = strip_weak_seasonal_veg_from_mask(change_mask, before_array, after_array)
-    # Re-apply using pre-normalization color so CLAHE/L-match cannot erase roofs.
-    # On weak alignment, chromatic recover is skipped (see function) — it was
-    # re-painting large misaligned roof areas (Report #77).
-    change_mask = recover_chromatic_roof_construction(
-        change_mask, before_chromatic, after_chromatic,
-        registration_ok=registration_ok)
-    change_mask = recover_dark_roof_construction(
-        change_mask, before_chromatic, after_chromatic,
-        registration_ok=registration_ok)
-    # A new light/neutral (grey concrete) roof brightens rather than
-    # darkens, so it falls through both recovery passes above -- confirmed
-    # on a real, ground-truth-verified report where this left a large new
-    # roof almost entirely undetected. On weak alignment, registration
-    # jitter itself brightens/darkens pixels all along every existing
-    # light-roof edge in the scene, and this recovery is new and untested
-    # against that specific failure mode (unlike dark/chromatic recovery,
-    # tuned by hand against it over several report iterations) -- confirmed
-    # directly: on a real weak-alignment scene it recovered 81k px across
-    # 18 new standalone components, visibly painting most of the frame's
-    # existing light rooftops rather than just the one real change. Keep it
-    # well-aligned-only until it's been through the same tuning.
+    # Recovery uses pre-normalization color so CLAHE/L-match cannot erase roofs.
+    # On weak alignment skip all roof recovery (#77/#78). Light-roof recovery
+    # is well-aligned-only (Priyanka): jitter brightens existing rooftops.
     if registration_ok:
-        change_mask = recover_light_roof_construction(change_mask, before_chromatic, after_chromatic)
-    # Re-strip shadow that recovery may have regrown. On well-aligned pairs,
-    # repeat until stable (split pieces can change judgment across passes).
-    # On poorly aligned pairs, skip aggressive shadow-only re-strip (it undoes
-    # dark-roof recovery) and apply soft fragment + edge-ribbon cleanup.
-    if registration_ok:
+        change_mask = recover_chromatic_roof_construction(
+            change_mask, before_chromatic, after_chromatic,
+            registration_ok=True)
+        change_mask = recover_dark_roof_construction(
+            change_mask, before_chromatic, after_chromatic,
+            registration_ok=True)
+        change_mask = recover_light_roof_construction(
+            change_mask, before_chromatic, after_chromatic)
+        # Re-strip shadow that recovery may have regrown; repeat until stable.
         for _ in range(4):
             before_pass = change_mask
             change_mask = strip_shadow_only_from_mask(
@@ -5230,18 +5254,15 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
     else:
         change_mask = strip_shadow_fragments_from_mask(
             change_mask, before_array, after_array, registration_ok=False)
-        # Mirror-image counterpart of the darkening strip above: registration
-        # jitter brightens pixels along existing edges just as often as it
-        # darkens them, and light-roof recovery (the only thing that would
-        # otherwise need this same brightening signal) is disabled on this
-        # path -- see recover_light_roof_construction.
+        # Mirror-image counterpart of the darkening strip: registration jitter
+        # brightens edge pixels as often as it darkens them.
         change_mask = strip_brightening_noise_from_mask(
             change_mask, before_array, after_array)
         change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
         change_mask = split_weakly_bridged_change_blobs(change_mask)
         _log.info(
-            "Weak registration: soft fragment strip + brightening-noise cleanup "
-            "+ edge-ribbon cleanup + bridge split"
+            "Weak registration: skip roof recovery; soft fragment + "
+            "brightening-noise + edge-ribbon + bridge split"
         )
 
     _prog(65, "Analyzing change regions")

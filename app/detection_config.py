@@ -15,7 +15,8 @@ DETECTION_FULLRES_MAX_SIDE Cap for full-resolution tiled mode (0 = native).
 DETECTION_TILE_SIZE       Tile size for full-res scoring (256..2048).
 DETECTION_TILE_OVERLAP    Fractional tile overlap (0.0..0.5; default 0.35).
 DETECTION_SKIP_REGISTRATION_GEOTIFF  ``true``|``false``|``auto`` (default auto:
-                          skip SIFT registration when both inputs are GeoTIFF).
+                          candidate skip for GeoTIFF pairs; detection_engine
+                          still NCC-gates and runs registration when NCC is low).
 ADAPTFORMER_WEIGHTS       Local fine-tuned AdaptFormer dir or .pt (Day 6+).
 DETECTION_MULTISCALE      ``off`` | comma list e.g. ``0.5,1.0,1.5``.
 DETECTION_FUSION          ``smart_union`` (default) | ``hysteresis`` | ``dl_only``.
@@ -41,6 +42,17 @@ DETECTION_CL_Q_BASE       Base classical-score percentile floor for smart_union
                           default was chosen and what was rejected (0.75-0.85
                           gave a bigger Delhi F1 lift but broke the mandatory
                           car-FP regression gate).
+DETECTION_GSD_HARMONIZE   ``true``|``false`` (default true) — resample the
+                          finer-GSD image down to match the coarser one when
+                          they differ by more than DETECTION_GSD_TOLERANCE.
+DETECTION_GSD_TOLERANCE   Relative GSD difference (0.0..1.0, default 0.15)
+                          above which harmonization/warning kicks in.
+DETECTION_MIN_OVERLAP_HARD  Fraction of the after-image footprint (0.0..1.0,
+                          default 0.02) below which a pair's geographic
+                          overlap is treated as unusable (preflight hard-fail).
+DETECTION_MIN_OVERLAP_WARN  Fraction of the after-image footprint (0.0..1.0,
+                          default 0.20) below which overlap is weak but usable
+                          (preflight soft-warn).
 """
 from __future__ import annotations
 
@@ -401,6 +413,41 @@ def get_kpca_max_side() -> int:
         return 2048
 
 
+def get_gsd_harmonize() -> bool:
+    """Whether to resample the finer-GSD image down to match the coarser one."""
+    return _flag("DETECTION_GSD_HARMONIZE", True)
+
+
+def get_gsd_tolerance() -> float:
+    """Relative before/after GSD difference above which harmonization/warning fires."""
+    raw = _env("DETECTION_GSD_TOLERANCE", "0.15")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.15
+    return max(0.0, min(1.0, value))
+
+
+def get_min_overlap_hard() -> float:
+    """Overlap fraction (of the after footprint) below which a pair is unusable."""
+    raw = _env("DETECTION_MIN_OVERLAP_HARD", "0.02")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.02
+    return max(0.0, min(1.0, value))
+
+
+def get_min_overlap_warn() -> float:
+    """Overlap fraction (of the after footprint) below which overlap is weak."""
+    raw = _env("DETECTION_MIN_OVERLAP_WARN", "0.20")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.20
+    return max(0.0, min(1.0, value))
+
+
 def summary() -> dict:
     """Snapshot of effective detection config (for logs and debug output)."""
     return {
@@ -414,6 +461,10 @@ def summary() -> dict:
         "skipPreblur": get_skip_preblur(),
         "borderMargin": get_border_margin(),
         "skipUnchangedThreshold": get_skip_unchanged_threshold(),
+        "gsdHarmonize": get_gsd_harmonize(),
+        "gsdTolerance": get_gsd_tolerance(),
+        "minOverlapHard": get_min_overlap_hard(),
+        "minOverlapWarn": get_min_overlap_warn(),
         "kpca": {
             "patchSize": get_kpca_patch_size(),
             "nComponents": get_kpca_n_components(),

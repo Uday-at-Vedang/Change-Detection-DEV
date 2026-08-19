@@ -203,10 +203,12 @@ def run_detection_and_save(
     geo_bounds_path: Optional[Path] = None,
     comparison_file: Optional[Path] = None,
     base_path: str = "",
+    comparison_path: str = "",
     user_id: Optional[int] = None,
     job_id: Optional[int] = None,
     gsd_debug: Optional[dict] = None,
     shape_mode: str = "polygon",
+    preflight_warnings: Optional[list] = None,
 ) -> dict:
     from ..detection_engine import run_detection
     from .job_progress import update_job_progress
@@ -270,6 +272,9 @@ def run_detection_and_save(
 
     if gsd_debug and isinstance(stats.get("threshold_debug"), dict):
         stats["threshold_debug"]["gsdHarmonization"] = gsd_debug
+
+    if preflight_warnings:
+        stats["preflightWarnings"] = list(preflight_warnings)
 
     _report(80, "Saving results")
 
@@ -442,6 +447,8 @@ def run_detection_and_save(
         "method": run.method,
         "zone": run.zone or "",
         "village": run.village or "",
+        "basePath": base_path,
+        "comparisonPath": comparison_path,
         "statistics": {
             "totalPixels": total_px,
             "changedPixels": changed_px,
@@ -451,6 +458,7 @@ def run_detection_and_save(
             "params": stats.get("params", {}),
             "alignmentWarning": stats.get("alignment_warning"),
             "registrationOk": stats.get("params", {}).get("registration_ok"),
+            "preflightWarnings": stats.get("preflightWarnings") or [],
             "geo": geo_debug,
             "probabilityMapUrl": f"/api/overlay/{relative_prob}" if relative_prob else None,
         },

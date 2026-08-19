@@ -19,6 +19,7 @@ from .geotiff_io import load_rgb_pil
 from .job_progress import update_job_progress
 from .local_routes import safe_resolve
 from .models import DetectionJob
+from .preflight import PreflightResult
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,18 @@ def _utcnow():
 
 
 def _load_pair(
-    base_path: str, comparison_path: str, roi: Optional[dict] = None,
-) -> tuple[Image.Image, Image.Image, Path, Optional[dict]]:
+    db: Session, base_path: str, comparison_path: str, roi: Optional[dict] = None,
+) -> tuple[Image.Image, Image.Image, Path, Optional[dict], PreflightResult]:
     from ..detection_config import get_load_max_side
     from .geotiff_io import load_rgb_roi
+    from .preflight import run_preflight_checks
     base_file = safe_resolve(base_path)
     comp_file = safe_resolve(comparison_path)
+
+    preflight = run_preflight_checks(db, base_file, comp_file, base_path, comparison_path)
+    if preflight.hard_fail:
+        raise ValueError(preflight.fail_reason)
+
     max_side = get_load_max_side()
     if roi:
         # Crop both images to the same fractional window before detection so a
@@ -57,7 +64,7 @@ def _load_pair(
 
     if before_pil.size != after_pil.size:
         after_pil = after_pil.resize(before_pil.size, Image.Resampling.LANCZOS)
-    return before_pil, after_pil, base_file, gsd_debug
+    return before_pil, after_pil, base_file, gsd_debug, preflight
 
 
 def _parse_params(job: DetectionJob) -> Dict[str, Any]:
@@ -89,9 +96,13 @@ def _run_job_sync(job_id: int) -> None:
 
         roi = params.get("roi")
         update_job_progress(job_id, 8, "Cropping ROI" if roi else "Loading images")
-        before_pil, after_pil, base_file, gsd_debug = _load_pair(
-            base_path, comparison_path, roi=roi)
+        before_pil, after_pil, base_file, gsd_debug, preflight = _load_pair(
+            db, base_path, comparison_path, roi=roi)
         comp_file = safe_resolve(comparison_path)
+        if preflight.warnings:
+            params["preflightWarnings"] = preflight.warnings
+            job.params_json = json.dumps(params)
+            db.commit()
         if roi:
             logger.info("Job %d ROI crop %s -> working size %s",
                         job_id, roi, before_pil.size)
@@ -122,10 +133,12 @@ def _run_job_sync(job_id: int) -> None:
             geo_bounds_path=base_file,
             comparison_file=comp_file,
             base_path=base_path,
+            comparison_path=comparison_path,
             user_id=job.created_by,
             job_id=job_id,
             gsd_debug=gsd_debug,
             shape_mode=params.get("shape_mode", "polygon"),
+            preflight_warnings=preflight.warnings,
         )
 
         update_job_progress(job_id, 100, "Complete")
@@ -294,6 +307,7 @@ def job_to_dict(job: DetectionJob, run: Optional[DetectionRun] = None) -> dict:
         "runId": job.run_id,
         "errorMessage": job.error_message or "",
         "notifyEmail": job.notify_email or "",
+        "preflightWarnings": params.get("preflightWarnings", []),
         "progressPct": progress_pct,
         "progressStage": progress_stage,
         "createdAt": job.created_at.isoformat() if job.created_at else None,

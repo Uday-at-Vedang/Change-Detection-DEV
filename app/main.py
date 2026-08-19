@@ -615,12 +615,29 @@ def get_run(
         detection_max_side = get_detection_max_side()
     else:
         detection_max_side = None
+    base_path = comparison_path = ""
+    if IS_DDA_MODE:
+        job = (
+            db.query(DetectionJob)
+            .filter(DetectionJob.run_id == run.id)
+            .order_by(DetectionJob.id.desc())
+            .first()
+        )
+        if job and job.params_json:
+            try:
+                params = json.loads(job.params_json)
+                base_path = params.get("base_path") or ""
+                comparison_path = params.get("comparison_path") or ""
+            except (TypeError, json.JSONDecodeError):
+                pass
     return {
         "id": run.id,
         "title": run.title,
         "method": run.method,
         "zone": run.zone or "",
         "village": run.village or "",
+        "basePath": base_path,
+        "comparisonPath": comparison_path,
         "statistics": {
             "totalPixels": run.total_pixels,
             "changedPixels": run.changed_pixels,
