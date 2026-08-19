@@ -15,24 +15,30 @@ except ImportError:
 
 from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 from PIL import Image, ImageOps
 
 from .auth import (
     COOKIE_NAME,
+    IS_SECURE_COOKIE,
+    check_account_lockout,
+    check_ip_throttle,
     create_access_token,
+    get_client_ip,
     get_password_hash,
     get_user_by_email,
     get_current_user,
     get_or_create_guest_user,
+    get_user_agent,
     get_user_from_token,
+    record_login_event,
     verify_password,
 )
 from .database import Base, engine, get_db, DATA_DIR
-from .models import User, DetectionRun
+from .models import User, DetectionRun, LoginHistory  # noqa: F401 — LoginHistory registered on Base.metadata for create_all()
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
 from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview  # noqa: F401
 from .dda.tree.models import TreeNode, ImageLibrary, AuditLog  # noqa: F401
@@ -84,27 +90,6 @@ except Exception as e:
 
 app = FastAPI(title="AI Change Detection", version="2.4.0-dda" if IS_DDA_MODE else "2.2.0")
 setup_dda(app)
-
-
-if IS_DDA_MODE:
-    from .dda.dda_auth import DDA_SESSION_COOKIE
-
-    @app.middleware("http")
-    async def dda_session_middleware(request: Request, call_next):
-        session_id = request.cookies.get(DDA_SESSION_COOKIE)
-        new_session = not session_id
-        if new_session:
-            session_id = str(uuid.uuid4())
-        response = await call_next(request)
-        if new_session:
-            response.set_cookie(
-                DDA_SESSION_COOKIE,
-                session_id,
-                httponly=True,
-                max_age=60 * 60 * 24 * 30,
-                samesite="lax",
-            )
-        return response
 
 
 @app.get("/health")
@@ -166,14 +151,32 @@ if STATIC_DIR.exists():
 
 # --- Schemas ---
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr
     password: str
-    full_name: str = ""
+    full_name: str
+    # No remember_me here — registration no longer auto-logs-in (see
+    # register()), so there's no session at creation time for it to apply to.
+
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+    @field_validator("full_name")
+    @classmethod
+    def _full_name_required(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Full name is required")
+        return v
 
 
 class UserLogin(BaseModel):
-    email: str
+    email: EmailStr
     password: str
+    remember_me: bool = False
 
 
 class UserResponse(BaseModel):
@@ -194,37 +197,52 @@ def _load_regions_json(raw_regions: Optional[str]):
 
 
 # --- Auth routes ---
-def _auth_response(token: str, user: User):
+# Not remembered: short-lived JWT + a browser-session cookie (no max_age, so
+# it disappears when the browser closes) — the JWT's own expiry is still a
+# backstop in case the browser doesn't actually clear it.
+# Remembered: both the cookie and the JWT last 30 days.
+SESSION_TOKEN_EXPIRE = timedelta(days=1)
+REMEMBER_ME_EXPIRE = timedelta(days=30)
+
+
+def _auth_response(token: str, user: User, remember: bool = False):
     """JSON response with auth cookie so browser sends token on every request (e.g. POST /api/detect)."""
     payload = {"access_token": token, "token_type": "bearer", "user": {"id": user.id, "email": user.email, "full_name": user.full_name}}
     response = JSONResponse(content=payload)
-    response.set_cookie(
+    cookie_kwargs = dict(
         key=COOKIE_NAME,
         value=token,
-        max_age=60 * 60 * 24 * 7,  # 7 days
         httponly=True,
         samesite="lax",
+        secure=IS_SECURE_COOKIE,
         path="/",
     )
+    if remember:
+        cookie_kwargs["max_age"] = int(REMEMBER_ME_EXPIRE.total_seconds())
+    # else: no max_age → session cookie, cleared when the browser closes
+    response.set_cookie(**cookie_kwargs)
     return response
 
 
 @app.post("/api/auth/register")
 def register(data: UserCreate, db: Session = Depends(get_db)):
+    email = data.email.strip().lower()
     try:
-        if get_user_by_email(db, data.email):
+        if get_user_by_email(db, email):
             raise HTTPException(status_code=400, detail="Email already registered")
         hashed = get_password_hash(data.password)
         user = User(
-            email=data.email,
+            email=email,
             hashed_password=hashed,
             full_name=data.full_name,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-        token = create_access_token(data={"sub": str(user.id)})
-        return _auth_response(token, user)
+        # Deliberately no auto-login here: account creation and signing in
+        # are kept as two separate, explicit steps — no cookie is set, the
+        # user is sent back to the sign-in form to log in themselves.
+        return {"ok": True, "message": "Account created. Please sign in."}
     except HTTPException:
         raise
     except Exception as e:
@@ -233,13 +251,45 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login")
-def login(data: UserLogin, db: Session = Depends(get_db)):
+def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
+    email = data.email.strip().lower()
+    ip = get_client_ip(request)
+    ua = get_user_agent(request)
     try:
-        user = get_user_by_email(db, data.email)
+        # Checked before touching the User table at all, and before bcrypt
+        # verification (which is intentionally slow) — cheap rejection path.
+        if check_ip_throttle(db, ip):
+            record_login_event(
+                db, event_type="login_blocked", attempted_email=email,
+                failure_reason="ip_throttled", ip_address=ip, user_agent=ua,
+            )
+            raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+        if check_account_lockout(db, email):
+            record_login_event(
+                db, event_type="login_blocked", attempted_email=email,
+                failure_reason="account_locked", ip_address=ip, user_agent=ua,
+            )
+            # Same generic message as the IP-throttle case — don't tell the
+            # caller which kind of lockout hit, or that the account exists.
+            raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+
+        user = get_user_by_email(db, email)
         if not user or not verify_password(data.password, user.hashed_password):
+            record_login_event(
+                db, event_type="login_failed", attempted_email=email,
+                user_id=user.id if user else None,
+                failure_reason="bad_password" if user else "unknown_email",
+                ip_address=ip, user_agent=ua,
+            )
             raise HTTPException(status_code=401, detail="Invalid email or password")
-        token = create_access_token(data={"sub": str(user.id)})
-        return _auth_response(token, user)
+
+        record_login_event(
+            db, event_type="login_success", attempted_email=email,
+            user_id=user.id, ip_address=ip, user_agent=ua,
+        )
+        expires = REMEMBER_ME_EXPIRE if data.remember_me else SESSION_TOKEN_EXPIRE
+        token = create_access_token(data={"sub": str(user.id)}, expires_delta=expires)
+        return _auth_response(token, user, remember=data.remember_me)
     except HTTPException:
         raise
     except Exception as e:
@@ -248,8 +298,16 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/logout")
-def logout():
-    """Clear auth cookie so subsequent requests are unauthenticated."""
+def logout(request: Request, db: Session = Depends(get_db)):
+    """Record the logout, then clear the auth cookie so subsequent requests are unauthenticated."""
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        user = get_user_from_token(token, db)
+        if user:
+            record_login_event(
+                db, event_type="logout", attempted_email=user.email, user_id=user.id,
+                ip_address=get_client_ip(request), user_agent=get_user_agent(request),
+            )
     response = JSONResponse(content={"ok": True})
     response.delete_cookie(COOKIE_NAME, path="/")
     return response
@@ -288,6 +346,7 @@ def me(user: Optional[User] = Depends(get_current_user)):
 # --- Detection route ---
 @app.post("/api/detect")
 async def detect(
+    request: Request,
     before: UploadFile = File(...),
     after: UploadFile = File(...),
     method: str = Form("AI-Based Deep Learning"),
@@ -301,7 +360,11 @@ async def detect(
     notify_email: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    user = get_or_create_guest_user(db)
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user
+        user = get_dda_user(request, db)
+    else:
+        user = get_or_create_guest_user(db)
     MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
     def _read_upload(upload: UploadFile, field_name: str):
@@ -469,9 +532,14 @@ async def detect(
 @app.post("/api/notify/test")
 def notify_test(
     data: EmailRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    get_or_create_guest_user(db)
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user
+        get_dda_user(request, db)
+    else:
+        get_or_create_guest_user(db)
     sent, error = send_test_email(data.email.strip())
     if not sent:
         raise HTTPException(status_code=400, detail=error or "Failed to send test email")
@@ -591,9 +659,14 @@ def get_run(
 def notify_run(
     run_id: int,
     data: EmailRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    user = get_or_create_guest_user(db)
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user
+        user = get_dda_user(request, db)
+    else:
+        user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -660,9 +733,28 @@ def dda_report_page(run_id: int):
     return FileResponse(report_file)
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    login_file = TEMPLATES_DIR / "login_dda.html"
+    if not login_file.exists():
+        raise HTTPException(status_code=404, detail="Login template missing")
+    return FileResponse(login_file)
+
+
 @app.get("/", response_class=HTMLResponse)
-def index():
+def index(request: Request, db: Session = Depends(get_db)):
     if IS_DDA_MODE:
+        # Deliberately not calling get_dda_user() here — it still has the
+        # session/guest fallback until Step 7 flips it, so it would never
+        # report "unauthenticated". Do the same JWT-via-cookie check it does
+        # for its first branch, without the fallback, so this redirect is
+        # meaningful and independently testable before that flip lands.
+        token = request.cookies.get(COOKIE_NAME)
+        user = get_user_from_token(token, db) if token else None
+        if not user:
+            return RedirectResponse("/login")
         index_file = TEMPLATES_DIR / "index_dda.html"
     else:
         index_file = TEMPLATES_DIR / "index.html"

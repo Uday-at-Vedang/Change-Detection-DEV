@@ -44,3 +44,22 @@ class DetectionRun(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="detections")
+
+
+class LoginHistory(Base):
+    __tablename__ = "login_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Nullable: a failed login against an unknown email has no user row to point at.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Always populated (even for unknown emails) — needed for account-lockout queries
+    # that can't rely on user_id.
+    attempted_email = Column(String(255), nullable=False, index=True)
+    # login_success | login_failed | login_blocked | logout
+    event_type = Column(String(20), nullable=False, index=True)
+    # bad_password | unknown_email | account_locked | ip_throttled — internal only,
+    # never returned to the client (same "don't leak why" precedent as reset_password).
+    failure_reason = Column(String(30), nullable=True)
+    ip_address = Column(String(45), default="")  # 45 = max IPv6 literal length
+    user_agent = Column(String(512), default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)

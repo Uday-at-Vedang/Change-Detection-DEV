@@ -75,7 +75,7 @@ def safe_resolve(relative_path: str) -> Path:
 
 
 @router.get("/local/config")
-def local_library_config():
+def local_library_config(user: User = Depends(current_dda_user)):
     _require_dda()
     storage = str(get_storage_root())
     hosted = is_hf_hosted()
@@ -110,13 +110,14 @@ def local_images(
     node_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     _require_dda()
     return list_all_images(db, node_id=node_id, query=q)
 
 
 @router.get("/local/thumb")
-def local_thumb(path: str = Query(...)):
+def local_thumb(path: str = Query(...), user: User = Depends(current_dda_user)):
     _require_dda()
     path = _normalize_library_path(path)
     try:
@@ -133,7 +134,11 @@ def local_thumb(path: str = Query(...)):
 
 
 @router.get("/local/preview")
-def local_preview(path: str = Query(...), max: int = Query(1600, ge=256, le=4096)):
+def local_preview(
+    path: str = Query(...),
+    max: int = Query(1600, ge=256, le=4096),
+    user: User = Depends(current_dda_user),
+):
     """Full-size preview for library image viewer (cached PNG)."""
     _require_dda()
     path = _normalize_library_path(path)
@@ -150,7 +155,7 @@ def local_preview(path: str = Query(...), max: int = Query(1600, ge=256, le=4096
 
 
 @router.get("/local/map-basemaps")
-def local_map_basemaps():
+def local_map_basemaps(user: User = Depends(current_dda_user)):
     """XYZ basemap presets (OSM, Google Satellite, custom URL)."""
     _require_dda()
     from .map_tiles import BASEMAP_PRESETS
@@ -158,7 +163,11 @@ def local_map_basemaps():
 
 
 @router.get("/local/map-info")
-def local_map_info(path: str = Query(...), db: Session = Depends(get_db)):
+def local_map_info(
+    path: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
     """WGS84 bounds + tile URL for overlaying a library raster on a web map."""
     _require_dda()
     path = _normalize_library_path(path)
@@ -180,6 +189,7 @@ def local_map_tile(
     x: int,
     y: int,
     path: str = Query(...),
+    user: User = Depends(current_dda_user),
 ):
     """XYZ tile of a georeferenced GeoTIFF warped to Web Mercator."""
     _require_dda()
@@ -202,6 +212,7 @@ def local_map_tile(
 def local_map_overview(
     path: str = Query(...),
     max: int = Query(2048, ge=256, le=4096),
+    user: User = Depends(current_dda_user),
 ):
     """Web-Mercator overview PNG for distortion-free overlay on XYZ basemaps."""
     _require_dda()
@@ -247,7 +258,7 @@ def local_delete_image(
 
 
 @router.post("/local/rescan")
-def local_rescan(db: Session = Depends(get_db)):
+def local_rescan(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
     from .tree.sync_service import sync_from_filesystem
 

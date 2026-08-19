@@ -177,7 +177,8 @@ function formatRegionAreaCell(r) {
   if (maskPx != null) tipParts.push(`Mask ${Math.round(maskPx).toLocaleString()} px`);
   const tip = tipParts.join(' · ');
   if (r.areaSqM != null && !Number.isNaN(Number(r.areaSqM))) {
-    return `<td class="region-area" title="${tip || 'Polygon footprint area'}">${Number(r.areaSqM).toLocaleString()} m²</td>`;
+    // Unit lives in the column header ("Area (m²)") now, not repeated per row.
+    return `<td class="region-area" title="${tip || 'Polygon footprint area'}">${Number(r.areaSqM).toLocaleString()}</td>`;
   }
   const px = polyPx != null ? polyPx : maskPx;
   if (px == null || Number.isNaN(px)) return '<td class="region-area">—</td>';
@@ -206,11 +207,11 @@ function buildDdaRegionRow(r) {
   const fpActive = reviewStatus === 'false_positive' ? ' is-active' : '';
   tr.innerHTML = `
       <td>${r.id}</td>
+      <td><span class="severity-badge ${severity}">${severity}</span></td>
       <td>${r.objectType}</td>
       <td>${ddaType}</td>
       <td>${latLng}</td>
       <td>${subType}</td>
-      <td><span class="severity-badge ${severity}">${severity}</span></td>
       <td>${(r.confidence * 100).toFixed(1)}%</td>
       ${formatRegionAreaCell(r)}
       <td>(${r.center.x}, ${r.center.y})</td>

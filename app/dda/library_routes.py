@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_or_create_guest_user
 from ..database import get_db
 from ..models import User
+from .dda_auth import current_dda_user
 from .config import (
     ALLOWED_EXTENSIONS,
     IS_DDA_MODE,
@@ -86,7 +87,7 @@ def dda_config():
 
 
 @router.get("/hierarchy")
-def get_hierarchy(db: Session = Depends(get_db)):
+def get_hierarchy(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
     from .tree.tree_service import build_tree
     return {"tree": build_tree(db)}
@@ -99,6 +100,7 @@ def list_images(
     year: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
 ):
     _require_dda()
     query = db.query(ImageAsset).order_by(ImageAsset.created_at.desc())
@@ -129,7 +131,7 @@ def list_images(
 
 
 @router.get("/images/{image_id}")
-def get_image(image_id: int, db: Session = Depends(get_db)):
+def get_image(image_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
     asset = db.query(ImageAsset).filter(ImageAsset.id == image_id).first()
     if not asset:
@@ -146,7 +148,7 @@ def get_image(image_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/images/{image_id}/thumb")
-def get_image_thumb(image_id: int, db: Session = Depends(get_db)):
+def get_image_thumb(image_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
     asset = db.query(ImageAsset).filter(ImageAsset.id == image_id).first()
     if not asset or not asset.thumb_path:

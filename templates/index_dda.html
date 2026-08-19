@@ -28,6 +28,10 @@
         </button>
         <div id="dda-notify-panel" class="dda-notify-panel hidden" role="menu"></div>
       </div>
+      <div class="dda-user-wrap">
+        <span id="dda-user-email" class="dim"></span>
+        <button type="button" id="dda-logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
+      </div>
     </header>
 
     <div id="dda-error" class="alert alert-error hidden"></div>
@@ -309,13 +313,13 @@
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>Severity</th>
                   <th>Change Type</th>
                   <th>DDA Type</th>
                   <th>Lat/Lng</th>
                   <th>Sub-Type</th>
-                  <th>Severity</th>
                   <th>Confidence</th>
-                  <th title="Polygon footprint area (m² when georeferenced)">Area</th>
+                  <th title="Polygon footprint area (m² when georeferenced; px when not)">Area (m²)</th>
                   <th>Coordinates</th>
                   <th>Stories</th>
                   <th>Height</th>
@@ -412,7 +416,8 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/static/js/dda/app.js?v=16"></script>
+  <script src="/static/js/dda/shared.js?v=1"></script>
+  <script src="/static/js/dda/app.js?v=18"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
   <script src="/static/js/dda/library.js?v=14"></script>
