@@ -122,6 +122,7 @@ def _run_job_sync(job_id: int) -> None:
             geo_bounds_path=base_file,
             comparison_file=comp_file,
             base_path=base_path,
+            comparison_path=comparison_path,
             user_id=job.created_by,
             job_id=job_id,
             gsd_debug=gsd_debug,

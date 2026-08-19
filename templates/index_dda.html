@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DDA Change Detection</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=32" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=21" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=23" />
 </head>
 <body>
   <div class="app dda-app">
@@ -238,17 +239,18 @@
         <button type="button" class="dda-view-btn" data-view="t1">Old Image (T1)</button>
         <button type="button" class="dda-view-btn" data-view="t2">New Image (T2)</button>
         <button type="button" class="dda-view-btn" data-view="overlay">Overlay</button>
+        <button type="button" class="dda-view-btn" data-view="map">Map</button>
         <button type="button" class="btn btn-secondary btn-sm" id="dda-locate-btn" title="Locate selected region" disabled>Locate</button>
       </div>
       <div class="result-modal-layout">
         <div class="result-modal-main">
-          <div class="zoom-slider-section">
-            <div class="zoom-controls">
-              <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-              <span class="zoom-level" id="zoom-level">100%</span>
-              <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-            </div>
-            <div class="zoom-wrapper" id="zoom-wrapper">
+            <div class="zoom-slider-section" id="dda-result-slider-pane">
+              <div class="zoom-controls">
+                <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+                <span class="zoom-level" id="zoom-level">100%</span>
+                <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+              </div>
+              <div class="zoom-wrapper" id="zoom-wrapper">
               <div class="compare-slider compare-slider-zoomed" id="compare-slider">
                 <div class="compare-before">
                   <img id="compare-before-img" alt="Before" draggable="false" />
@@ -269,6 +271,26 @@
                 <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
               </div>
             </div>
+          </div>
+          <div id="dda-result-map-pane" class="dda-map-pane hidden">
+            <div class="dda-map-toolbar">
+              <label class="dda-map-field">
+                <span>Basemap</span>
+                <select id="dda-res-basemap" aria-label="Basemap"></select>
+              </label>
+              <input type="url" id="dda-res-xyz" class="dda-map-xyz hidden" placeholder="https://…/{z}/{x}/{y}.png" aria-label="Custom XYZ URL" />
+              <label class="dda-check"><input type="checkbox" id="dda-res-overlay" checked /> TIF overlay</label>
+              <label class="dda-check"><input type="checkbox" id="dda-res-layer-t1" /> T1</label>
+              <label class="dda-check"><input type="checkbox" id="dda-res-layer-t2" checked /> T2</label>
+              <label class="dda-check"><input type="checkbox" id="dda-res-layer-changes" checked /> Changes</label>
+              <label class="dda-map-field dda-map-opacity">
+                <span>Opacity <em id="dda-res-opacity-val">75%</em></span>
+                <input type="range" id="dda-res-opacity" min="10" max="100" value="75" />
+              </label>
+              <button type="button" class="btn btn-secondary btn-sm" id="dda-res-fit">Fit extent</button>
+            </div>
+            <p id="dda-result-map-status" class="dim dda-map-status"></p>
+            <div id="dda-result-map" class="dda-map-canvas"></div>
           </div>
         </div>
         <aside class="result-modal-side">
@@ -323,8 +345,31 @@
       <div class="dda-image-viewer-body">
         <p id="dda-image-viewer-meta" class="dim"></p>
         <p id="dda-image-viewer-status" class="dim dda-image-viewer-status"></p>
-        <div class="dda-image-viewer-wrap">
-          <img id="dda-image-viewer-img" alt="" />
+        <div class="dda-viewer-mode-bar" role="tablist">
+          <button type="button" class="dda-view-btn active" id="dda-viewer-mode-preview" data-viewer-mode="preview">Preview</button>
+          <button type="button" class="dda-view-btn" id="dda-viewer-mode-map" data-viewer-mode="map">Map</button>
+        </div>
+        <div id="dda-image-viewer-preview-pane">
+          <div class="dda-image-viewer-wrap">
+            <img id="dda-image-viewer-img" alt="" />
+          </div>
+        </div>
+        <div id="dda-image-viewer-map-pane" class="dda-map-pane hidden">
+          <div class="dda-map-toolbar">
+            <label class="dda-map-field">
+              <span>Basemap</span>
+              <select id="dda-lib-basemap" aria-label="Basemap"></select>
+            </label>
+            <input type="url" id="dda-lib-xyz" class="dda-map-xyz hidden" placeholder="https://…/{z}/{x}/{y}.png" aria-label="Custom XYZ URL" />
+            <label class="dda-check"><input type="checkbox" id="dda-lib-overlay" checked /> TIF overlay</label>
+            <label class="dda-map-field dda-map-opacity">
+              <span>Opacity <em id="dda-lib-opacity-val">75%</em></span>
+              <input type="range" id="dda-lib-opacity" min="10" max="100" value="75" />
+            </label>
+            <button type="button" class="btn btn-secondary btn-sm" id="dda-lib-fit">Fit extent</button>
+          </div>
+          <p id="dda-library-map-status" class="dim dda-map-status"></p>
+          <div id="dda-library-map" class="dda-map-canvas"></div>
         </div>
       </div>
     </div>
@@ -366,10 +411,12 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/static/js/dda/app.js?v=16"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
-  <script src="/static/js/dda/library.js?v=12"></script>
-  <script src="/static/js/dda/result.js?v=16"></script>
+  <script src="/static/js/dda/map.js?v=4"></script>
+  <script src="/static/js/dda/library.js?v=14"></script>
+  <script src="/static/js/dda/result.js?v=17"></script>
   <script src="/static/js/dda/compare.js?v=17"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>
   <script src="/static/js/dda/notifications.js?v=1"></script>

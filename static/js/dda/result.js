@@ -15,6 +15,9 @@ const DDA_ZOOM_STEP = 0.25;
 let ddaShapeMode = 'polygon';
 // Detection working size for region/polygon coords (legacy compare PNG mismatch guard).
 let ddaDetSize = null;
+let ddaResultMap = null;
+let ddaResultMapBound = false;
+let ddaResultMapKey = '';
 
 function formatCompact(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -29,9 +32,20 @@ function reviewBadgeClass(status) {
 
 function setDdaViewMode(mode) {
   ddaViewMode = mode;
-  document.querySelectorAll('.dda-view-btn').forEach((btn) => {
+  document.querySelectorAll('.dda-view-toolbar .dda-view-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.view === mode);
   });
+  const sliderPane = document.getElementById('dda-result-slider-pane');
+  const mapPane = document.getElementById('dda-result-map-pane');
+  if (mode === 'map') {
+    sliderPane?.classList.add('hidden');
+    mapPane?.classList.remove('hidden');
+    loadDdaResultMap();
+    return;
+  }
+  sliderPane?.classList.remove('hidden');
+  mapPane?.classList.add('hidden');
+
   const slider = document.getElementById('compare-slider');
   const handle = document.getElementById('compare-handle');
   const beforeImg = document.getElementById('compare-before-img');
@@ -237,6 +251,7 @@ function showDdaResult(data) {
 
   ddaCurrentResult = data;
   ddaSelectedRegionId = null;
+  ddaResultMapKey = '';
   document.getElementById('dda-locate-btn')?.setAttribute('disabled', 'disabled');
 
   if (titleEl) titleEl.textContent = data.title || 'Detection Result';
@@ -585,7 +600,12 @@ function scrollViewerToRegion(r) {
 }
 
 function locateRegionOnViewer(r) {
-  if (!r || !r.bbox) return;
+  if (!r) return;
+  if (ddaViewMode === 'map' && ddaResultMap && r.latLng) {
+    ddaResultMap.locate(r.latLng.lat, r.latLng.lng, 19);
+    return;
+  }
+  if (!r.bbox) return;
   const beforeImg = document.getElementById('compare-before-img');
   const wrapper = document.getElementById('zoom-wrapper');
   if (!beforeImg || !wrapper) return;
@@ -647,6 +667,115 @@ function openDdaResultModal() {
   document.body.style.overflow = 'hidden';
 }
 
+function resultMapPaths(data) {
+  const cs = (typeof compareState !== 'undefined') ? compareState : null;
+  return {
+    t1: data?.basePath || cs?.t1?.path || '',
+    t2: data?.comparisonPath || cs?.t2?.path || '',
+  };
+}
+
+function setResultMapStatus(msg, isError) {
+  const el = document.getElementById('dda-result-map-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('dda-viewer-error', !!isError);
+}
+
+function bindResultMapLayerToggles() {
+  const t1 = document.getElementById('dda-res-layer-t1');
+  const t2 = document.getElementById('dda-res-layer-t2');
+  const ch = document.getElementById('dda-res-layer-changes');
+  if (t1 && !t1.dataset.ddaBound) {
+    t1.dataset.ddaBound = '1';
+    t1.addEventListener('change', () => ddaResultMap?.setLayerVisible('t1', t1.checked));
+  }
+  if (t2 && !t2.dataset.ddaBound) {
+    t2.dataset.ddaBound = '1';
+    t2.addEventListener('change', () => ddaResultMap?.setLayerVisible('t2', t2.checked));
+  }
+  if (ch && !ch.dataset.ddaBound) {
+    ch.dataset.ddaBound = '1';
+    ch.addEventListener('change', () => ddaResultMap?.setGeoJsonVisible(ch.checked));
+  }
+}
+
+async function loadDdaResultMap() {
+  const data = ddaCurrentResult;
+  if (!data) return;
+  if (typeof DdaMapViewer !== 'function') {
+    setResultMapStatus('Map library failed to load. Check your network connection.', true);
+    return;
+  }
+  if (!ddaResultMap) {
+    ddaResultMap = new DdaMapViewer('dda-result-map');
+  }
+  if (!ddaResultMapBound && typeof bindDdaMapToolbar === 'function') {
+    bindDdaMapToolbar(ddaResultMap, {
+      basemap: 'dda-res-basemap',
+      xyz: 'dda-res-xyz',
+      overlay: 'dda-res-overlay',
+      opacity: 'dda-res-opacity',
+      opacityVal: 'dda-res-opacity-val',
+      fit: 'dda-res-fit',
+    });
+    bindResultMapLayerToggles();
+    ddaResultMapBound = true;
+  }
+  ddaResultMap.ensureMap();
+  ddaResultMap.invalidate();
+
+  const paths = resultMapPaths(data);
+  const key = `${data.id || ''}|${paths.t1}|${paths.t2}`;
+  const geojson = typeof regionsToGeoJson === 'function'
+    ? regionsToGeoJson(ddaRegionList.length ? ddaRegionList : data.regions)
+    : { type: 'FeatureCollection', features: [] };
+
+  if (ddaResultMapKey === key && ddaResultMap.map) {
+    ddaResultMap.setGeoJson(geojson);
+    ddaResultMap.invalidate();
+    return;
+  }
+  ddaResultMapKey = key;
+  setResultMapStatus('Loading map overlays…', false);
+
+  const t1On = document.getElementById('dda-res-layer-t1')?.checked;
+  const t2On = document.getElementById('dda-res-layer-t2')?.checked;
+  const chOn = document.getElementById('dda-res-layer-changes')?.checked;
+  ddaResultMap.layerEnabled.t1 = !!t1On;
+  ddaResultMap.layerEnabled.t2 = t2On !== false;
+
+  const entries = [];
+  if (paths.t1) entries.push({ id: 't1', path: paths.t1 });
+  if (paths.t2) entries.push({ id: 't2', path: paths.t2 });
+
+  try {
+    const loaded = entries.length
+      ? await ddaResultMap.loadRasters(entries)
+      : { ok: false };
+    ddaResultMap.setGeoJson(geojson);
+    ddaResultMap.setGeoJsonVisible(chOn !== false);
+
+    if (!loaded.ok && !geojson.features.length) {
+      setResultMapStatus(
+        'No georeferenced TIF or region coordinates for this run. Overlay needs a GeoTIFF (or W,S,E,N bounds).',
+        true,
+      );
+      return;
+    }
+    const bits = [];
+    if (loaded.ok) bits.push('TIF overlay on Google/OSM');
+    if (geojson.features.length) bits.push(`${geojson.features.length} change footprints`);
+    setResultMapStatus(bits.join(' · ') + '. Toggle layers or the TIF overlay to compare with the basemap.', false);
+    if (!loaded.ok && geojson.features.length && ddaResultMap.geojsonLayer) {
+      ddaResultMap.fit(ddaResultMap.geojsonLayer.getBounds());
+    }
+  } catch (err) {
+    console.warn('Result map failed:', err);
+    setResultMapStatus(err.message || 'Could not load map overlay.', true);
+  }
+}
+
 function closeDdaResultModal() {
   const modal = document.getElementById('result-modal');
   if (!modal) return;
@@ -655,6 +784,11 @@ function closeDdaResultModal() {
   if (!picker || picker.classList.contains('hidden')) {
     document.body.style.overflow = '';
   }
+  if (ddaResultMap) {
+    ddaResultMap.clearRasters();
+    ddaResultMap.clearGeoJson();
+  }
+  ddaResultMapKey = '';
 }
 
 function resetDdaCompareSlider() {

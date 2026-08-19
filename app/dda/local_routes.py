@@ -5,7 +5,7 @@ from typing import Optional
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -147,6 +147,80 @@ def local_preview(path: str = Query(...), max: int = Query(1600, ge=256, le=4096
     except Exception as exc:
         logger.warning("Preview endpoint failed for %s: %s", path, exc)
         raise HTTPException(status_code=500, detail=f"Could not build preview: {exc}") from exc
+
+
+@router.get("/local/map-basemaps")
+def local_map_basemaps():
+    """XYZ basemap presets (OSM, Google Satellite, custom URL)."""
+    _require_dda()
+    from .map_tiles import BASEMAP_PRESETS
+    return {"basemaps": BASEMAP_PRESETS}
+
+
+@router.get("/local/map-info")
+def local_map_info(path: str = Query(...), db: Session = Depends(get_db)):
+    """WGS84 bounds + tile URL for overlaying a library raster on a web map."""
+    _require_dda()
+    path = _normalize_library_path(path)
+    try:
+        from .map_tiles import build_map_info
+        return build_map_info(path, db=db)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image file not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.warning("map-info failed for %s: %s", path, exc)
+        raise HTTPException(status_code=500, detail=f"Could not read georef: {exc}") from exc
+
+
+@router.get("/local/map-tiles/{z}/{x}/{y}.png")
+def local_map_tile(
+    z: int,
+    x: int,
+    y: int,
+    path: str = Query(...),
+):
+    """XYZ tile of a georeferenced GeoTIFF warped to Web Mercator."""
+    _require_dda()
+    path = _normalize_library_path(path)
+    try:
+        from .map_tiles import render_xyz_tile
+        png = render_xyz_tile(path, z, x, y)
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image file not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/local/map-overview")
+def local_map_overview(
+    path: str = Query(...),
+    max: int = Query(2048, ge=256, le=4096),
+):
+    """Web-Mercator overview PNG for distortion-free overlay on XYZ basemaps."""
+    _require_dda()
+    path = _normalize_library_path(path)
+    try:
+        from .map_tiles import render_mercator_overview
+        png = render_mercator_overview(path, max_side=max)
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image file not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.warning("map-overview failed for %s: %s", path, exc)
+        raise HTTPException(status_code=500, detail=f"Could not build overlay: {exc}") from exc
 
 
 @router.post("/local/images/delete")
@@ -297,6 +371,7 @@ async def detect_from_library(
             geo_bounds_path=base_file,
             comparison_file=comp_file,
             base_path=base_norm,
+            comparison_path=comp_norm,
             user_id=user.id,
             gsd_debug=gsd_debug,
             shape_mode=shape_mode,

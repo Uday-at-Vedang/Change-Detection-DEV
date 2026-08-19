@@ -1,6 +1,6 @@
 /** Image Library tab — upload, view, delete. */
 
-const libraryViewerState = { image: null, dragActive: false, objectUrl: null };
+const libraryViewerState = { image: null, dragActive: false, objectUrl: null, mode: 'preview', map: null, mapBound: false, mapLastPath: '' };
 
 function thumbUrlFor(path) {
   return `/api/dda/local/thumb?path=${encodeURIComponent(path)}`;
@@ -38,6 +38,73 @@ function findLibraryItem(path) {
   return items.find((img) => img.path === path) || null;
 }
 
+function setViewerMode(mode) {
+  libraryViewerState.mode = mode === 'map' ? 'map' : 'preview';
+  const previewPane = document.getElementById('dda-image-viewer-preview-pane');
+  const mapPane = document.getElementById('dda-image-viewer-map-pane');
+  document.getElementById('dda-viewer-mode-preview')?.classList.toggle('active', libraryViewerState.mode === 'preview');
+  document.getElementById('dda-viewer-mode-map')?.classList.toggle('active', libraryViewerState.mode === 'map');
+  previewPane?.classList.toggle('hidden', libraryViewerState.mode !== 'preview');
+  mapPane?.classList.toggle('hidden', libraryViewerState.mode !== 'map');
+  if (libraryViewerState.mode === 'map' && libraryViewerState.image) {
+    openLibraryMap(libraryViewerState.image);
+  }
+}
+
+function setLibraryMapStatus(msg, isError) {
+  const el = document.getElementById('dda-library-map-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('dda-viewer-error', !!isError);
+}
+
+async function openLibraryMap(img) {
+  const status = (msg, err) => setLibraryMapStatus(msg, err);
+  if (typeof DdaMapViewer !== 'function') {
+    status('Map library failed to load. Check your network connection.', true);
+    return;
+  }
+  if (!libraryViewerState.map) {
+    libraryViewerState.map = new DdaMapViewer('dda-library-map');
+  }
+  if (!libraryViewerState.mapBound && typeof bindDdaMapToolbar === 'function') {
+    bindDdaMapToolbar(libraryViewerState.map, {
+      basemap: 'dda-lib-basemap',
+      xyz: 'dda-lib-xyz',
+      overlay: 'dda-lib-overlay',
+      opacity: 'dda-lib-opacity',
+      opacityVal: 'dda-lib-opacity-val',
+      fit: 'dda-lib-fit',
+    });
+    libraryViewerState.mapBound = true;
+  }
+  libraryViewerState.map.ensureMap();
+  libraryViewerState.map.invalidate();
+  requestAnimationFrame(() => libraryViewerState.map.invalidate());
+  if (libraryViewerState.mapLastPath === img.path && libraryViewerState.map.rasterLayers.tif) {
+    status('Overlay on the basemap. Toggle the TIF overlay to compare.', false);
+    return;
+  }
+  status('Loading georeferenced overlay…', false);
+  try {
+    const result = await libraryViewerState.map.loadRaster(img.path);
+    libraryViewerState.mapLastPath = img.path;
+    if (!result.ok) {
+      status(
+        'This image has no georeferencing (CRS / world file / bounds), so it cannot be placed on the map. Upload a GeoTIFF or enter W,S,E,N bounds.',
+        true,
+      );
+      return;
+    }
+    const src = result.info?.georefSource || 'georef';
+    const crs = result.info?.crs ? ` · ${result.info.crs}` : '';
+    status(`Overlay on ${result.info?.canTile ? 'XYZ tiles' : 'preview'} (${src}${crs}). Toggle the TIF overlay to compare with the basemap.`, false);
+  } catch (err) {
+    console.warn('Library map failed:', err);
+    status(err.message || 'Could not load map overlay.', true);
+  }
+}
+
 function openLibraryImageViewer(img) {
   const modal = document.getElementById('dda-image-viewer-modal');
   const title = document.getElementById('dda-image-viewer-title');
@@ -53,11 +120,13 @@ function openLibraryImageViewer(img) {
     img.imageType || '',
     typeof formatBytes === 'function' ? formatBytes(img.fileSizeBytes) : '',
     img.width && img.height ? `${img.width}×${img.height}` : '',
+    img.hasGeoref ? 'georeferenced' : '',
   ].filter(Boolean);
   meta.textContent = parts.join(' · ');
   imageEl.alt = img.filename || 'Library image';
   imageEl.removeAttribute('src');
   setViewerStatus('Loading preview…', false);
+  setViewerMode('preview');
   modal.classList.remove('hidden');
   loadPreviewIntoViewer(img, imageEl);
 }
@@ -106,7 +175,14 @@ function closeLibraryImageViewer() {
   }
   revokeViewerObjectUrl();
   setViewerStatus('', false);
+  setLibraryMapStatus('', false);
   libraryViewerState.image = null;
+  libraryViewerState.mapLastPath = '';
+  if (libraryViewerState.map) {
+    libraryViewerState.map.clearRasters();
+    libraryViewerState.map.clearGeoJson();
+  }
+  setViewerMode('preview');
 }
 
 async function deleteLibraryImage(img) {
@@ -165,6 +241,8 @@ function bindLibraryGridCards(grid) {
 }
 
 document.getElementById('dda-image-viewer-close')?.addEventListener('click', closeLibraryImageViewer);
+document.getElementById('dda-viewer-mode-preview')?.addEventListener('click', () => setViewerMode('preview'));
+document.getElementById('dda-viewer-mode-map')?.addEventListener('click', () => setViewerMode('map'));
 document.getElementById('dda-image-delete-btn')?.addEventListener('click', () => {
   if (libraryViewerState.image) deleteLibraryImage(libraryViewerState.image);
 });

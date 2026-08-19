@@ -338,7 +338,7 @@
 .dda-picker-item span { padding: 0.4rem 0.5rem; font-size: 0.75rem; }
 
 .dda-image-viewer-panel {
-  width: min(1100px, 96vw);
+  width: min(1200px, 96vw);
   max-height: 92vh;
   display: flex;
   flex-direction: column;
@@ -370,6 +370,74 @@
 }
 .dda-image-viewer-status { min-height: 1.2rem; margin: 0 0 0.5rem; }
 .dda-image-viewer-status.dda-viewer-error { color: var(--danger, #dc2626); }
+
+.dda-viewer-mode-bar {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 0 0.65rem;
+}
+.dda-map-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 420px;
+}
+.dda-map-pane.hidden { display: none; }
+.dda-map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.9rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.dda-map-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.dda-map-field span { white-space: nowrap; }
+.dda-map-field select,
+.dda-map-xyz {
+  min-width: 180px;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.dda-map-xyz { min-width: 260px; flex: 1; }
+.dda-map-opacity input[type="range"] { width: 110px; vertical-align: middle; }
+.dda-map-opacity em { font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
+.dda-map-status { min-height: 1.1rem; margin: 0; font-size: 0.8rem; }
+.dda-map-canvas {
+  height: min(62vh, 640px);
+  min-height: 360px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #1a1a2e;
+  z-index: 1;
+}
+.dda-map-canvas.leaflet-container {
+  height: min(62vh, 640px);
+}
+.dda-map-canvas .leaflet-ddaRaster-pane {
+  z-index: 450;
+  pointer-events: none;
+}
+.dda-map-canvas .leaflet-image-layer,
+.dda-map-canvas .dda-raster-overview {
+  max-width: none !important;
+  max-height: none !important;
+}
+#dda-result-map-pane .dda-map-canvas { height: min(58vh, 560px); }
+#dda-result-map-pane .dda-map-canvas.leaflet-container { height: min(58vh, 560px); }
 
 .dda-result-overlay { margin: 1rem 0; }
 .dda-result-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }

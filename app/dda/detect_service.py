@@ -203,6 +203,7 @@ def run_detection_and_save(
     geo_bounds_path: Optional[Path] = None,
     comparison_file: Optional[Path] = None,
     base_path: str = "",
+    comparison_path: str = "",
     user_id: Optional[int] = None,
     job_id: Optional[int] = None,
     gsd_debug: Optional[dict] = None,
@@ -442,6 +443,8 @@ def run_detection_and_save(
         "method": run.method,
         "zone": run.zone or "",
         "village": run.village or "",
+        "basePath": base_path,
+        "comparisonPath": comparison_path,
         "statistics": {
             "totalPixels": total_px,
             "changedPixels": changed_px,
