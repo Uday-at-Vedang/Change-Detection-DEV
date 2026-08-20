@@ -1,6 +1,6 @@
 /** Change Detection tab — pick library images and run comparison. */
 
-const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [], roi: null, shapeMode: 'polygon' };
+const compareState = { t1: null, t2: null, pickingSlot: null, selectedNode: null, allLibraryItems: [], roi: null, shapeMode: 'polygon', mode: 'automatic' };
 
 // --- Region shape toggle (polygon footprints vs classic bounding boxes) -----
 // Detection itself is identical either way; this only picks how regions are
@@ -58,8 +58,60 @@ function ensureDdaState() {
 
 function updateRunButton() {
   const btn = document.getElementById('btn-run-job');
-  if (btn) btn.disabled = !(compareState.t1 && compareState.t2);
+  if (btn) {
+    btn.disabled = !(compareState.t1 && compareState.t2);
+    btn.textContent = compareState.roi
+      ? 'Run on selection'
+      : (compareState.mode === 'automatic' ? 'Run automatic detection' : 'Run Detection');
+  }
   updateRoiUi();
+}
+
+function getDetectMode() {
+  return compareState.mode === 'manual' ? 'manual' : 'automatic';
+}
+
+function setDetectMode(mode, { applyPair } = { applyPair: true }) {
+  compareState.mode = mode === 'manual' ? 'manual' : 'automatic';
+  localStorage.setItem('ddaDetectMode', compareState.mode);
+  const tab = document.getElementById('tab-detect');
+  tab?.classList.toggle('dda-mode-automatic', compareState.mode === 'automatic');
+  tab?.classList.toggle('dda-mode-manual', compareState.mode === 'manual');
+  document.querySelectorAll('#dda-detect-mode .dda-mode-btn').forEach((btn) => {
+    const on = btn.dataset.mode === compareState.mode;
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  const help = document.getElementById('dda-detect-mode-help');
+  if (help) {
+    help.innerHTML = compareState.mode === 'automatic'
+      ? 'Automatic: the system selects the oldest image as <strong>Before</strong> and the newest as <strong>After</strong> for the chosen area, then runs change detection.'
+      : 'Manual: pick the Before and After images yourself (dropdowns, library cards, or drag-and-drop), then run change detection.';
+  }
+  if (compareState.mode === 'automatic' && applyPair !== false && typeof applySelectedAutoPair === 'function') {
+    applySelectedAutoPair();
+  }
+  updateRunButton();
+}
+
+function initDetectMode() {
+  const wrap = document.getElementById('dda-detect-mode');
+  if (!wrap || wrap.dataset.bound) {
+    setDetectMode(compareState.mode, { applyPair: false });
+    return;
+  }
+  wrap.dataset.bound = '1';
+  const saved = localStorage.getItem('ddaDetectMode');
+  if (saved === 'manual' || saved === 'automatic') compareState.mode = saved;
+  wrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dda-mode-btn');
+    if (!btn) return;
+    setDetectMode(btn.dataset.mode);
+  });
+  document.getElementById('dda-auto-area')?.addEventListener('change', () => {
+    if (typeof applySelectedAutoPair === 'function') applySelectedAutoPair();
+  });
+  setDetectMode(compareState.mode, { applyPair: false });
 }
 
 function renderSlotPreview(slotKey, selection) {
@@ -77,7 +129,7 @@ function renderSlotPreview(slotKey, selection) {
   const thumb = selection.thumbUrl || thumbUrlFor(selection.path);
   wrap.innerHTML = `
     <img class="dda-slot-preview" src="${thumb}" alt="" />
-    <div class="dda-slot-meta">${escapeHtml(selection.label || selection.filename)}</div>`;
+    <div class="dda-slot-meta">${escapeHtml(selection.label || selection.filename)}${selection.captureDate ? `<br/><span class="dim">${escapeHtml(String(selection.captureDate).slice(0, 10))}</span>` : ''}</div>`;
   if (slotKey === 't2') setupRoiDraw();
 }
 
@@ -101,7 +153,11 @@ function updateRoiUi() {
   if (hint) hint.textContent = roiHintText(compareState.roi);
   if (ctr) ctr.classList.toggle('hidden', !compareState.t2);
   if (clr) clr.classList.toggle('hidden', !compareState.roi);
-  if (btn) btn.textContent = compareState.roi ? 'Run on selection' : 'Run Detection';
+  if (btn && !compareState.roi) {
+    btn.textContent = compareState.mode === 'automatic' ? 'Run automatic detection' : 'Run Detection';
+  } else if (btn) {
+    btn.textContent = 'Run on selection';
+  }
 }
 
 function clearRoi(refreshUi = true) {
@@ -197,18 +253,24 @@ function populateSelects(items) {
     const current = sel.value;
     const label = id === 'select-t1' ? '— Choose old image —' : '— Choose new image —';
     sel.innerHTML = `<option value="">${label}</option>` +
-      items.map((img) => `<option value="${encodePath(img.path)}">${escapeHtml(img.breadcrumb || img.nodePath || img.filename)}</option>`).join('');
+      items.map((img) => {
+        const date = img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : '';
+        return `<option value="${encodePath(img.path)}">${escapeHtml(date + (img.breadcrumb || img.nodePath || img.filename))}</option>`;
+      }).join('');
     if (current) sel.value = current;
   });
 }
 
-function setSlot(slotKey, img) {
+function setSlot(slotKey, img, options) {
   if (!img || !img.path) return;
+  const opts = options || {};
+  const date = img.captureDate ? String(img.captureDate).slice(0, 10) : '';
   const item = {
     path: img.path,
     label: img.breadcrumb || img.nodePath || img.filename,
     filename: img.filename,
     thumbUrl: img.thumbUrl || thumbUrlFor(img.path),
+    captureDate: img.captureDate || null,
   };
   if (slotKey === 't1') {
     compareState.t1 = item;
@@ -224,10 +286,30 @@ function setSlot(slotKey, img) {
   }
   updateRunButton();
   refreshCompareLibrarySelection();
-  if (typeof showDdaSuccess === 'function') {
-    showDdaSuccess(`${slotKey.toUpperCase()} set: ${item.filename}`);
+  if (!opts.silent && typeof showDdaSuccess === 'function') {
+    const when = date ? ` (${date})` : '';
+    showDdaSuccess(`${slotKey === 't1' ? 'Before' : 'After'} set: ${item.filename}${when}`);
   }
 }
+
+function applyAreaPairToCompare(before, after, options) {
+  const opts = options || {};
+  if (opts.onlyIfEmpty && (compareState.t1 || compareState.t2)) return false;
+  if (!before?.path || !after?.path) return false;
+  if (before.path === after.path) {
+    if (!opts.silent && typeof showDdaError === 'function') {
+      showDdaError('Before and After must be two different images. Pick another date in the dropdown.');
+    }
+    return false;
+  }
+  setSlot('t1', before, { silent: true });
+  setSlot('t2', after, { silent: true });
+  if (!opts.silent && typeof showDdaSuccess === 'function') {
+    showDdaSuccess(`Before: ${before.filename} → After: ${after.filename}`);
+  }
+  return true;
+}
+window.applyAreaPairToCompare = applyAreaPairToCompare;
 
 function findLibraryItem(path) {
   const norm = decodePath(path);
@@ -324,6 +406,12 @@ async function loadCompareLibraryGrid() {
 
     ensureDdaState().libraryItems = gridItems;
     renderCompareGrid(gridItems);
+    if (typeof loadAreaPairs === 'function') {
+      loadAreaPairs({
+        nodeId: compareState.selectedNode?.id || null,
+        autoFillCompare: true,
+      });
+    }
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
     if (typeof showDdaError === 'function') showDdaError(err.message);
@@ -611,7 +699,11 @@ async function pollJobUntilDone(jobId) {
 
 async function runLibraryDetection() {
   if (!compareState.t1 || !compareState.t2) {
-    if (typeof showDdaError === 'function') showDdaError('Select both T1 (old) and T2 (new) images first.');
+    if (typeof showDdaError === 'function') showDdaError(
+      compareState.mode === 'automatic'
+        ? 'No Before/After pair for this area yet. Add two dates of the same place, or switch to Manual.'
+        : 'Select both Before and After images first.',
+    );
     return;
   }
   const btn = document.getElementById('btn-run-job');
@@ -661,6 +753,7 @@ let compareInitialized = false;
 
 function initCompareTab() {
   initShapeToggle();
+  initDetectMode();
   if (!compareInitialized) {
     if (typeof registerCompareTreeSidebar === 'function') {
       registerCompareTreeSidebar({
@@ -691,6 +784,8 @@ function initCompareTab() {
 
 window.loadCompareLibraryGrid = loadCompareLibraryGrid;
 window.initCompareTab = initCompareTab;
+window.getDetectMode = getDetectMode;
+window.setDetectMode = setDetectMode;
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initCompareTab);

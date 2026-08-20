@@ -130,12 +130,15 @@ async function loadLibraryImages() {
         ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
         <div class="meta">
           <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
-          <span class="dim">${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
+          <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
         </div>
       </div>`;
     }).join('');
     if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
     if (typeof loadCompareLibraryGrid === 'function') loadCompareLibraryGrid();
+    if (typeof loadAreaPairs === 'function') {
+      loadAreaPairs({ nodeId: selectedNode.id || null });
+    }
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
   }
