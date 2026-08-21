@@ -116,6 +116,34 @@ def local_images(
     return list_all_images(db, node_id=node_id, query=q)
 
 
+@router.get("/local/area-groups")
+def local_area_groups(
+    node_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Images covering the same place, with oldest → Before and newest → After."""
+    _require_dda()
+    from .tree.area_groups import build_area_groups
+    from .tree.tree_service import get_node_or_404
+
+    images = list_all_images(db)
+    payload = build_area_groups(images)
+    if node_id:
+        node = get_node_or_404(db, node_id)
+        prefix = (node.node_path or "").rstrip("/")
+        def _in_node(img: dict) -> bool:
+            path = (img.get("nodePath") or "").rstrip("/")
+            return path == prefix or path.startswith(prefix + "/") or img.get("nodeId") == node.id
+        payload["groups"] = [
+            g for g in payload["groups"]
+            if any(_in_node(img) for img in g.get("images") or [])
+        ]
+        payload["unpaired"] = [img for img in payload["unpaired"] if _in_node(img)]
+        payload["pairedImages"] = sum(len(g.get("images") or []) for g in payload["groups"])
+    return payload
+
+
 @router.get("/local/thumb")
 def local_thumb(path: str = Query(...), user: User = Depends(current_dda_user)):
     _require_dda()
@@ -155,7 +183,7 @@ def local_preview(
 
 
 @router.get("/local/map-basemaps")
-def local_map_basemaps():
+def local_map_basemaps(user: User = Depends(current_dda_user)):
     """XYZ basemap presets (OSM, Google Satellite, custom URL)."""
     _require_dda()
     from .map_tiles import BASEMAP_PRESETS
@@ -163,7 +191,11 @@ def local_map_basemaps():
 
 
 @router.get("/local/map-info")
-def local_map_info(path: str = Query(...), db: Session = Depends(get_db)):
+def local_map_info(
+    path: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
     """WGS84 bounds + tile URL for overlaying a library raster on a web map."""
     _require_dda()
     path = _normalize_library_path(path)
@@ -185,6 +217,7 @@ def local_map_tile(
     x: int,
     y: int,
     path: str = Query(...),
+    user: User = Depends(current_dda_user),
 ):
     """XYZ tile of a georeferenced GeoTIFF warped to Web Mercator."""
     _require_dda()
@@ -207,6 +240,7 @@ def local_map_tile(
 def local_map_overview(
     path: str = Query(...),
     max: int = Query(2048, ge=256, le=4096),
+    user: User = Depends(current_dda_user),
 ):
     """Web-Mercator overview PNG for distortion-free overlay on XYZ basemaps."""
     _require_dda()

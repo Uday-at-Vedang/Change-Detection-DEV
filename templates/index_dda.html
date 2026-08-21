@@ -100,6 +100,14 @@
               <button type="submit" class="btn btn-primary" id="btn-tree-upload">Upload to node</button>
             </form>
           </div>
+          <div class="card" id="dda-area-pairs-card">
+            <div class="card-header">
+              <h3>Same-area pairs</h3>
+              <span class="dim" id="dda-area-pairs-hint"></span>
+            </div>
+            <p class="sub">Images that cover the same place are grouped automatically. The oldest is <strong>Before</strong> and the newest is <strong>After</strong>. Use the dropdowns to pick a different date if needed.</p>
+            <div id="dda-area-pairs" class="dda-area-pairs"><p class="dim">Loading pairs…</p></div>
+          </div>
           <div class="card">
             <div class="card-header">
               <h3 id="lib-grid-title">Images</h3>
@@ -126,11 +134,26 @@
         </aside>
         <main class="dda-main">
           <div class="card">
-            <div class="card-header"><h3>Compare Images</h3></div>
-            <p class="sub">Select <strong>Old Image (T1)</strong> and <strong>New Image (T2)</strong> from the library, then run detection.</p>
+            <div class="card-header">
+              <h3>Change Detection</h3>
+              <div class="dda-mode-toggle" id="dda-detect-mode" role="radiogroup" aria-label="Detection mode">
+                <button type="button" class="dda-mode-btn is-active" data-mode="automatic" role="radio" aria-checked="true">Automatic</button>
+                <button type="button" class="dda-mode-btn" data-mode="manual" role="radio" aria-checked="false">Manual</button>
+              </div>
+            </div>
+            <p class="sub" id="dda-detect-mode-help"></p>
+            <div id="dda-auto-compare" class="dda-auto-compare">
+              <div class="form-group">
+                <label for="dda-auto-area">Area</label>
+                <select id="dda-auto-area" aria-label="Area to detect">
+                  <option value="">Loading areas…</option>
+                </select>
+              </div>
+              <p id="dda-auto-status" class="dim"></p>
+            </div>
             <div class="dda-compare-slots">
               <div class="dda-slot" id="slot-t1" data-slot="t1">
-                <span class="dda-slot-label">Old Image (T1)</span>
+                <span class="dda-slot-label">Before (T1)</span>
                 <div id="slot-t1-preview" class="dda-slot-preview-wrap"></div>
                 <select id="select-t1" class="dda-image-select" aria-label="Select old image">
                   <option value="">— Choose old image —</option>
@@ -138,7 +161,7 @@
                 <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t1">Browse library</button>
               </div>
               <div class="dda-slot" id="slot-t2" data-slot="t2">
-                <span class="dda-slot-label">New Image (T2)</span>
+                <span class="dda-slot-label">After (T2)</span>
                 <div id="slot-t2-preview" class="dda-slot-preview-wrap"></div>
                 <select id="select-t2" class="dda-image-select" aria-label="Select new image">
                   <option value="">— Choose new image —</option>
@@ -146,6 +169,8 @@
                 <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t2">Browse library</button>
               </div>
             </div>
+            <div id="dda-manual-compare">
+            <div id="dda-compare-pairs" class="dda-area-pairs dda-compare-pairs"></div>
             <div class="dda-compare-library card">
               <div class="card-header">
                 <h3 id="compare-grid-title">Pick from library</h3>
@@ -154,6 +179,7 @@
               <div id="compare-lib-grid" class="dda-grid dda-compare-grid">
                 <p class="dim">Loading library images…</p>
               </div>
+            </div>
             </div>
             <div class="dda-detect-options">
               <div class="form-group">
@@ -434,10 +460,11 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/static/js/dda/shared.js?v=1"></script>
-  <script src="/static/js/dda/app.js?v=18"></script>
+  <script src="/static/js/dda/app.js?v=20"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
   <script src="/static/js/dda/library.js?v=15"></script>
+  <script src="/static/js/dda/pairs.js?v=2"></script>
   <script src="/static/js/dda/result.js?v=20"></script>
   <script src="/static/js/dda/compare.js?v=20"></script>
   <script src="/static/js/dda/reports.js?v=4"></script>

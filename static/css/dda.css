@@ -773,3 +773,91 @@
 .dda-shape-btn + .dda-shape-btn { border-left: 1px solid var(--border, #d0d5dd); }
 .dda-shape-btn:hover { background: rgba(46, 84, 150, 0.08); }
 .dda-shape-btn.is-active { background: #2e5496; color: #fff; }
+
+#tab-detect.dda-mode-automatic #dda-manual-compare,
+#tab-detect.dda-mode-automatic .dda-image-select,
+#tab-detect.dda-mode-automatic .dda-slot-pick { display: none; }
+#tab-detect.dda-mode-manual #dda-auto-compare { display: none; }
+.dda-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.dda-mode-btn {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.dda-mode-btn + .dda-mode-btn { border-left: 1px solid var(--border); }
+.dda-mode-btn:hover { background: rgba(46, 84, 150, 0.08); }
+.dda-mode-btn.is-active { background: #2e5496; color: #fff; }
+.dda-auto-compare {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr);
+  gap: 0.35rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.dda-auto-compare select {
+  width: 100%;
+  max-width: 420px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text);
+}
+.dda-shape-btn:hover { background: rgba(46, 84, 150, 0.08); }
+.dda-shape-btn.is-active { background: #2e5496; color: #fff; }
+
+.dda-area-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+.dda-compare-pairs { max-height: 28vh; margin: 0.75rem 0 1rem; }
+.dda-area-pair {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) 1fr 1fr auto;
+  gap: 0.65rem 0.85rem;
+  align-items: end;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.dda-area-pair-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.dda-area-pair-meta { margin: 0.15rem 0 0; font-size: 0.78rem; }
+.dda-area-pair label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.dda-area-pair select {
+  width: 100%;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.dda-area-pair-overridden { font-size: 0.72rem; color: var(--grad-start); }
+@media (max-width: 900px) {
+  .dda-area-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dda-area-pair-head { grid-column: 1 / -1; }
+  .dda-area-pair-actions { grid-column: 1 / -1; }
+}

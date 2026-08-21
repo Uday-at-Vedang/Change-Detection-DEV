@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -14,12 +15,22 @@ from .models import User, LoginHistory
 
 logger = logging.getLogger(__name__)
 
-_FALLBACK_KEY = "dev-fallback-key-change-in-production"
-SECRET_KEY = os.environ.get("SECRET_KEY", _FALLBACK_KEY)
-if SECRET_KEY == _FALLBACK_KEY:
+_env_secret = os.environ.get("SECRET_KEY", "").strip()
+if _env_secret:
+    SECRET_KEY = _env_secret
+else:
+    # Never fall back to a fixed/shared string here — a hardcoded value in
+    # source is visible to anyone with the repo, and could be used to forge a
+    # valid login cookie for any user id without ever knowing a password.
+    # A fresh random secret per process closes that hole; the trade-off is
+    # every existing session is invalidated on each restart until a
+    # persistent SECRET_KEY is set in the environment (see .env.example).
+    SECRET_KEY = secrets.token_hex(32)
     logger.warning(
-        "SECRET_KEY env var not set — using insecure fallback. "
-        "Set SECRET_KEY to a random string in production!"
+        "SECRET_KEY env var not set — generated a random one-time secret for "
+        "this process (existing sessions will be invalidated on restart). "
+        "Set SECRET_KEY to a persistent random string in your environment, "
+        "especially in production — see .env.example."
     )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
