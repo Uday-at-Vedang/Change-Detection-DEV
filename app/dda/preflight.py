@@ -16,7 +16,12 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from ..detection_config import get_gsd_tolerance, get_min_overlap_hard, get_min_overlap_warn
+from ..detection_config import (
+    get_gsd_tolerance,
+    get_max_aspect_ratio_diff,
+    get_min_overlap_hard,
+    get_min_overlap_warn,
+)
 from .geo_regions import BoundsWGS84, resolve_geo_context
 from .geotiff_io import inspect_image, read_georef, read_gsd_meters
 
@@ -30,6 +35,8 @@ _MODE_BAND_COUNTS = {
     "RGB": 3, "YCbCr": 3, "P": 3,
     "RGBA": 4, "CMYK": 4,
 }
+
+_NON_RGB_BAND_KEYWORDS = ("nir", "infrared", "swir", "thermal", "alpha", "panchromatic")
 
 
 @dataclass
@@ -83,14 +90,71 @@ def _rect_overlap_frac(
     return inter_area / after_area
 
 
+def _apply_roi_to_bounds(
+    bounds: Optional[BoundsWGS84], roi: Optional[dict],
+) -> Optional[BoundsWGS84]:
+    """Crop a WGS84 rectangle to a fractional {x,y,w,h} ROI window.
+
+    Mirrors ``load_rgb_roi``'s convention: x/y are the top-left corner and
+    y grows downward in the image's own pixel grid, i.e. y=0 is the image's
+    top edge (north when north-up). The same fractional window is applied to
+    both images by the caller (matching how detection itself crops both
+    images to the same fractional ROI), so overlap is checked on the actual
+    selected area rather than the full footprint.
+    """
+    if not bounds or not roi:
+        return bounds
+    west, south, east, north = bounds
+    x, y, w, h = roi["x"], roi["y"], roi["w"], roi["h"]
+    roi_west = west + x * (east - west)
+    roi_east = west + (x + w) * (east - west)
+    roi_north = north - y * (north - south)
+    roi_south = north - (y + h) * (north - south)
+    return (roi_west, roi_south, roi_east, roi_north)
+
+
+def read_band_descriptions(path: Path) -> Optional[List[str]]:
+    """First-3-band GDAL band descriptions, when the file has any set."""
+    try:
+        import rasterio
+        with rasterio.open(path) as src:
+            return list(src.descriptions[:3])
+    except Exception:
+        return None
+
+
+def _suspicious_band_order(descriptions: Optional[List[Optional[str]]]) -> bool:
+    """Best-effort hint only — most files carry no band descriptions at all,
+    so this stays silent far more often than it fires. There is no reliable
+    way to verify true RGB band *order* from metadata alone; this only flags
+    the case where a sensor explicitly labelled a leading band as non-visible
+    (e.g. NIR), which is worth a second look before trusting on-screen color.
+    """
+    if not descriptions:
+        return False
+    for d in descriptions:
+        if not d:
+            continue
+        low = d.lower()
+        if any(kw in low for kw in _NON_RGB_BAND_KEYWORDS):
+            return True
+    return False
+
+
 def run_preflight_checks(
     db: Session,
     before_path: Path,
     after_path: Path,
     before_rel: str,
     after_rel: str,
+    roi: Optional[dict] = None,
 ) -> PreflightResult:
-    """Validate a (before, after) library image pair before decoding pixels."""
+    """Validate a (before, after) library image pair before decoding pixels.
+
+    ``roi`` (optional fractional ``{x,y,w,h}``) narrows the overlap check to
+    the actually-selected crop window instead of the full image footprints,
+    matching what detection itself will run on when a ROI is set.
+    """
     result = PreflightResult()
 
     # 1. Readability
@@ -125,10 +189,29 @@ def run_preflight_checks(
             result.fail_reason = f"{label} image has an unsupported 2-band layout: {path.name}"
             result.checks.append(CheckResult("bands", "fail", result.fail_reason))
             return result
+    band_msgs = []
     if before_bands == 1 or after_bands == 1:
-        msg = "One or both images are single-band (grayscale) — detection runs on a tripled grayscale channel."
-        result.warnings.append(msg)
-        result.checks.append(CheckResult("bands", "warn", msg))
+        band_msgs.append(
+            "One or both images are single-band (grayscale) — detection runs on a tripled grayscale channel.")
+    extra_band_labels = [
+        label for label, bands in (("Before", before_bands), ("After", after_bands)) if bands > 3
+    ]
+    if extra_band_labels:
+        band_msgs.append(
+            f"{' and '.join(extra_band_labels)} image has more than 3 bands — "
+            "only the first 3 are used for detection.")
+    suspicious_labels = [
+        label for label, path in (("Before", before_path), ("After", after_path))
+        if _suspicious_band_order(read_band_descriptions(path))
+    ]
+    if suspicious_labels:
+        band_msgs.append(
+            f"{' and '.join(suspicious_labels)} image band descriptions suggest non-RGB content "
+            "(e.g. NIR/infrared) in the first bands — verify band order before relying on colors.")
+    if band_msgs:
+        for msg in band_msgs:
+            result.warnings.append(msg)
+            result.checks.append(CheckResult("bands", "warn", msg))
     else:
         result.checks.append(CheckResult("bands", "pass"))
 
@@ -144,6 +227,22 @@ def run_preflight_checks(
             "georef", "pass", "Neither image is georeferenced — treated as a plain photo pair."))
         result.checks.append(CheckResult("crs", "pass"))
         result.checks.append(CheckResult("gsd", "pass"))
+        # With no georeferencing, overlap can't be checked geographically — but
+        # detection still force-resizes "after" to "before"'s pixel dimensions
+        # regardless, so a large aspect-ratio gap is worth flagging here instead.
+        ratio_b = before_meta.width / before_meta.height if before_meta.height else 0.0
+        ratio_a = after_meta.width / after_meta.height if after_meta.height else 0.0
+        if ratio_b > 0 and ratio_a > 0:
+            rel_diff = abs(ratio_b - ratio_a) / max(ratio_b, ratio_a)
+            if rel_diff > get_max_aspect_ratio_diff():
+                msg = (
+                    f"Images have different aspect ratios (before {before_meta.width}x{before_meta.height}, "
+                    f"after {after_meta.width}x{after_meta.height}) — the after image will be stretched "
+                    "to match, which may distort content.")
+                result.warnings.append(msg)
+                result.checks.append(CheckResult("aspect_ratio", "warn", msg))
+            else:
+                result.checks.append(CheckResult("aspect_ratio", "pass"))
         result.checks.append(CheckResult("overlap", "pass"))
         return result
 
@@ -190,20 +289,24 @@ def run_preflight_checks(
     else:
         result.checks.append(CheckResult("gsd", "pass"))
 
-    # 6. Overlap
-    overlap_frac = _rect_overlap_frac(before_geo.bounds, after_geo.bounds)
+    # 6. Overlap — cropped to the selected ROI when one is set, so the check
+    # reflects the area detection will actually run on, not the full images.
+    before_bounds = _apply_roi_to_bounds(before_geo.bounds, roi)
+    after_bounds = _apply_roi_to_bounds(after_geo.bounds, roi)
+    roi_note = " within the selected area" if roi else ""
+    overlap_frac = _rect_overlap_frac(before_bounds, after_bounds)
     if overlap_frac is not None:
         hard_min = get_min_overlap_hard()
         warn_min = get_min_overlap_warn()
         if overlap_frac < hard_min:
             result.hard_fail = True
             result.fail_reason = (
-                f"Images do not overlap on the ground (overlap {overlap_frac * 100:.1f}% "
+                f"Images do not overlap on the ground{roi_note} (overlap {overlap_frac * 100:.1f}% "
                 "of the after-image footprint) — not suitable for change detection.")
             result.checks.append(CheckResult("overlap", "fail", result.fail_reason))
             return result
         if overlap_frac < warn_min:
-            msg = f"Weak geographic overlap ({overlap_frac * 100:.1f}% of the after-image footprint)."
+            msg = f"Weak geographic overlap{roi_note} ({overlap_frac * 100:.1f}% of the after-image footprint)."
             result.warnings.append(msg)
             result.checks.append(CheckResult("overlap", "warn", msg))
         else:

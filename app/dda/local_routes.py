@@ -276,13 +276,15 @@ def local_rescan(db: Session = Depends(get_db), user: User = Depends(current_dda
 async def detect_preflight(
     base_path: str = Form(...),
     comparison_path: str = Form(...),
+    roi: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
     """Check a library image pair (CRS/GSD/bands/georef/overlap) without running detection.
 
     Lets the UI ask "is this pair suitable?" up front and show the user any
-    warnings before committing to a multi-minute detection run.
+    warnings before committing to a multi-minute detection run. ``roi``
+    (optional) narrows the overlap check to the selected crop window.
     """
     _require_dda()
     base_norm = base_path.replace("\\", "/").strip()
@@ -300,8 +302,18 @@ async def detect_preflight(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid library path: {exc}") from exc
 
+    roi_dict = None
+    if roi and roi.strip():
+        import json as _json
+
+        from .geotiff_io import parse_roi
+        try:
+            roi_dict = parse_roi(_json.loads(roi))
+        except (ValueError, _json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid roi: {exc}") from exc
+
     from .preflight import run_preflight_checks
-    preflight = run_preflight_checks(db, base_file, comp_file, base_norm, comp_norm)
+    preflight = run_preflight_checks(db, base_file, comp_file, base_norm, comp_norm, roi=roi_dict)
     return {
         "hardFail": preflight.hard_fail,
         "failReason": preflight.fail_reason,
@@ -349,11 +361,6 @@ async def detect_from_library(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid library path: {exc}") from exc
 
-    from .preflight import run_preflight_checks
-    preflight = run_preflight_checks(db, base_file, comp_file, base_norm, comp_norm)
-    if preflight.hard_fail:
-        raise HTTPException(status_code=400, detail=preflight.fail_reason)
-
     roi_dict = None
     if roi and roi.strip():
         import json as _json
@@ -363,6 +370,11 @@ async def detect_from_library(
             roi_dict = parse_roi(_json.loads(roi))
         except (ValueError, _json.JSONDecodeError) as exc:
             raise HTTPException(status_code=400, detail=f"Invalid roi: {exc}") from exc
+
+    from .preflight import run_preflight_checks
+    preflight = run_preflight_checks(db, base_file, comp_file, base_norm, comp_norm, roi=roi_dict)
+    if preflight.hard_fail:
+        raise HTTPException(status_code=400, detail=preflight.fail_reason)
 
     try:
         from ..detection_config import get_load_max_side

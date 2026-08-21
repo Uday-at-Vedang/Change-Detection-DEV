@@ -40,7 +40,7 @@ def _load_pair(
     base_file = safe_resolve(base_path)
     comp_file = safe_resolve(comparison_path)
 
-    preflight = run_preflight_checks(db, base_file, comp_file, base_path, comparison_path)
+    preflight = run_preflight_checks(db, base_file, comp_file, base_path, comparison_path, roi=roi)
     if preflight.hard_fail:
         raise ValueError(preflight.fail_reason)
 

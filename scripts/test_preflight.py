@@ -30,7 +30,7 @@ SessionLocal = sessionmaker(bind=engine)
 
 
 def _write_geotiff(name, west, south, east, north, width=64, height=64,
-                    crs="EPSG:4326", count=3, dtype="uint8"):
+                    crs="EPSG:4326", count=3, dtype="uint8", descriptions=None):
     import rasterio
     from rasterio.transform import from_bounds
 
@@ -43,6 +43,10 @@ def _write_geotiff(name, west, south, east, north, width=64, height=64,
         dtype=dtype, crs=crs, transform=transform,
     ) as dst:
         dst.write(data)
+        if descriptions:
+            for i, desc in enumerate(descriptions, start=1):
+                if desc:
+                    dst.set_band_description(i, desc)
     return path
 
 
@@ -169,6 +173,51 @@ def test_10_zero_overlap_georeferenced(db):
     check("10 zero overlap (georeferenced): hard fail", r.hard_fail)
 
 
+def test_11_extra_bands_warning(db):
+    before = _write_geotiff("c11_before.tif", 77.20, 28.70, 77.21, 28.71, count=4)  # e.g. R,G,B,NIR
+    after = _write_geotiff("c11_after.tif", 77.20, 28.70, 77.21, 28.71, count=3)
+    r = run_preflight_checks(db, before, after, "c11_before.tif", "c11_after.tif")
+    check("11 extra bands: no hard fail", not r.hard_fail, r.fail_reason)
+    check("11 extra bands: has a >3-band warning", any("more than 3 bands" in w for w in r.warnings), r.warnings)
+
+
+def test_12_band_order_hint(db):
+    before = _write_geotiff(
+        "c12_before.tif", 77.20, 28.70, 77.21, 28.71, count=3,
+        descriptions=["NIR", "Red", "Green"])
+    after = _write_geotiff("c12_after.tif", 77.20, 28.70, 77.21, 28.71, count=3)
+    r = run_preflight_checks(db, before, after, "c12_before.tif", "c12_after.tif")
+    check("12 band order hint: no hard fail", not r.hard_fail, r.fail_reason)
+    check("12 band order hint: has a band-order warning", any("band order" in w.lower() for w in r.warnings), r.warnings)
+
+
+def test_13_aspect_ratio_mismatch(db):
+    before = _write_plain_png("c13_before.png", width=64, height=64)     # 1:1
+    after = _write_plain_png("c13_after.png", width=64, height=256)      # 1:4 — big mismatch
+    r = run_preflight_checks(db, before, after, "c13_before.png", "c13_after.png")
+    check("13 aspect ratio mismatch: no hard fail", not r.hard_fail, r.fail_reason)
+    check("13 aspect ratio mismatch: has an aspect-ratio warning",
+          any(c.name == "aspect_ratio" and c.status == "warn" for c in r.checks), r.checks)
+
+
+def test_14_roi_aware_overlap(db):
+    # After sits entirely inside before -> full-image overlap is 100%, no warning.
+    before = _write_geotiff("c14_before.tif", 77.200, 28.700, 77.220, 28.720)
+    after = _write_geotiff("c14_after.tif", 77.201, 28.701, 77.219, 28.719)
+    r_full = run_preflight_checks(db, before, after, "c14_before.tif", "c14_after.tif")
+    check("14 roi overlap: full-image pass, no warnings", not r_full.hard_fail and not r_full.warnings, r_full.warnings)
+
+    # A ROI in each image's own top-left 3% corner: before's corner sits entirely
+    # outside after's footprint (after starts well to the lower-right of before's
+    # origin), so the SAME selection that looks fine on the full images should
+    # be caught as a hard fail once narrowed to the actual selected area.
+    roi = {"x": 0.0, "y": 0.0, "w": 0.03, "h": 0.03}
+    r_roi = run_preflight_checks(db, before, after, "c14_before.tif", "c14_after.tif", roi=roi)
+    check("14 roi overlap: roi-narrowed hard fail", r_roi.hard_fail, r_roi.fail_reason)
+    check("14 roi overlap: fail message mentions the selected area",
+          "selected area" in (r_roi.fail_reason or ""), r_roi.fail_reason)
+
+
 def test_band_count_helper():
     rgb = _write_geotiff("bc_rgb.tif", 77.20, 28.70, 77.21, 28.71, count=3)
     gray = _write_geotiff("bc_gray.tif", 77.20, 28.70, 77.21, 28.71, count=1)
@@ -192,6 +241,10 @@ if __name__ == "__main__":
         test_8_corrupt_file(db)
         test_9_weak_overlap(db)
         test_10_zero_overlap_georeferenced(db)
+        test_11_extra_bands_warning(db)
+        test_12_band_order_hint(db)
+        test_13_aspect_ratio_mismatch(db)
+        test_14_roi_aware_overlap(db)
         print("ALL PASS")
     finally:
         db.close()

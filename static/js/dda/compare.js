@@ -668,6 +668,9 @@ async function runLibraryDetection() {
     const preflightForm = new FormData();
     preflightForm.append('base_path', compareState.t1.path);
     preflightForm.append('comparison_path', compareState.t2.path);
+    if (compareState.roi) {
+      preflightForm.append('roi', JSON.stringify(compareState.roi));
+    }
     const preflight = await ddaApi('POST', '/api/dda/detect/preflight', { body: preflightForm });
     if (preflight.hardFail) {
       await showPreflightModal(preflight);

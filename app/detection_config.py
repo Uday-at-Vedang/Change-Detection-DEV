@@ -448,6 +448,18 @@ def get_min_overlap_warn() -> float:
     return max(0.0, min(1.0, value))
 
 
+def get_max_aspect_ratio_diff() -> float:
+    """Relative before/after aspect-ratio difference above which a non-georeferenced
+    pair gets a distortion warning (the after image is force-resized to match the
+    before image's pixel dimensions regardless of aspect ratio)."""
+    raw = _env("DETECTION_MAX_ASPECT_RATIO_DIFF", "0.15")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.15
+    return max(0.0, min(1.0, value))
+
+
 def summary() -> dict:
     """Snapshot of effective detection config (for logs and debug output)."""
     return {
@@ -465,6 +477,7 @@ def summary() -> dict:
         "gsdTolerance": get_gsd_tolerance(),
         "minOverlapHard": get_min_overlap_hard(),
         "minOverlapWarn": get_min_overlap_warn(),
+        "maxAspectRatioDiff": get_max_aspect_ratio_diff(),
         "kpca": {
             "patchSize": get_kpca_patch_size(),
             "nComponents": get_kpca_n_components(),
