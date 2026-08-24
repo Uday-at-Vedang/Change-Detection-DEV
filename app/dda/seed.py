@@ -26,5 +26,5 @@ def seed_delhi_hierarchy(db: Session) -> dict:
             villages_created += 1
 
     db.commit()
-    logger.info("DDA seed: %d zones, %d villages", zones_created, villages_created)
+    logger.info("Vedangsoft seed: %d zones, %d villages", zones_created, villages_created)
     return {"seeded": True, "zones": zones_created, "villages": villages_created}

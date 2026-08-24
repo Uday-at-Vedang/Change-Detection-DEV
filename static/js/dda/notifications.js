@@ -95,17 +95,41 @@ function renderNotifyPanel(jobs) {
           window.open(`/dda/reports/${runId}`, '_blank');
         }
       } else if (status === 'failed') {
-        if (typeof showDdaError === 'function') showDdaError('Detection job failed. See Reports tab for details.');
-        document.querySelector('.dda-tab[data-tab="reports"]')?.click();
+        if (typeof showDdaError === 'function') showDdaError('Detection job failed. See the Reports page for details.');
+        window.location.href = '/reports';
       } else {
-        document.querySelector('.dda-tab[data-tab="reports"]')?.click();
+        window.location.href = '/reports';
       }
     });
   });
 }
 
+// The panel is `position: fixed` so it's never clipped by the sidebar's own
+// scrollbar — anchor it to the bell's live on-screen position instead of a
+// CSS-only offset. On desktop it opens flush with the sidebar's left edge
+// (growing upward out of the bell) rather than starting past the sidebar's
+// right edge, where it used to land on top of a page's own second sidebar
+// (e.g. the Library/Detect folder tree). The backdrop still dims the rest
+// of the page, so it reads as an attached panel, not a stray floating box.
+function positionNotifyPanel(btn, panel) {
+  const rect = btn.getBoundingClientRect();
+  const margin = 10;
+  if (window.innerWidth <= 900) {
+    panel.style.left = 'auto';
+    panel.style.right = Math.max(margin, window.innerWidth - rect.right) + 'px';
+    panel.style.top = (rect.bottom + margin) + 'px';
+    panel.style.bottom = 'auto';
+  } else {
+    panel.style.left = Math.max(margin, rect.left) + 'px';
+    panel.style.right = 'auto';
+    panel.style.top = 'auto';
+    panel.style.bottom = Math.max(margin, window.innerHeight - rect.bottom) + 'px';
+  }
+}
+
 function closeNotifyPanel() {
   document.getElementById('dda-notify-panel')?.classList.add('hidden');
+  document.getElementById('dda-notify-backdrop')?.classList.add('hidden');
 }
 
 async function refreshNotifications() {
@@ -129,15 +153,23 @@ function initNotifications() {
     if (wasHidden) {
       const jobs = await fetchNotifyJobs();
       renderNotifyPanel(jobs);
+      if (panel) positionNotifyPanel(btn, panel);
       panel?.classList.remove('hidden');
+      document.getElementById('dda-notify-backdrop')?.classList.remove('hidden');
     } else {
       closeNotifyPanel();
     }
   });
 
+  document.getElementById('dda-notify-backdrop')?.addEventListener('click', closeNotifyPanel);
+
   document.addEventListener('click', (e) => {
     if (e.target.closest('.dda-notify-wrap')) return;
     closeNotifyPanel();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeNotifyPanel();
   });
 
   refreshNotifications();

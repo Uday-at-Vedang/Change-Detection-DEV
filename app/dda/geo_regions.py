@@ -279,7 +279,7 @@ def enrich_regions_geo(
     bounds: Optional[BoundsWGS84],
     geo: Optional[GeoContext] = None,
 ) -> List[dict]:
-    """Add latLng, polygonGeo, areaSqM, and DDA change type to each region."""
+    """Add latLng, polygonGeo, areaSqM, and Vedangsoft change type to each region."""
     effective_bounds = bounds or (geo.bounds if geo else None)
     out = []
     for region in regions:

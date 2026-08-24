@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Change Detection — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=37" />
+</head>
+<body>
+  <div class="app dda-app">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section id="tab-detect" class="dda-panel active" role="tabpanel">
+      <div class="dda-layout">
+        <aside class="dda-sidebar card">
+          <div class="card-header">
+            <h3>Folders</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-compare-refresh">Refresh</button>
+          </div>
+          <div id="compare-folder-path" class="dda-folder-path dim">All images</div>
+          <input type="search" id="compare-tree-search" class="dda-search" placeholder="Filter nodes…" />
+          <div id="compare-tree" class="dda-tree"><p class="dim">Loading…</p></div>
+        </aside>
+        <main class="dda-main">
+          <div class="card">
+            <div class="card-header">
+              <h3>Detection options</h3>
+              <button type="button" class="btn btn-primary" id="btn-run-job" disabled>Run Detection</button>
+            </div>
+            <div class="dda-detect-options">
+              <div class="form-group">
+                <label for="dda-detect-method">Method</label>
+                <select id="dda-detect-method">
+                  <option value="AI-Based Deep Learning">AI-Based Deep Learning</option>
+                  <option value="Hybrid AI">Hybrid AI</option>
+                  <option value="Feature-Based">Feature-Based</option>
+                  <option value="KPCA (Unsupervised)">KPCA (Unsupervised)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="dda-detect-sensitivity">Sensitivity (0–1)</label>
+                <input type="number" id="dda-detect-sensitivity" min="0" max="1" step="0.05" value="0.45" />
+              </div>
+              <div class="form-group">
+                <label for="dda-detect-min-area">Min region area (px)</label>
+                <input type="number" id="dda-detect-min-area" min="50" max="10000" step="10" value="150" />
+              </div>
+              <div class="form-group">
+                <label>Region shape</label>
+                <div class="dda-shape-toggle" role="radiogroup" aria-label="Region shape">
+                  <button type="button" class="dda-shape-btn is-active" data-shape="polygon"
+                          role="radio" aria-checked="true"
+                          title="Filled contour footprints that follow each region's true outline">Polygon</button>
+                  <button type="button" class="dda-shape-btn" data-shape="bbox"
+                          role="radio" aria-checked="false"
+                          title="Classic bounding-box rectangles — clearer on dense scenes">Box</button>
+                </div>
+              </div>
+              <label class="dda-check"><input type="checkbox" id="dda-detect-registration" checked /> Image registration</label>
+              <label class="dda-check"><input type="checkbox" id="dda-detect-normalization" checked /> Normalization</label>
+              <label class="dda-check"><input type="checkbox" id="dda-detect-notify" /> Email report when done</label>
+              <input type="email" id="dda-detect-notify-email" class="dda-notify-email hidden" placeholder="recipient@example.com" />
+            </div>
+            <p class="dim" id="dda-detect-res-hint"></p>
+            <div id="dda-roi-controls" class="dda-roi-controls hidden">
+              <span id="dda-roi-hint" class="dim"></span>
+              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-clear-roi">Clear selection</button>
+            </div>
+            <div id="detect-progress" class="dda-upload-progress hidden" style="margin-top:0.75rem">
+              <div class="dda-progress-bar"><div id="detect-progress-fill" class="dda-progress-fill"></div></div>
+              <span id="detect-progress-label" class="dim">Starting detection…</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Change Detection</h3>
+              <div class="dda-mode-toggle" id="dda-detect-mode" role="radiogroup" aria-label="Detection mode">
+                <button type="button" class="dda-mode-btn is-active" data-mode="automatic" role="radio" aria-checked="true">Automatic</button>
+                <button type="button" class="dda-mode-btn" data-mode="manual" role="radio" aria-checked="false">Manual</button>
+              </div>
+            </div>
+            <p class="sub" id="dda-detect-mode-help"></p>
+            <div id="dda-auto-compare" class="dda-auto-compare">
+              <div class="form-group">
+                <label for="dda-auto-area">Area</label>
+                <select id="dda-auto-area" aria-label="Area to detect">
+                  <option value="">Loading areas…</option>
+                </select>
+              </div>
+              <p id="dda-auto-status" class="dim"></p>
+            </div>
+            <div class="dda-compare-slots">
+              <div class="dda-slot" id="slot-t1" data-slot="t1">
+                <span class="dda-slot-label">Before (T1)</span>
+                <div id="slot-t1-preview" class="dda-slot-preview-wrap"></div>
+                <select id="select-t1" class="dda-image-select" aria-label="Select old image">
+                  <option value="">— Choose old image —</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t1">Browse library</button>
+              </div>
+              <div class="dda-slot" id="slot-t2" data-slot="t2">
+                <span class="dda-slot-label">After (T2)</span>
+                <div id="slot-t2-preview" class="dda-slot-preview-wrap"></div>
+                <select id="select-t2" class="dda-image-select" aria-label="Select new image">
+                  <option value="">— Choose new image —</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm dda-slot-pick" data-pick="t2">Browse library</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="dda-manual-compare">
+            <div class="card" id="dda-area-pairs-card">
+              <div class="card-header">
+                <h3>Same-area pairs</h3>
+              </div>
+              <div id="dda-compare-pairs" class="dda-area-pairs dda-compare-pairs"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3 id="compare-grid-title">Pick from library</h3>
+              </div>
+              <p class="sub dim">Click <strong>T1</strong> or <strong>T2</strong> on an image, or use the dropdowns above (all images).</p>
+              <div id="compare-lib-grid" class="dda-grid dda-compare-grid">
+                <p class="dim">Loading library images…</p>
+              </div>
+              <div class="pagination" id="compare-lib-pagination"></div>
+            </div>
+          </div>
+        </main>
+      </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="dda-preflight-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card dda-preflight-panel">
+      <div class="card-header">
+        <h3 id="dda-preflight-title">Check these images before running detection</h3>
+      </div>
+      <ul id="dda-preflight-list" class="dda-preflight-list"></ul>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="dda-preflight-cancel">Stop</button>
+        <button type="button" class="btn btn-primary" id="dda-preflight-continue">Continue anyway</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dda-picker-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card">
+      <div class="card-header">
+        <h3 id="dda-picker-title">Select image</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-picker-close">Close</button>
+      </div>
+      <div id="dda-picker-list" class="dda-picker-grid"></div>
+    </div>
+  </div>
+
+  {% include "partials/result_modal_dda.html" %}
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/static/js/dda/shared.js?v=2"></script>
+  <script src="/static/js/dda/app.js?v=24"></script>
+  <script src="/static/js/dda/tree.js?v=2"></script>
+  <script src="/static/js/dda/map.js?v=4"></script>
+  <script src="/static/js/dda/library.js?v=15"></script>
+  <script src="/static/js/dda/pairs.js?v=3"></script>
+  <script src="/static/js/dda/result.js?v=20"></script>
+  <script src="/static/js/dda/compare.js?v=21"></script>
+  <script src="/static/js/dda/reports.js?v=7"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+</body>
+</html>

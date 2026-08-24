@@ -17,6 +17,7 @@ from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 from PIL import Image, ImageOps
@@ -147,6 +148,8 @@ THUMB_MAX_SIZE = 200  # max width or height for history thumbnails
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 # --- Schemas ---
@@ -743,21 +746,62 @@ def login_page():
     return FileResponse(login_file)
 
 
+def _dda_session_or_redirect(request: Request, db: Session):
+    """Shared by every DDA-mode page route (Home/Library/Detect/Reports).
+
+    Deliberately not calling get_dda_user() here — it still has the
+    session/guest fallback until Step 7 flips it, so it would never report
+    "unauthenticated". Do the same JWT-via-cookie check it does for its
+    first branch, without the fallback, so a redirect here is meaningful
+    and independently testable before that flip lands.
+
+    Returns a RedirectResponse to /login if there's no session, else None.
+    """
+    token = request.cookies.get(COOKIE_NAME)
+    user = get_user_from_token(token, db) if token else None
+    if not user:
+        return RedirectResponse("/login")
+    return None
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
     if IS_DDA_MODE:
-        # Deliberately not calling get_dda_user() here — it still has the
-        # session/guest fallback until Step 7 flips it, so it would never
-        # report "unauthenticated". Do the same JWT-via-cookie check it does
-        # for its first branch, without the fallback, so this redirect is
-        # meaningful and independently testable before that flip lands.
-        token = request.cookies.get(COOKIE_NAME)
-        user = get_user_from_token(token, db) if token else None
-        if not user:
-            return RedirectResponse("/login")
-        index_file = TEMPLATES_DIR / "index_dda.html"
-    else:
-        index_file = TEMPLATES_DIR / "index.html"
+        redirect = _dda_session_or_redirect(request, db)
+        if redirect:
+            return redirect
+        return templates.TemplateResponse(request, "home_dda.html", {"active_page": "home"})
+    index_file = TEMPLATES_DIR / "index.html"
     if not index_file.exists():
         return HTMLResponse("<h1>Satellite Change Detection</h1><p>Create <code>templates/index.html</code> and <code>static/</code>.</p>")
     return FileResponse(index_file)
+
+
+@app.get("/library", response_class=HTMLResponse)
+def dda_library_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "library_dda.html", {"active_page": "library"})
+
+
+@app.get("/detect", response_class=HTMLResponse)
+def dda_detect_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "detect_dda.html", {"active_page": "detect"})
+
+
+@app.get("/reports", response_class=HTMLResponse)
+def dda_reports_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "reports_dda.html", {"active_page": "reports"})

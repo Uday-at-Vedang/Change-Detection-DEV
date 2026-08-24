@@ -1,4 +1,4 @@
-"""DDA report browser view, PDF export, and email notify (FR-05)."""
+"""Vedangsoft report browser view, PDF export, and email notify (FR-05)."""
 from __future__ import annotations
 
 import logging

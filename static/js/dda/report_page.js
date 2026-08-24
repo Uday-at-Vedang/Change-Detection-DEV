@@ -97,7 +97,7 @@ async function loadReportPage() {
       viewBtn.disabled = false;
       viewBtn.onclick = () => {
         try { sessionStorage.setItem('dda_open_run', String(runId)); } catch (_) {}
-        window.location.href = '/?tab=reports';
+        window.location.href = '/reports';
       };
     }
 

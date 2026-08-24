@@ -57,3 +57,35 @@ function formatBytes(n) {
   if (n >= 1024 ** 2) return (n / 1024 ** 2).toFixed(1) + ' MB';
   return (n / 1024).toFixed(0) + ' KB';
 }
+
+/** Shared prev/numbered/next pagination control — same markup/behavior as
+ * the region-review table's pagination (result.js), reused by any list/grid
+ * that needs paging instead of an internal scrollbar. */
+function renderPaginationControls(container, page, totalPages, onChange) {
+  if (!container) return;
+  container.innerHTML = '';
+  if (totalPages <= 1) return;
+
+  const prev = document.createElement('button');
+  prev.type = 'button';
+  prev.textContent = '‹';
+  prev.disabled = page === 0;
+  prev.addEventListener('click', () => onChange(page - 1));
+  container.appendChild(prev);
+
+  for (let i = 0; i < totalPages; i++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = String(i + 1);
+    if (i === page) btn.classList.add('active');
+    btn.addEventListener('click', () => onChange(i));
+    container.appendChild(btn);
+  }
+
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.textContent = '›';
+  next.disabled = page >= totalPages - 1;
+  next.addEventListener('click', () => onChange(page + 1));
+  container.appendChild(next);
+}

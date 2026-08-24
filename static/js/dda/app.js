@@ -18,19 +18,6 @@ window.ddaState = {
   rescan: () => rescanLibrary(),
 };
 
-document.querySelectorAll('.dda-tab').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.dda-tab').forEach((b) => b.classList.remove('active'));
-    document.querySelectorAll('.dda-panel').forEach((p) => p.classList.remove('active'));
-    btn.classList.add('active');
-    const tab = btn.dataset.tab;
-    document.getElementById('tab-' + tab)?.classList.add('active');
-    if (tab === 'detect' && typeof loadCompareLibraryGrid === 'function') {
-      loadCompareLibraryGrid();
-    }
-  });
-});
-
 async function rescanLibrary() {
   const data = await ddaApi('POST', '/api/dda/local/rescan');
   if (typeof renderAllTrees === 'function') renderAllTrees({ tree: data.tree }, []);
@@ -56,9 +43,6 @@ async function initDda() {
     window._localCfg = localCfg;
 
     document.getElementById('btn-manage-library')?.classList.toggle('hidden', window.ddaState.userRole !== 'admin');
-
-    const hint = document.getElementById('lib-config-hint');
-    if (hint) hint.textContent = localCfg.geotiffEnabled ? 'GeoTIFF ready' : 'GeoTIFF limited';
 
     const pathEl = document.getElementById('lib-path-display');
     if (pathEl) {
@@ -89,9 +73,6 @@ async function initDda() {
       resHint.textContent = `Detection runs at up to ${localCfg.detectionMaxSide}px per side.`;
     }
 
-    const urlTab = new URLSearchParams(window.location.search).get('tab');
-    if (urlTab) document.querySelector(`.dda-tab[data-tab="${urlTab}"]`)?.click();
-
     if (typeof loadTree === 'function') await loadTree();
     await loadLibraryImages();
   } catch (err) {
@@ -101,6 +82,49 @@ async function initDda() {
 
 function selectionTitle() {
   return selectedNode.path || 'All images';
+}
+
+let libGridPage = 0;
+const LIB_GRID_PER_PAGE = 16;
+let libGridItems = [];
+
+function renderLibGrid() {
+  const grid = document.getElementById('lib-grid');
+  if (!grid) return;
+  const items = libGridItems;
+  if (!items.length) {
+    grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(selectionTitle())}</strong>. Select a node and upload, or use Manage to create folders.</p>`;
+    document.getElementById('lib-grid-pagination')?.replaceChildren();
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(items.length / LIB_GRID_PER_PAGE));
+  libGridPage = Math.max(0, Math.min(libGridPage, totalPages - 1));
+  const start = libGridPage * LIB_GRID_PER_PAGE;
+  const pageItems = items.slice(start, start + LIB_GRID_PER_PAGE);
+
+  grid.innerHTML = pageItems.map((img) => {
+    const thumb = img.thumbUrl || '';
+    const crumb = img.breadcrumb || img.nodePath || img.filename;
+    const encPath = encodeURIComponent(img.path);
+    return `
+    <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
+      <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image">×</button>
+      ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
+      <div class="meta">
+        <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
+        <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
+      </div>
+    </div>`;
+  }).join('');
+  if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
+
+  if (typeof renderPaginationControls === 'function') {
+    renderPaginationControls(document.getElementById('lib-grid-pagination'), libGridPage, totalPages, (p) => {
+      libGridPage = p;
+      renderLibGrid();
+    });
+  }
 }
 
 async function loadLibraryImages() {
@@ -116,25 +140,9 @@ async function loadLibraryImages() {
   try {
     const items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
     window.ddaState.libraryItems = items;
-    if (!items.length) {
-      grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(selectionTitle())}</strong>. Select a node and upload, or use Manage to create folders.</p>`;
-      return;
-    }
-    grid.innerHTML = items.map((img) => {
-      const thumb = img.thumbUrl || '';
-      const crumb = img.breadcrumb || img.nodePath || img.filename;
-      const encPath = encodeURIComponent(img.path);
-      return `
-      <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
-        <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image">×</button>
-        ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
-        <div class="meta">
-          <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
-          <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
-        </div>
-      </div>`;
-    }).join('');
-    if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
+    libGridItems = items;
+    libGridPage = 0;
+    renderLibGrid();
     if (typeof loadCompareLibraryGrid === 'function') loadCompareLibraryGrid();
     if (typeof loadAreaPairs === 'function') {
       loadAreaPairs({ nodeId: selectedNode.id || null });
@@ -173,6 +181,8 @@ document.getElementById('btn-refresh-lib')?.addEventListener('click', async () =
   try {
     const me = await ddaApi('GET', '/api/me');
     emailEl.textContent = me.email || '';
+    const avatarEl = document.getElementById('dda-user-avatar');
+    if (avatarEl) avatarEl.textContent = (me.full_name || me.email || '?').trim().charAt(0).toUpperCase();
   } catch (_) {
     // Not authenticated — the page-load redirect to /login should already
     // have caught this; leave the chip blank rather than erroring loudly.

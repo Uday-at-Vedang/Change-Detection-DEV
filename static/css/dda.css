@@ -1,47 +1,170 @@
-/* DDA dev UI — extends style.css */
+/* Vedangsoft dev UI — extends style.css */
 
-.dda-app { max-width: 1400px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
-
-.dda-header {
+.dda-app {
+  max-width: 1600px;
+  margin: 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+/* --- Left sidebar navigation --- */
+.dda-sidebar-nav {
+  position: sticky;
+  top: 0;
+  flex: 0 0 252px;
+  width: 252px;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  padding: 1.5rem 1.15rem;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.dda-sidebar-brand { display: flex; align-items: center; gap: 0.65rem; padding: 0 0.15rem; }
+.dda-sidebar-brand > svg { flex-shrink: 0; color: var(--grad-start); }
+.dda-sidebar-brand-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.dda-sidebar-brand-name {
+  font-weight: 700;
+  font-size: 1.02rem;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.dda-sidebar-brand-sub {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
+  gap: 0.4rem;
 }
-.dda-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  background: rgba(45, 212, 191, 0.15);
-  color: var(--grad-start);
-  margin-left: 0.5rem;
-}
-.dda-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.dda-tabs { display: flex; flex-direction: column; gap: 0.25rem; }
 .dda-tab {
-  padding: 0.45rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
+  text-decoration: none;
   transition: all var(--transition);
 }
-.dda-tab:hover { border-color: var(--grad-start); color: var(--text); }
+.dda-tab svg { flex-shrink: 0; opacity: 0.85; }
+.dda-tab:hover { background: var(--bg-hover); color: var(--text); }
 .dda-tab.active {
-  background: linear-gradient(135deg, rgba(45,212,191,0.12), rgba(16,185,129,0.08));
-  border-color: var(--grad-start);
+  background: linear-gradient(135deg, rgba(46,51,197,0.10), rgba(207,32,64,0.07));
   color: var(--grad-start);
   font-weight: 600;
 }
+.dda-tab.active svg { opacity: 1; }
+
+.dda-sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.dda-user-wrap { display: flex; align-items: center; gap: 0.55rem; font-size: 0.82rem; }
+.dda-user-avatar {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--gradient);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dda-user-wrap #dda-user-email {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Main content column, to the right of the sidebar */
+.dda-main-col { flex: 1 1 auto; min-width: 0; padding: 1.75rem 2rem 3rem; }
+
+.dda-hero { margin-bottom: 1.5rem; }
+.dda-hero h1 { margin-bottom: 0.35rem; }
 
 .dda-panel { display: none; }
 .dda-panel.active { display: block; }
+
+.dda-home-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.1rem;
+  margin-bottom: 1.5rem;
+}
+.dda-home-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+.dda-home-card:hover {
+  border-color: var(--grad-start);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(46, 51, 197, 0.1);
+}
+.dda-home-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(46,51,197,0.12), rgba(207,32,64,0.08));
+  color: var(--grad-start);
+  margin-bottom: 0.75rem;
+}
+.dda-home-card h3 { margin-bottom: 0.35rem; }
+
+/* Collapse the sidebar into a horizontal top bar on narrow viewports */
+@media (max-width: 900px) {
+  .dda-app { flex-direction: column; }
+  .dda-sidebar-nav {
+    position: static;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    gap: 1rem;
+  }
+  .dda-tabs { flex-direction: row; flex-wrap: wrap; }
+  .dda-tab span { display: none; }
+  .dda-tab { padding: 0.55rem; }
+  .dda-sidebar-footer {
+    margin-top: 0;
+    margin-left: auto;
+    flex-direction: row;
+    align-items: center;
+    border-top: none;
+    padding-top: 0;
+  }
+  .dda-notify-wrap { width: auto; }
+  .dda-notify-btn { width: auto; }
+  .dda-notify-btn span { display: none; }
+  .dda-user-wrap #dda-user-email { display: none; }
+  .dda-main-col { padding: 1.25rem 1.25rem 2rem; }
+}
 
 .dda-layout {
   display: grid;
@@ -53,7 +176,69 @@
   .dda-layout { grid-template-columns: 1fr; }
 }
 
-.dda-sidebar { position: sticky; top: 1rem; max-height: 70vh; overflow: auto; }
+/* Library page: the upload form's fields flow into as few rows as fit
+   (instead of a rigid 2-up grid that wraps to 3 rows) and the storage-path
+   help text collapses behind <details> — together these keep the upload
+   card short so the page reads as three compact sections, not four tall
+   stacked cards. */
+.dda-upload-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+/* Detect page: manual-mode pairs + library grid split into their own cards
+   (same pattern as the Library page) instead of nesting inside the main
+   setup card — #dda-manual-compare is a plain wrapper, not a card, so its
+   own spacing has to be set explicitly (the .card + .card rule only fires
+   between adjacent .card elements). */
+#dda-manual-compare { display: flex; flex-direction: column; gap: 1.25rem; margin: 1.25rem 0; }
+
+/* Reports page: paginated table (10/page — see reports.js) instead of
+   letting the page grow with every past run. The search box + Refresh
+   button live in their own no-wrap toolbar so they stay on one line next
+   to the heading instead of the search stretching full-width and dropping
+   Refresh to its own row. */
+.dda-reports-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+.dda-reports-toolbar .dda-search {
+  width: 220px;
+  flex: none;
+  margin-bottom: 0;
+}
+.dda-reports-toolbar .btn { flex-shrink: 0; }
+
+.dda-storage-info { margin-top: 0.85rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.dda-storage-info summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  list-style: none;
+}
+.dda-storage-info summary::-webkit-details-marker { display: none; }
+.dda-storage-info summary::before { content: '▸ '; }
+.dda-storage-info[open] summary::before { content: '▾ '; }
+.dda-storage-info summary:hover { color: var(--grad-start); }
+.dda-storage-info .sub { margin-top: 0.5rem; }
+
+/* Fill down to the bottom of the viewport instead of stopping at a fixed
+   70vh and leaving a dead gap below the card when the tree list is short
+   relative to the page's other content. `.dda-layout` uses align-items:start
+   so grid items sit at their content height by default — align-self:stretch
+   opts this one item back into matching the row's (taller, main-column)
+   height, which max-height then caps at the viewport. */
+.dda-sidebar {
+  position: sticky;
+  top: 1rem;
+  align-self: stretch;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.dda-sidebar #lib-tree,
+.dda-sidebar #compare-tree { flex: 1 1 auto; overflow-y: auto; }
 .dda-search {
   width: 100%;
   margin-bottom: 0.75rem;
@@ -182,12 +367,6 @@
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 0.75rem;
   min-height: 80px;
-  /* Bounded, independently scrollable card section — mirrors the sidebar
-     tree's own max-height/overflow (below) instead of growing the whole
-     page taller with every image. */
-  max-height: 46vh;
-  overflow-y: auto;
-  padding-right: 0.25rem;
   align-content: start;
 }
 .dda-card-img {
@@ -555,23 +734,27 @@
 .regions-table tr.region-selected { background: rgba(16, 185, 129, 0.12); }
 .regions-table tr { cursor: pointer; }
 
-.dda-notify-wrap { position: relative; margin-left: auto; }
-.dda-user-wrap { display: flex; align-items: center; gap: 0.6rem; margin-left: 0.75rem; font-size: 0.85rem; }
+.dda-notify-wrap { position: relative; width: 100%; }
 .dda-notify-btn {
   position: relative;
+  width: 100%;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
   cursor: pointer;
-  color: inherit;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  transition: all var(--transition);
 }
+.dda-notify-btn:hover { background: var(--bg-hover); color: var(--text); }
 .dda-notify-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: 4px;
+  left: 22px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -584,18 +767,30 @@
   text-align: center;
 }
 .dda-notify-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  width: min(320px, 90vw);
-  max-height: 360px;
+  /* position (fixed) + left/top/right/bottom are set inline by notifications.js
+     so the panel anchors to the bell button's on-screen position — it must
+     NOT rely on being positioned relative to .dda-sidebar-nav, which clips
+     overflow for its own scrollbar. */
+  position: fixed;
+  width: min(380px, 92vw);
+  max-height: min(70vh, 480px);
   overflow-y: auto;
   background: var(--card, #fff);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-  z-index: 200;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+  z-index: 300;
   padding: 0.35rem;
+}
+/* Dims the page while the panel is open so it reads as a floating overlay
+   rather than a layout glitch — the panel can land on top of a page's own
+   secondary sidebar (e.g. the Library/Detect folder tree) since it opens
+   near the nav sidebar regardless of what else is on screen. */
+.dda-notify-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 290;
 }
 .dda-notify-item {
   display: block;
@@ -618,7 +813,16 @@
 .dda-report-actions-cell { white-space: nowrap; }
 .dda-report-actions-cell .btn, .dda-report-actions-cell a.btn { margin-right: 0.25rem; margin-bottom: 0.25rem; }
 
-.dda-report-page { max-width: 960px; margin: 0 auto; padding: 1rem; }
+/* Standalone report page has no sidebar nav — override the sidebar-shell flex layout. */
+.dda-report-page { display: block; max-width: 960px; margin: 0 auto; padding: 1rem; }
+.dda-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
 .dda-report-header { justify-content: space-between; }
 .dda-report-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .dda-report-stats { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin-top: 0.75rem; }

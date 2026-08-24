@@ -79,6 +79,13 @@ function renderAreaPairRows(container, groups, { compact } = {}) {
     beforeSel?.addEventListener('change', saveOverride);
     afterSel?.addEventListener('change', saveOverride);
     row.querySelector('[data-role="compare"]')?.addEventListener('click', () => {
+      // Library page has no compare slots in its DOM — hand off to the
+      // Detect page instead of trying to apply the pair locally.
+      if (!document.getElementById('slot-t1')) {
+        const mode = _pairChoice(group).overridden ? 'manual' : 'automatic';
+        window.location.href = `/detect?pair=${encodeURIComponent(group.id)}&mode=${mode}`;
+        return;
+      }
       const choice = _pairChoice(group);
       areaPairsState.selectedGroupId = group.id;
       if (choice.overridden) {
@@ -92,7 +99,6 @@ function renderAreaPairRows(container, groups, { compact } = {}) {
         if (areaSel) areaSel.value = group.id;
         applySelectedAutoPair();
       }
-      document.querySelector('.dda-tab[data-tab="detect"]')?.click();
     });
   });
 }
@@ -141,6 +147,31 @@ function populateAutoAreaSelect() {
   applySelectedAutoPair();
 }
 
+// Consumes ?pair=<groupId>&mode=automatic|manual once, set by the Library
+// page's "Compare" button when it navigates to /detect (see renderAreaPairRows).
+function applyPairFromUrl() {
+  if (areaPairsState._urlPairApplied) return;
+  const params = new URLSearchParams(window.location.search);
+  const wantPair = params.get('pair');
+  if (!wantPair) return;
+  areaPairsState._urlPairApplied = true;
+  const group = areaPairsState.groups.find((g) => g.id === wantPair);
+  if (!group) return;
+  areaPairsState.selectedGroupId = group.id;
+  if (params.get('mode') === 'manual') {
+    if (typeof setDetectMode === 'function') setDetectMode('manual', { applyPair: false });
+    const choice = _pairChoice(group);
+    if (typeof applyAreaPairToCompare === 'function') {
+      applyAreaPairToCompare(choice.before, choice.after, { silent: false });
+    }
+  } else {
+    if (typeof setDetectMode === 'function') setDetectMode('automatic', { applyPair: false });
+    const areaSel = document.getElementById('dda-auto-area');
+    if (areaSel) areaSel.value = group.id;
+    applySelectedAutoPair();
+  }
+}
+
 async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
   const libBox = document.getElementById('dda-area-pairs');
   const hint = document.getElementById('dda-area-pairs-hint');
@@ -166,6 +197,7 @@ async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
       else renderAreaPairRows(cmpBox, areaPairsState.groups, { compact: true });
     }
     populateAutoAreaSelect();
+    applyPairFromUrl();
     if (autoFillCompare && !areaPairsState.autoApplied && areaPairsState.groups.length) {
       if (typeof getDetectMode !== 'function' || getDetectMode() !== 'automatic') {
         const first = areaPairsState.groups[0];

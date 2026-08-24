@@ -132,7 +132,7 @@ Set these in each Space’s **Settings → Repository secrets / Variables** if n
 
 | Variable | Purpose |
 |----------|---------|
-| `APP_MODE` | Set to `dda` on **satdetect-dev** only (enables DDA library UI) |
+| `APP_MODE` | Set to `dda` on **satdetect-dev** only (enables Vedangsoft library UI) |
 | `STORAGE_ROOT` | Tree library root directory (default: `data/library_sources/`) |
 | `LOCAL_LIBRARY_ROOT` | Alias for storage root override |
 | `MAX_GEOTIFF_MB` | Library GeoTIFF upload cap (default **5120** = 5 GB on dev) |
@@ -192,7 +192,7 @@ library_sources/
 
 ## UAT checklist (satdetect-dev)
 
-Run before promoting any DDA feature to production:
+Run before promoting any Vedangsoft feature to production:
 
 1. **Health** — `GET /health` returns `status: ok`, `appMode: dda`, `dda.libraryImages` ≥ 0
 2. **Tree library** — Create zone → area → year nodes (admin); upload GeoTIFF to node; tree + grid show breadcrumb

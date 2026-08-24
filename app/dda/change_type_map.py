@@ -1,4 +1,4 @@
-"""Map internal detection_engine labels → DDA report change types (FR-04)."""
+"""Map internal detection_engine labels → Vedangsoft report change types (FR-04)."""
 from __future__ import annotations
 
 from typing import Optional
@@ -24,7 +24,7 @@ _KEYWORDS = [
 
 
 def map_to_dda_change_type(internal_type: str) -> str:
-    """Return canonical DDA change type for a detection_engine object_type string."""
+    """Return canonical Vedangsoft change type for a detection_engine object_type string."""
     if not internal_type:
         return DDA_OTHER
     lower = internal_type.lower()
@@ -37,7 +37,7 @@ def map_to_dda_change_type(internal_type: str) -> str:
 
 
 def enrich_region_for_dda(region: dict, *, dda_change_type: Optional[str] = None) -> dict:
-    """Add DDA report fields to a serialized region dict."""
+    """Add Vedangsoft report fields to a serialized region dict."""
     internal = region.get("objectType") or region.get("object_type") or ""
     out = dict(region)
     out["ddaChangeType"] = dda_change_type or map_to_dda_change_type(internal)

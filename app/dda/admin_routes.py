@@ -1,4 +1,4 @@
-"""DDA admin diagnostics and maintenance (Phase 7)."""
+"""Vedangsoft admin diagnostics and maintenance (Phase 7)."""
 from __future__ import annotations
 
 import logging

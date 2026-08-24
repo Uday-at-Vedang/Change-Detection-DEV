@@ -1,4 +1,4 @@
-"""Delhi administrative hierarchy — seeded into DB for DDA library (FR-01)."""
+"""Delhi administrative hierarchy — seeded into DB for Vedangsoft library (FR-01)."""
 
 DELHI_ZONES = {
     "Central Delhi": [

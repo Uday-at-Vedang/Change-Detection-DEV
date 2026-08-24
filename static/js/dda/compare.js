@@ -334,14 +334,23 @@ function updateCompareFolderPath() {
   if (el) el.textContent = compareSelectionTitle();
 }
 
-function renderCompareGrid(items) {
+let compareGridPage = 0;
+const COMPARE_GRID_PER_PAGE = 12;
+
+function renderCompareGrid(allItems) {
   const grid = document.getElementById('compare-lib-grid');
   if (!grid) return;
 
-  if (!items.length) {
+  if (!allItems.length) {
     grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(compareSelectionTitle())}</strong>. Select another folder or click Refresh to sync from disk.</p>`;
+    document.getElementById('compare-lib-pagination')?.replaceChildren();
     return;
   }
+
+  const totalPages = Math.max(1, Math.ceil(allItems.length / COMPARE_GRID_PER_PAGE));
+  compareGridPage = Math.max(0, Math.min(compareGridPage, totalPages - 1));
+  const start = compareGridPage * COMPARE_GRID_PER_PAGE;
+  const items = allItems.slice(start, start + COMPARE_GRID_PER_PAGE);
 
   grid.innerHTML = items.map((img) => {
     const thumb = img.thumbUrl || thumbUrlFor(img.path);
@@ -372,6 +381,13 @@ function renderCompareGrid(items) {
     });
   });
   refreshCompareLibrarySelection();
+
+  if (typeof renderPaginationControls === 'function') {
+    renderPaginationControls(document.getElementById('compare-lib-pagination'), compareGridPage, totalPages, (p) => {
+      compareGridPage = p;
+      renderCompareGrid(allItems);
+    });
+  }
 }
 
 function refreshCompareLibrarySelection() {

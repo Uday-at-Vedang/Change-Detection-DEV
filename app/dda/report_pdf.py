@@ -1,4 +1,4 @@
-"""PDF export for DDA detection reports (FR-05)."""
+"""PDF export for Vedangsoft detection reports (FR-05)."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,7 @@ from .detect_service import _isoformat_ist
 def _safe_filename(title: str, run_id: int) -> str:
     base = "".join(c if c.isalnum() or c in " -_" else "_" for c in (title or "report"))
     base = base.strip().replace(" ", "_")[:60] or "report"
-    return f"DDA_Report_{run_id}_{base}.pdf"
+    return f"Vedangsoft_Report_{run_id}_{base}.pdf"
 
 
 def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False, regions: Optional[List[dict]] = None) -> Dict[str, Any]:
@@ -72,7 +72,7 @@ def generate_report_pdf(run: DetectionRun, *, regions: Optional[List[dict]] = No
 
     location = ", ".join(filter(None, [run.village, run.zone])) or "—"
     story = [
-        Paragraph("DDA Change Detection Report", title_style),
+        Paragraph("Vedangsoft Change Detection Report", title_style),
         Paragraph(run.title or f"Run #{run.id}", styles["Heading2"]),
         Paragraph(f"Generated {_isoformat_ist(run.created_at)} IST", sub_style),
         Spacer(1, 8),
@@ -108,15 +108,15 @@ def generate_report_pdf(run: DetectionRun, *, regions: Optional[List[dict]] = No
     if regions:
         # Plain strings don't wrap in reportlab Tables — a long value just
         # overflows visually into the next cell instead of breaking onto a
-        # second line (this is why "DDA type"/"Classification" text used to
-        # run into the "Conf." column). Wrap the long-text columns in
+        # second line (this is why "Vedangsoft type"/"Classification" text
+        # used to run into the "Conf." column). Wrap the long-text columns in
         # Paragraph so they wrap within their own column width instead.
         cell_style = ParagraphStyle("TableCell", parent=styles["Normal"], fontSize=8, leading=9.5)
 
         def cell(text: str) -> Paragraph:
             return Paragraph(text, cell_style)
 
-        table_data = [["#", "Severity", "DDA type", "Classification", "Conf.", "Area (m²)", "Lat", "Lng", "Review"]]
+        table_data = [["#", "Severity", "Vedangsoft type", "Classification", "Conf.", "Area (m²)", "Lat", "Lng", "Review"]]
         for r in regions[:50]:
             lat, lng = region_lat_lng(r)
             if r.get("areaSqM") is not None:

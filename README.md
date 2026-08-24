@@ -1,5 +1,5 @@
 ---
-title: DDA Change Detection (Dev)
+title: Vedangsoft Change Detection (Dev)
 emoji: 🛰️
 colorFrom: gray
 colorTo: green
@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 ---
 
-# DDA Change Detection — Development
+# Vedangsoft Change Detection — Development
 
 Satellite / drone **change detection** web app for the DDA Scope of Work. This repository tracks **dev-only** features (`APP_MODE=dda`): image library, GeoTIFF comparison, async jobs, geo-referenced regions, reports, and PDF export.
 
@@ -44,7 +44,7 @@ Standalone web application for satellite image change detection with **database 
 
 ## Features
 
-- **DDA dev UI** — Library, comparison, jobs, reports, PDF (when `APP_MODE=dda`)
+- **Vedangsoft dev UI** — Home, Library, Detection, Reports pages (when `APP_MODE=dda`)
 - **Direct access** — upload and run detection immediately (no login)
 - **Database** — SQLite by default; MySQL in production via `DATABASE_URL` (PostgreSQL also supported); stores detection runs
 - **Change detection** — AdaptFormer deep learning + hybrid / difference methods
@@ -103,7 +103,12 @@ change_detection_webapp/
 │   ├── dda/                 # DDA dev modules (library, jobs, reports)
 │   └── detection_engine.py  # Change detection pipeline
 ├── static/js/dda/           # DDA frontend
-├── templates/index_dda.html # DDA dev UI
+├── templates/
+│   ├── partials/navbar_dda.html, result_modal_dda.html  # shared includes
+│   ├── home_dda.html, library_dda.html, detect_dda.html,
+│   │   reports_dda.html     # Vedangsoft dev UI pages
+│   ├── login_dda.html, report_dda.html
+│   └── index.html           # legacy (APP_MODE=legacy) UI
 ├── library_sources/         # Local GeoTIFF library (year folders)
 ├── docs/IMPLEMENTATION_PLAN_DDA.md
 ├── DEV_SETUP.md             # Colleague setup guide
@@ -111,7 +116,7 @@ change_detection_webapp/
 └── run.py                   # Local launcher (APP_MODE=dda)
 ```
 
-## API (DDA highlights)
+## API (Vedangsoft highlights)
 
 - `GET /health` — app mode and version
 - `GET /api/dda/local/images` — library image list

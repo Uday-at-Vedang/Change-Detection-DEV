@@ -1,4 +1,4 @@
-"""DDA session users and RBAC (Phase 7)."""
+"""Vedangsoft session users and RBAC (Phase 7)."""
 from __future__ import annotations
 
 import os
@@ -96,7 +96,7 @@ def seed_dda_admin(db: Session) -> None:
         user = User(
             email=email,
             hashed_password=get_password_hash(password),
-            full_name=os.environ.get("DDA_ADMIN_NAME", "DDA Admin"),
+            full_name=os.environ.get("DDA_ADMIN_NAME", "Vedangsoft Admin"),
         )
         db.add(user)
         db.commit()

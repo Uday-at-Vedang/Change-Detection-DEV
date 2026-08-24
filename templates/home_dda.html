@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Home — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=37" />
+</head>
+<body>
+  <div class="app dda-app">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section id="tab-home" class="dda-panel active" role="tabpanel">
+        <div class="dda-hero">
+          <h1 id="dda-home-greeting">Welcome</h1>
+          <p class="sub">Manage the image library, run change detection between two dates, and review reports.</p>
+        </div>
+
+        <div class="dda-home-cards">
+          <a class="card dda-home-card" href="/library">
+            <span class="dda-home-card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+            </span>
+            <h3>Image Library</h3>
+            <p class="sub dim">Browse and upload satellite / drone imagery, organized by zone and area.</p>
+          </a>
+          <a class="card dda-home-card" href="/detect">
+            <span class="dda-home-card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="11" height="11" rx="2"/><path d="M9 14v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-3"/></svg>
+            </span>
+            <h3>Change Detection</h3>
+            <p class="sub dim">Compare two dates of the same area and run automatic or manual detection.</p>
+          </a>
+          <a class="card dda-home-card" href="/reports">
+            <span class="dda-home-card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6M9 9h2"/></svg>
+            </span>
+            <h3>Reports</h3>
+            <p class="sub dim">Review completed detections, export data, and download PDF reports.</p>
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Recent activity</h3>
+            <a class="btn btn-secondary btn-sm" href="/reports">View all reports</a>
+          </div>
+          <div id="dda-home-recent"><p class="dim">Loading recent activity…</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=2"></script>
+  <script src="/static/js/dda/app.js?v=24"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/home.js?v=1"></script>
+</body>
+</html>

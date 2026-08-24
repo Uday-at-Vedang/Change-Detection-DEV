@@ -1,4 +1,4 @@
-# DDA Change Detection — Local Dev Setup
+# Vedangsoft Change Detection — Local Dev Setup
 
 This repo is the **development branch** of the satellite change-detection app (DDA SOW). It runs the full dev UI: image library, GeoTIFF comparison, async jobs, reports, and PDF export.
 
@@ -125,7 +125,7 @@ After adding files, start the app and click **Image Library → Refresh**.
 python run.py
 ```
 
-Opens **http://127.0.0.1:8000** with the DDA dev UI (3 tabs: Image Library, Change Detection, Reports).
+Opens **http://127.0.0.1:8000** with the Vedangsoft dev UI (Home, Image Library, Change Detection, and Reports pages).
 
 Alternative (with auto-reload during development):
 
@@ -163,7 +163,7 @@ Expected: `"appMode": "dda"`, `"status": "ok"`.
 
 ---
 
-## 7. Project layout (DDA)
+## 7. Project layout (Vedangsoft)
 
 ```
 app/
@@ -171,7 +171,9 @@ app/
   detection_engine.py  # Change detection pipeline
   dda/                 # DDA modules (library, jobs, reports, geo)
 static/js/dda/         # Dev frontend
-templates/index_dda.html
+templates/
+  partials/navbar_dda.html, result_modal_dda.html  # shared includes
+  home_dda.html, library_dda.html, detect_dda.html, reports_dda.html
 docs/IMPLEMENTATION_PLAN_DDA.md   # SOW phase plan
 ```
 
@@ -182,7 +184,7 @@ docs/IMPLEMENTATION_PLAN_DDA.md   # SOW phase plan
 | Issue | Fix |
 |-------|-----|
 | `ImportError: rasterio` | Install GDAL (see §1), then reinstall rasterio |
-| Simple upload UI instead of DDA tabs | Set `APP_MODE=dda` or use `python run.py` |
+| Simple upload UI instead of the Vedangsoft dev UI | Set `APP_MODE=dda` or use `python run.py` |
 | Library empty | Add `.tif` files under `library_sources/YYYY/` and click Refresh |
 | Detection slow / OOM | Lower `DETECTION_MAX_SIDE=2048` or use smaller images |
 | Model download fails | Check internet; set `HF_HOME` to a writable folder |
@@ -203,7 +205,7 @@ Do **not** push `master` to production `satdetect` without explicit sign-off.
 
 ---
 
-## 10. Key API endpoints (DDA)
+## 10. Key API endpoints (Vedangsoft)
 
 | Method | Path | Description |
 |--------|------|-------------|

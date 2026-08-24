@@ -1,0 +1,114 @@
+<!-- Result modal — same before/changes slider as production. Shared by the
+     Detect page (shown right after a run) and the Reports page ("View"). -->
+<div class="result-modal-backdrop hidden" id="result-modal">
+  <div class="result-modal">
+    <div class="result-modal-header">
+      <h3 id="result-modal-title">Detection Result</h3>
+      <div class="result-modal-header-actions">
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-toggle-stats-btn" aria-expanded="true" aria-controls="result-stats">Hide Details</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-toggle-report-btn" aria-expanded="true" aria-controls="result-modal-side">Hide Report</button>
+        <button type="button" class="btn-close-modal" id="result-modal-close" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="result-stats" id="result-stats"></div>
+    <div class="dda-view-toolbar">
+      <span class="dda-view-label">View:</span>
+      <button type="button" class="dda-view-btn active" data-view="slider">Slider</button>
+      <button type="button" class="dda-view-btn" data-view="t1">Old Image (T1)</button>
+      <button type="button" class="dda-view-btn" data-view="t2">New Image (T2)</button>
+      <button type="button" class="dda-view-btn" data-view="overlay">Overlay</button>
+      <button type="button" class="dda-view-btn" data-view="map">Map</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="dda-locate-btn" title="Locate selected region" disabled>Locate</button>
+    </div>
+    <div class="result-modal-layout">
+      <div class="result-modal-main">
+          <div class="zoom-slider-section" id="dda-result-slider-pane">
+            <div class="zoom-controls">
+              <button type="button" class="btn btn-zoom" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+              <span class="zoom-level" id="zoom-level">100%</span>
+              <button type="button" class="btn btn-zoom" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+            </div>
+            <div class="zoom-wrapper" id="zoom-wrapper">
+            <div class="compare-slider compare-slider-zoomed" id="compare-slider">
+              <div class="compare-before">
+                <img id="compare-before-img" alt="Before" draggable="false" />
+                <span class="compare-label compare-label-left">Before</span>
+              </div>
+              <div class="compare-after" id="compare-after-clip">
+                <img id="compare-after-img" alt="Changes detected" draggable="false" />
+                <span class="compare-label compare-label-right">Changes</span>
+              </div>
+              <div class="compare-handle" id="compare-handle">
+                <div class="compare-handle-line"></div>
+                <div class="compare-handle-knob">
+                  <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 10l4-5v10z" fill="currentColor"/><path d="M14 10l-4-5v10z" fill="currentColor"/></svg>
+                </div>
+                <div class="compare-handle-line"></div>
+              </div>
+              <svg class="region-polygon-layer" id="region-polygon-layer" style="display:none"></svg>
+              <div class="region-highlight-overlay" id="region-highlight-overlay"></div>
+            </div>
+          </div>
+        </div>
+        <div id="dda-result-map-pane" class="dda-map-pane hidden">
+          <div class="dda-map-toolbar">
+            <label class="dda-map-field">
+              <span>Basemap</span>
+              <select id="dda-res-basemap" aria-label="Basemap"></select>
+            </label>
+            <input type="url" id="dda-res-xyz" class="dda-map-xyz hidden" placeholder="https://…/{z}/{x}/{y}.png" aria-label="Custom XYZ URL" />
+            <label class="dda-check"><input type="checkbox" id="dda-res-overlay" checked /> TIF overlay</label>
+            <label class="dda-check"><input type="checkbox" id="dda-res-layer-t1" /> T1</label>
+            <label class="dda-check"><input type="checkbox" id="dda-res-layer-t2" checked /> T2</label>
+            <label class="dda-check"><input type="checkbox" id="dda-res-layer-changes" checked /> Changes</label>
+            <label class="dda-map-field dda-map-opacity">
+              <span>Opacity <em id="dda-res-opacity-val">75%</em></span>
+              <input type="range" id="dda-res-opacity" min="10" max="100" value="75" />
+            </label>
+            <button type="button" class="btn btn-secondary btn-sm" id="dda-res-fit">Fit extent</button>
+          </div>
+          <p id="dda-result-map-status" class="dim dda-map-status"></p>
+          <div id="dda-result-map" class="dda-map-canvas"></div>
+        </div>
+      </div>
+      <aside class="result-modal-side" id="result-modal-side">
+        <div class="dda-review-bar" id="dda-review-bar">
+          <span class="dda-review-summary dim" id="dda-review-summary"></span>
+          <div class="dda-review-actions">
+            <a class="btn btn-secondary btn-sm" id="dda-export-csv" href="#" download>Export CSV</a>
+            <a class="btn btn-secondary btn-sm" id="dda-export-confirmed" href="#" download>Export confirmed</a>
+            <a class="btn btn-secondary btn-sm" id="dda-export-geojson" href="#" download>Export GeoJSON</a>
+            <button type="button" class="btn btn-secondary btn-sm hidden" id="dda-export-pack" title="Export a paint-ready training-label pack for this pair/ROI">Export training pack</button>
+            <button type="button" class="btn btn-primary btn-sm" id="dda-submit-dept">Submit confirmed</button>
+          </div>
+        </div>
+        <div class="regions-table-wrap">
+          <table class="regions-table" id="regions-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Severity</th>
+                <th>Change Type</th>
+                <th>Vedangsoft Type</th>
+                <th>Lat/Lng</th>
+                <th>Sub-Type</th>
+                <th>Confidence</th>
+                <th title="Polygon footprint area (m² when georeferenced; px when not)">Area (m²)</th>
+                <th>Coordinates</th>
+                <th>Stories</th>
+                <th>Height</th>
+                <th>Stage</th>
+                <th>Review</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="regions-tbody"></tbody>
+          </table>
+          <div class="pagination" id="regions-pagination"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>

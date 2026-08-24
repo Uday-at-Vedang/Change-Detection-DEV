@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Library — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=37" />
+</head>
+<body>
+  <div class="app dda-app">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section id="tab-library" class="dda-panel active" role="tabpanel">
+      <div class="dda-layout">
+        <aside class="dda-sidebar card">
+          <div class="card-header">
+            <h3>Library tree</h3>
+            <div class="dda-sidebar-actions">
+              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library">Manage</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib">Refresh</button>
+            </div>
+          </div>
+          <div id="lib-folder-path" class="dda-folder-path dim"></div>
+          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter nodes…" />
+          <div id="lib-tree" class="dda-tree"><p class="dim">Loading…</p></div>
+        </aside>
+        <main class="dda-main">
+            <div class="card" id="upload-card">
+              <div class="card-header">
+                <h3>Upload image</h3>
+                <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload">Upload to node</button>
+              </div>
+              <p class="sub" id="upload-limit-hint">Select a tree node and image type.</p>
+              <form id="form-tree-upload" class="dda-upload-form">
+                <div class="location-row dda-upload-row">
+                  <div class="form-group">
+                    <label for="upload-node">Tree node</label>
+                    <select id="upload-node" required><option value="">— Select node —</option></select>
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-image-type">Image type</label>
+                    <select id="upload-image-type">
+                      <option>GeoTIFF</option><option>Satellite</option><option>Drone</option>
+                      <option>Orthomosaic</option><option>DEM</option><option>Raster</option>
+                      <option>PNG</option><option>JPEG</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-capture-date">Capture date</label>
+                    <input type="date" id="upload-capture-date" />
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-file">File</label>
+                    <input type="file" id="upload-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-manual-bounds">Geo bounds (W,S,E,N)</label>
+                    <input type="text" id="upload-manual-bounds" placeholder="optional, e.g. 77.5,12.9,77.6,13.0" />
+                  </div>
+                </div>
+                <div id="upload-progress" class="dda-upload-progress hidden">
+                  <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
+                  <span id="upload-progress-label" class="dim">Uploading…</span>
+                </div>
+              </form>
+              <details class="dda-storage-info">
+                <summary>Storage layout</summary>
+                <p class="sub" id="lib-instructions">Organize images in a configurable zone → area → year → type hierarchy.</p>
+                <pre id="lib-path-display" class="dda-path-code"></pre>
+              </details>
+            </div>
+            <div class="card" id="dda-area-pairs-card">
+              <div class="card-header">
+                <h3>Same-area pairs</h3>
+                <span class="dim" id="dda-area-pairs-hint"></span>
+              </div>
+              <p class="sub">Images that cover the same place are grouped automatically. The oldest is <strong>Before</strong> and the newest is <strong>After</strong>.</p>
+              <div id="dda-area-pairs" class="dda-area-pairs"><p class="dim">Loading pairs…</p></div>
+            </div>
+          <div class="card">
+            <div class="card-header">
+              <h3 id="lib-grid-title">Images</h3>
+              <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
+            </div>
+            <div id="lib-grid" class="dda-grid"><p class="dim">Select a node in the tree.</p></div>
+            <div class="pagination" id="lib-grid-pagination"></div>
+            <p class="sub dim">Click an image to view · use the delete button to remove from library</p>
+          </div>
+        </main>
+      </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="dda-image-viewer-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card dda-image-viewer-panel">
+      <div class="card-header">
+        <h3 id="dda-image-viewer-title">Image</h3>
+        <div class="dda-image-viewer-actions">
+          <button type="button" class="btn btn-danger btn-sm" id="dda-image-delete-btn">Delete</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="dda-image-viewer-close">Close</button>
+        </div>
+      </div>
+      <div class="dda-image-viewer-body">
+        <p id="dda-image-viewer-meta" class="dim"></p>
+        <p id="dda-image-viewer-status" class="dim dda-image-viewer-status"></p>
+        <div class="dda-viewer-mode-bar" role="tablist">
+          <button type="button" class="dda-view-btn active" id="dda-viewer-mode-preview" data-viewer-mode="preview">Preview</button>
+          <button type="button" class="dda-view-btn" id="dda-viewer-mode-map" data-viewer-mode="map">Map</button>
+        </div>
+        <div id="dda-image-viewer-preview-pane">
+          <div class="dda-image-viewer-wrap">
+            <img id="dda-image-viewer-img" alt="" />
+          </div>
+        </div>
+        <div id="dda-image-viewer-map-pane" class="dda-map-pane hidden">
+          <div class="dda-map-toolbar">
+            <label class="dda-map-field">
+              <span>Basemap</span>
+              <select id="dda-lib-basemap" aria-label="Basemap"></select>
+            </label>
+            <input type="url" id="dda-lib-xyz" class="dda-map-xyz hidden" placeholder="https://…/{z}/{x}/{y}.png" aria-label="Custom XYZ URL" />
+            <label class="dda-check"><input type="checkbox" id="dda-lib-overlay" checked /> TIF overlay</label>
+            <label class="dda-map-field dda-map-opacity">
+              <span>Opacity <em id="dda-lib-opacity-val">75%</em></span>
+              <input type="range" id="dda-lib-opacity" min="10" max="100" value="75" />
+            </label>
+            <button type="button" class="btn btn-secondary btn-sm" id="dda-lib-fit">Fit extent</button>
+          </div>
+          <p id="dda-library-map-status" class="dim dda-map-status"></p>
+          <div id="dda-library-map" class="dda-map-canvas"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dda-manage-modal" class="dda-modal hidden" role="dialog">
+    <div class="dda-modal-panel card dda-manage-panel">
+      <div class="card-header">
+        <h3>Manage tree</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-manage-close">Close</button>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Add node</h4>
+        <div class="location-row">
+          <select id="add-child-parent"><option value="">— Root —</option></select>
+          <input type="text" id="add-node-name" placeholder="Node name" />
+          <select id="add-node-type">
+            <option>Zone</option><option>Area</option><option>Year</option>
+            <option>Satellite Images</option><option>Drone Survey</option><option>Change Detection</option>
+            <option>Folder</option>
+          </select>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-add-node">Add</button>
+        </div>
+      </div>
+      <div class="dda-manage-section">
+        <h4>Edit / move / delete</h4>
+        <select id="manage-node-select"></select>
+        <div class="location-row">
+          <input type="text" id="rename-node-name" placeholder="Rename to…" />
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-node">Rename</button>
+        </div>
+        <div class="location-row">
+          <select id="move-parent"><option value="">— Move to root —</option></select>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-move-node">Move</button>
+        </div>
+        <label class="dda-check"><input type="checkbox" id="delete-files-check" /> Delete files on disk</label>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-node">Delete node</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/static/js/dda/shared.js?v=2"></script>
+  <script src="/static/js/dda/app.js?v=24"></script>
+  <script src="/static/js/dda/tree.js?v=2"></script>
+  <script src="/static/js/dda/map.js?v=4"></script>
+  <script src="/static/js/dda/library.js?v=15"></script>
+  <script src="/static/js/dda/pairs.js?v=3"></script>
+  <script src="/static/js/dda/result.js?v=20"></script>
+  <script src="/static/js/dda/compare.js?v=21"></script>
+  <script src="/static/js/dda/reports.js?v=7"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+</body>
+</html>

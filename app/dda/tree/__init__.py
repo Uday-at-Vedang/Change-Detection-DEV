@@ -1,1 +1,1 @@
-"""Unlimited-depth tree library for DDA (dev)."""
+"""Unlimited-depth tree library for Vedangsoft (dev)."""
