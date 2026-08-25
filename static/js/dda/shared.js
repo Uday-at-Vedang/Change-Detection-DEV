@@ -58,6 +58,36 @@ function formatBytes(n) {
   return (n / 1024).toFixed(0) + ' KB';
 }
 
+/** Calendar day in the viewer's local timezone, YYYY-MM-DD. */
+function reportDayKey(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Dates shown in IST so reports match the schedule clock. */
+function formatDateIst(iso, { withTime = true } = {}) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const opts = withTime
+    ? { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }
+    : { dateStyle: 'medium', timeZone: 'Asia/Kolkata' };
+  try {
+    const formatted = new Intl.DateTimeFormat(undefined, opts).format(d);
+    return withTime ? `${formatted} IST` : formatted;
+  } catch (_) {
+    return d.toLocaleString();
+  }
+}
+
+window.formatDateIst = formatDateIst;
+window.reportDayKey = reportDayKey;
+
 /** Shared prev/numbered/next pagination control — same markup/behavior as
  * the region-review table's pagination (result.js), reused by any list/grid
  * that needs paging instead of an internal scrollbar. */

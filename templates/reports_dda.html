@@ -6,7 +6,7 @@
   <title>Reports — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=37" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=39" />
 </head>
 <body>
   <div class="app dda-app">
@@ -20,11 +20,53 @@
           <div class="card-header">
             <h3>Detection Reports</h3>
             <div class="dda-reports-toolbar">
-              <input type="search" id="reports-filter" class="dda-search" placeholder="Search reports…" />
+              <span id="reports-filter-meta" class="dim dda-filter-meta"></span>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-reports-refresh">Refresh</button>
             </div>
           </div>
-          <p class="sub dim">Completed jobs and detection history. Download PDF or open the browser report.</p>
+          <p class="sub dim">Filter by text, status, source, area, or date. Download PDF or open the browser report.</p>
+          <div class="dda-filter-bar" id="reports-filter-bar">
+            <label class="dda-filter-field">Search
+              <input type="search" id="reports-filter" class="dda-search" placeholder="Title, area, status…" />
+            </label>
+            <label class="dda-filter-field">Status
+              <select id="reports-filter-status">
+                <option value="">All</option>
+                <option value="completed">Completed</option>
+                <option value="running">Running</option>
+                <option value="queued">Queued</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+            <label class="dda-filter-field">Source
+              <select id="reports-filter-source">
+                <option value="">All</option>
+                <option value="manual">Manual</option>
+                <option value="auto">Automatic</option>
+              </select>
+            </label>
+            <label class="dda-filter-field">Area
+              <select id="reports-filter-zone">
+                <option value="">All areas</option>
+              </select>
+            </label>
+            <label class="dda-filter-field">From
+              <input type="date" id="reports-filter-from" class="dda-date-input" />
+            </label>
+            <label class="dda-filter-field">To
+              <input type="date" id="reports-filter-to" class="dda-date-input" />
+            </label>
+            <label class="dda-filter-field">Sort
+              <select id="reports-filter-sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="change-desc">Change % high–low</option>
+                <option value="change-asc">Change % low–high</option>
+                <option value="title">Title A–Z</option>
+              </select>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-reports-clear">Clear</button>
+          </div>
           <div id="reports-list"><p class="dim">Loading reports…</p></div>
           <div class="pagination" id="reports-pagination"></div>
         </div>
@@ -35,15 +77,15 @@
   {% include "partials/result_modal_dda.html" %}
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/static/js/dda/shared.js?v=2"></script>
-  <script src="/static/js/dda/app.js?v=24"></script>
-  <script src="/static/js/dda/tree.js?v=2"></script>
+  <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/app.js?v=25"></script>
+  <script src="/static/js/dda/tree.js?v=3"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=15"></script>
-  <script src="/static/js/dda/pairs.js?v=3"></script>
+  <script src="/static/js/dda/library.js?v=16"></script>
+  <script src="/static/js/dda/pairs.js?v=6"></script>
   <script src="/static/js/dda/result.js?v=20"></script>
-  <script src="/static/js/dda/compare.js?v=21"></script>
-  <script src="/static/js/dda/reports.js?v=7"></script>
+  <script src="/static/js/dda/compare.js?v=23"></script>
+  <script src="/static/js/dda/reports.js?v=9"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>
 </html>

@@ -65,7 +65,7 @@ async function initDda() {
 
     const uploadLimit = document.getElementById('upload-limit-hint');
     if (uploadLimit && localCfg.maxUploadGb) {
-      uploadLimit.textContent = `Select a tree node and image type. Max ${localCfg.maxUploadGb} GB per file.`;
+      uploadLimit.textContent = `Select a folder, then drop files or a directory here. Max ${localCfg.maxUploadGb} GB per file.`;
     }
 
     const resHint = document.getElementById('dda-detect-res-hint');

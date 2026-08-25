@@ -6,6 +6,7 @@ SIFT+FLANN registration, tile-based + multi-scale processing, Excess Green
 vegetation index, confidence maps, and improved object classification.
 """
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
@@ -488,6 +489,44 @@ def compute_shadow_suppression(img1, img2):
     return suppression.astype(np.float32)
 
 
+def _cc_bbox(stats, i, shape, pad=0):
+    """Inclusive-exclusive bbox for connected-component ``i``, clipped to image."""
+    h, w = int(shape[0]), int(shape[1])
+    x = int(stats[i, cv2.CC_STAT_LEFT])
+    y = int(stats[i, cv2.CC_STAT_TOP])
+    bw = int(stats[i, cv2.CC_STAT_WIDTH])
+    bh = int(stats[i, cv2.CC_STAT_HEIGHT])
+    pad = max(0, int(pad))
+    x1 = max(0, x - pad)
+    y1 = max(0, y - pad)
+    x2 = min(w, x + bw + pad)
+    y2 = min(h, y + bh + pad)
+    return x1, y1, x2, y2
+
+
+def _cc_bool_crop(labels, stats, i, pad=0):
+    """Boolean mask of label ``i`` cropped to its padded bbox.
+
+    Scanning ``labels == i`` on a 4K+ frame for every component is O(N·pixels)
+    and freezes detection after inference (UI stuck at ~46%). Always work in
+    the component bbox instead.
+    """
+    x1, y1, x2, y2 = _cc_bbox(stats, i, labels.shape, pad=pad)
+    return (x1, y1, x2, y2), labels[y1:y2, x1:x2] == i
+
+
+def _cc_set(dst, labels, stats, i, value):
+    """Paint component ``i`` in ``dst`` using its bbox (no full-image scan)."""
+    x1, y1, x2, y2 = _cc_bbox(stats, i, labels.shape, pad=0)
+    crop = dst[y1:y2, x1:x2]
+    crop[labels[y1:y2, x1:x2] == i] = value
+
+
+def _cc_clear(dst, labels, stats, i, value=0):
+    """Clear component ``i`` in ``dst`` using its bbox (no full-image scan)."""
+    _cc_set(dst, labels, stats, i, value)
+
+
 def strip_shadow_only_from_mask(change_mask, img1, img2, registration_ok=True):
     """Hard-remove illumination/shadow-only pixels from a binary change mask.
 
@@ -779,11 +818,12 @@ def _split_component_branches(comp):
     if np.any(sparse):
         n_sparse, sparse_labels, sparse_stats, _ = cv2.connectedComponentsWithStats(
             sparse, connectivity=8)
-        sparse_pieces = [
-            ((sparse_labels == i).astype(np.uint8)) * 255
-            for i in range(1, n_sparse)
-            if sparse_stats[i, cv2.CC_STAT_AREA] >= 80
-        ]
+        for i in range(1, n_sparse):
+            if sparse_stats[i, cv2.CC_STAT_AREA] < 80:
+                continue
+            piece = np.zeros_like(comp)
+            _cc_set(piece, sparse_labels, sparse_stats, i, 255)
+            sparse_pieces.append(piece)
     sparse_claimed = np.zeros_like(comp)
     for p in sparse_pieces:
         sparse_claimed = cv2.bitwise_or(sparse_claimed, p)
@@ -920,7 +960,8 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
     chroma = np.abs(lab1[:, :, 1] - lab2[:, :, 1]) + np.abs(lab1[:, :, 2] - lab2[:, :, 2])
 
     binary = (change_mask > 127).astype(np.uint8)
-    num, labels = cv2.connectedComponents(binary, connectivity=8)
+    t0 = time.perf_counter()
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
     if num <= 1:
         return change_mask
 
@@ -928,13 +969,24 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
     removed_comps = 0
     kept_union = np.zeros_like(change_mask)
     to_remove = np.zeros_like(change_mask)
+    # Dilate kernel for the surround ring is 21×21 (radius 10); pad so the
+    # crop still contains that collar.
+    ring_pad = 12
     for i in range(1, num):
-        comp = ((labels == i).astype(np.uint8)) * 255
-        pieces = _split_component_branches(comp) or [comp]
+        if int(stats[i, cv2.CC_STAT_AREA]) < 4:
+            continue
+        (x1, y1, x2, y2), crop_bool = _cc_bool_crop(labels, stats, i, pad=ring_pad)
+        piece_u8 = crop_bool.astype(np.uint8) * 255
+        cm_crop = change_mask[y1:y2, x1:x2]
+        b_crop = before_img[y1:y2, x1:x2]
+        a_crop = after_img[y1:y2, x1:x2]
+        dl_crop = delta_l[y1:y2, x1:x2]
+        ch_crop = chroma[y1:y2, x1:x2]
+        pieces = _split_component_branches(piece_u8) or [piece_u8]
         for piece in pieces:
-            ring = _ring_around(piece, 10, exclude=change_mask)
+            ring = _ring_around(piece, 10, exclude=cm_crop)
             frag = _is_shadow_fragment(
-                before_img, after_img, piece, ring, delta_l, chroma,
+                b_crop, a_crop, piece, ring, dl_crop, ch_crop,
                 registration_ok=registration_ok)
             if _log.isEnabledFor(logging.DEBUG):
                 ys, xs = np.where(piece > 0)
@@ -944,10 +996,12 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
                         int((piece > 0).sum()), int(xs.min()), int(ys.min()),
                         int(xs.max() - xs.min()), int(ys.max() - ys.min()), frag)
             if frag:
-                to_remove = cv2.bitwise_or(to_remove, piece)
+                to_remove[y1:y2, x1:x2] = cv2.bitwise_or(
+                    to_remove[y1:y2, x1:x2], piece)
                 removed_comps += 1
             else:
-                kept_union = cv2.bitwise_or(kept_union, piece)
+                kept_union[y1:y2, x1:x2] = cv2.bitwise_or(
+                    kept_union[y1:y2, x1:x2], piece)
 
     # Reconstructing each split piece by independent dilation can let adjacent
     # pieces both claim the same boundary pixels. A pixel any kept piece also
@@ -957,9 +1011,12 @@ def strip_shadow_fragments_from_mask(change_mask, before_img, after_img,
     removed_px = int((to_remove > 0).sum())
     out[to_remove > 0] = 0
 
-    if removed_comps:
-        _log.info("Stripped %d residual shadow-fragment component(s) (%d px)",
-                  removed_comps, removed_px)
+    elapsed = time.perf_counter() - t0
+    if removed_comps or elapsed > 1.0:
+        _log.info(
+            "Shadow-fragment strip: %d component(s) in %.2fs (removed %d, %d px)",
+            num - 1, elapsed, removed_comps, removed_px,
+        )
     return out
 
 
@@ -1010,7 +1067,7 @@ def strip_alignment_edge_ribbons_from_mask(change_mask):
         h = int(stats[i, cv2.CC_STAT_HEIGHT])
         fill = area / float(max(w * h, 1))
         if _is_alignment_edge_ribbon(area, w, h, fill):
-            out[labels == i] = 0
+            _cc_clear(out, labels, stats, i)
             removed_px += area
             removed_comps += 1
     if removed_comps:
@@ -1056,15 +1113,15 @@ def strip_brightening_noise_from_mask(change_mask, before_img, after_img):
     after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
 
     binary = (change_mask > 127).astype(np.uint8)
-    num, labels = cv2.connectedComponents(binary, connectivity=8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
     if num <= 1:
         return change_mask
 
     out = change_mask.copy()
     removed_px = removed_comps = 0
     for i in range(1, num):
-        comp = labels == i
-        comp_area = int(comp.sum())
+        comp_area = int(stats[i, cv2.CC_STAT_AREA])
+        (x1, y1, x2, y2), comp = _cc_bool_crop(labels, stats, i)
         # A per-pixel low-chroma gate (mirroring the darkening test) turned
         # out too strict here: brightening a colour via a simple gain
         # pushes channels toward their ceiling non-linearly, shifting
@@ -1074,16 +1131,16 @@ def strip_brightening_noise_from_mask(change_mask, before_img, after_img):
         # ~21, well above the darkening test's threshold. Correlation
         # alone is the reliable signal here; require only that the
         # component is meaningfully brighter overall.
-        if float(delta_l[comp].mean()) > -16:
+        if float(delta_l[y1:y2, x1:x2][comp].mean()) > -16:
             continue
-        b_vals = before_gray[comp]
-        a_vals = after_gray[comp]
+        b_vals = before_gray[y1:y2, x1:x2][comp]
+        a_vals = after_gray[y1:y2, x1:x2][comp]
         if b_vals.std() <= 4.0 or a_vals.std() <= 4.0:
             continue  # no texture to judge by -- don't strip on an absence of evidence
         corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
         if corr <= 0.5:
             continue  # unrelated texture pattern -> genuinely new material, keep it
-        out[comp] = 0
+        out[y1:y2, x1:x2][comp] = 0
         removed_px += comp_area
         removed_comps += 1
 
@@ -1235,24 +1292,28 @@ def recover_chromatic_roof_construction(change_mask, before_img, after_img,
             continue
         if (not registration_ok) and _is_alignment_edge_ribbon(area, w, h, fill):
             continue
-        comp = labels == i
-        novel = comp & (~blue_b)
+        (x1, y1, x2, y2), comp = _cc_bool_crop(labels, stats, i)
+        blue_crop = blue_b[y1:y2, x1:x2]
+        chroma_crop = chroma[y1:y2, x1:x2]
+        dl_crop = d_l[y1:y2, x1:x2]
+        novel = comp & (~blue_crop)
         novel_px = int(np.sum(novel))
-        was_blue = float(np.mean(blue_b[comp]))
+        was_blue = float(np.mean(blue_crop[comp]))
         novel_frac = novel_px / max(area, 1)
         # Mostly pre-existing blue with no substantial novel footprint → skip
         if was_blue > 0.55 and novel_px < area_thr:
             continue
         if novel_frac < 0.18 and was_blue > 0.40:
             continue
-        mean_chroma = float(np.mean(chroma[novel])) if novel_px else float(np.mean(chroma[comp]))
-        if mean_chroma < 8.0 and was_blue > 0.30 and float(np.mean(d_l[novel] if novel_px else d_l[comp])) < 6.0:
+        mean_chroma = float(np.mean(chroma_crop[novel])) if novel_px else float(np.mean(chroma_crop[comp]))
+        mean_dl = float(np.mean(dl_crop[novel] if novel_px else dl_crop[comp]))
+        if mean_chroma < 8.0 and was_blue > 0.30 and mean_dl < 6.0:
             continue
         # Prefer novel pixels when the blob swallowed an old blue surface
         if was_blue > 0.35 and novel_px >= min_area:
-            recovered[novel] = 255
+            recovered[y1:y2, x1:x2][novel] = 255
         else:
-            recovered[comp] = 255
+            recovered[y1:y2, x1:x2][comp] = 255
         n_comps += 1
 
     if n_comps == 0:
@@ -1422,14 +1483,19 @@ def recover_dark_roof_construction(change_mask, before_img, after_img,
         grown_add = cv2.bitwise_and(grown, local)
 
         if np.any(grown_add):
-            n_grow, grow_labels = cv2.connectedComponents(grown_add, connectivity=8)
+            n_grow, grow_labels, grow_stats, _ = cv2.connectedComponentsWithStats(
+                (grown_add > 0).astype(np.uint8), connectivity=8)
             for gi in range(1, n_grow):
-                piece = (grow_labels == gi)
+                (x1, y1, x2, y2), piece = _cc_bool_crop(
+                    grow_labels, grow_stats, gi, pad=12)
                 piece_u8 = piece.astype(np.uint8) * 255
-                ring = _ring_around(piece_u8, 10, exclude=change_mask) > 0
+                ring = _ring_around(
+                    piece_u8, 10, exclude=change_mask[y1:y2, x1:x2]) > 0
                 if _same_material_darker_signature(
-                        piece, ring, lab2, before_gray=before_gray, after_gray=after_gray):
-                    grown_add[piece] = 0
+                        piece, ring, lab2[y1:y2, x1:x2],
+                        before_gray=before_gray[y1:y2, x1:x2],
+                        after_gray=after_gray[y1:y2, x1:x2]):
+                    grown_add[y1:y2, x1:x2][piece] = 0
 
     # --- Mode 2: strict standalone dark-roof components ---
     recovered = np.zeros_like(change_mask)
@@ -1459,14 +1525,16 @@ def recover_dark_roof_construction(change_mask, before_img, after_img,
                 continue
             if _is_alignment_edge_ribbon(area, w, h, fill):
                 continue
-        comp = labels == i
-        mean_dl = float(np.mean(d_l[comp]))
+        (x1, y1, x2, y2), comp = _cc_bool_crop(labels, stats, i, pad=12)
+        dl_crop = d_l[y1:y2, x1:x2]
+        exg_crop = exg[y1:y2, x1:x2]
+        mean_dl = float(np.mean(dl_crop[comp]))
         need_dl = 45.0
         if mean_dl < need_dl:
             continue
-        if float(np.mean(exg[comp])) > 14.0:
+        if float(np.mean(exg_crop[comp])) > 14.0:
             continue
-        if float(np.mean(lab2[:, :, 0][comp])) > 80.0:
+        if float(np.mean(lab2[y1:y2, x1:x2, 0][comp])) > 80.0:
             continue
         need = strong_area_thr if mean_dl >= 55.0 else area_thr
         if not registration_ok:
@@ -1474,11 +1542,14 @@ def recover_dark_roof_construction(change_mask, before_img, after_img,
         if area < need:
             continue
         comp_u8 = comp.astype(np.uint8) * 255
-        ring = _ring_around(comp_u8, 10, exclude=change_mask) > 0
+        ring = _ring_around(
+            comp_u8, 10, exclude=change_mask[y1:y2, x1:x2]) > 0
         if _same_material_darker_signature(
-                comp, ring, lab2, before_gray=before_gray, after_gray=after_gray):
+                comp, ring, lab2[y1:y2, x1:x2],
+                before_gray=before_gray[y1:y2, x1:x2],
+                after_gray=after_gray[y1:y2, x1:x2]):
             continue
-        recovered[comp] = 255
+        recovered[y1:y2, x1:x2][comp] = 255
         n_comps += 1
 
     if n_comps:
@@ -1590,11 +1661,11 @@ def recover_light_roof_construction(change_mask, before_img, after_img,
     before_gray = cv2.cvtColor(before_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
     after_gray = cv2.cvtColor(after_img, cv2.COLOR_RGB2GRAY).astype(np.float64)
 
-    def _shadow_lifted(comp_mask):
+    def _shadow_lifted_vals(b_vals, a_vals):
         """True if this brightened patch is more likely a lifted shadow
         (same material, now lit) than a genuinely new material."""
-        b_vals = before_gray[comp_mask]
-        a_vals = after_gray[comp_mask]
+        if b_vals.size == 0 or a_vals.size == 0:
+            return False
         if b_vals.std() > 4.0 and a_vals.std() > 4.0:
             corr = float(np.corrcoef(b_vals, a_vals)[0, 1])
             return corr > 0.5
@@ -1636,11 +1707,15 @@ def recover_light_roof_construction(change_mask, before_img, after_img,
         grown_add = cv2.bitwise_and(grown, local)
 
         if np.any(grown_add):
-            n_grow, grow_labels = cv2.connectedComponents(grown_add, connectivity=8)
+            n_grow, grow_labels, grow_stats, _ = cv2.connectedComponentsWithStats(
+                (grown_add > 0).astype(np.uint8), connectivity=8)
             for gi in range(1, n_grow):
-                piece = (grow_labels == gi)
-                if _shadow_lifted(piece):
-                    grown_add[piece] = 0
+                (x1, y1, x2, y2), piece = _cc_bool_crop(
+                    grow_labels, grow_stats, gi)
+                if _shadow_lifted_vals(
+                        before_gray[y1:y2, x1:x2][piece],
+                        after_gray[y1:y2, x1:x2][piece]):
+                    grown_add[y1:y2, x1:x2][piece] = 0
 
     # --- Mode 2: strict standalone light-roof components ---
     recovered = np.zeros_like(change_mask)
@@ -1667,20 +1742,24 @@ def recover_light_roof_construction(change_mask, before_img, after_img,
                 continue
             if _is_alignment_edge_ribbon(area, w, h, fill):
                 continue
-        comp = labels == i
-        mean_dl = float(np.mean(d_l[comp]))
+        (x1, y1, x2, y2), comp = _cc_bool_crop(labels, stats, i)
+        dl_crop = d_l[y1:y2, x1:x2]
+        exg_crop = exg[y1:y2, x1:x2]
+        mean_dl = float(np.mean(dl_crop[comp]))
         if mean_dl > -45.0:
             continue
-        if float(np.mean(exg[comp])) > 14.0:
+        if float(np.mean(exg_crop[comp])) > 14.0:
             continue
         need = strong_area_thr if mean_dl <= -55.0 else area_thr
         if not registration_ok:
             need = max(need, 1200)
         if area < need:
             continue
-        if _shadow_lifted(comp):
+        if _shadow_lifted_vals(
+                before_gray[y1:y2, x1:x2][comp],
+                after_gray[y1:y2, x1:x2][comp]):
             continue
-        recovered[comp] = 255
+        recovered[y1:y2, x1:x2][comp] = 255
         n_comps += 1
 
     if n_comps:
@@ -1751,7 +1830,7 @@ def strip_weak_seasonal_veg_from_mask(change_mask, before_img, after_img):
         ndvi = float(feat_a.get("ndvi", 0.0))
         exg = float(feat_a.get("exg", 0.0))
         if perm < 0.30 and (ndvi > 0.12 or exg > 12.0):
-            out[labels == i] = 0
+            _cc_clear(out, labels, stats, i)
             removed += 1
     if removed:
         _log.info("Stripped %d large seasonal-vegetation component(s) from change mask", removed)
@@ -1805,7 +1884,8 @@ def strip_parking_cluster_from_mask(change_mask, before_img, after_img):
         if perm >= 0.40:
             continue
         # Count vehicle-sized pieces after a light erode of this component
-        comp = ((labels == i).astype(np.uint8) * 255)
+        (cx1, cy1, cx2, cy2), comp_bool = _cc_bool_crop(labels, stats, i)
+        comp = comp_bool.astype(np.uint8) * 255
         eroded = cv2.erode(comp, k, iterations=1)
         n_sub, _, sub_stats, _ = cv2.connectedComponentsWithStats(
             (eroded > 127).astype(np.uint8), connectivity=8)
@@ -1818,7 +1898,7 @@ def strip_parking_cluster_from_mask(change_mask, before_img, after_img):
             if 80 <= sa <= max_car and 1.05 <= sasp <= 8.0:
                 vehicle_bits += 1
         if vehicle_bits >= 3 and float(feat_a.get("ndvi", 0)) < 0.12:
-            out[labels == i] = 0
+            _cc_clear(out, labels, stats, i)
             removed += 1
     if removed:
         _log.info("Stripped %d parking-lot cluster component(s) from change mask", removed)
@@ -1973,9 +2053,7 @@ def _hysteresis_threshold(score, high_thr, low_thr):
     seed_labels = seed_labels[seed_labels > 0]
     if seed_labels.size == 0:
         return (high * 255).astype(np.uint8)
-    out = np.zeros_like(high)
-    for lab in seed_labels:
-        out[labels == lab] = 1
+    out = np.isin(labels, seed_labels).astype(np.uint8)
     return (out * 255).astype(np.uint8)
 
 
@@ -2915,7 +2993,7 @@ def _clean_mask(mask, sensitivity=0.5, border_margin=None, for_dl=False,
             continue
         if (not registration_ok) and _is_alignment_edge_ribbon(area, cw, ch, fill_ratio):
             continue
-        clean[labels == i] = 255
+        _cc_set(clean, labels, stats, i, 255)
 
     return clean
 
@@ -3369,7 +3447,7 @@ def strip_transient_from_mask(change_mask, before_img, after_img,
             # Protect building-scale blobs when registration is poor.
             if (not registration_ok) and raw_area >= 900:
                 continue
-            out[labels == i] = 0
+            _cc_clear(out, labels, stats, i)
             removed += 1
     if removed:
         _log.info("Stripped %d transient/vehicle component(s) from change mask", removed)
@@ -4532,12 +4610,12 @@ def _tight_bbox(labels, label_id, stats_row):
 
     # If the component fills less than 20% of its bbox, compute a tighter fit
     if fill_ratio < 0.20 and area > 100:
-        ys, xs = np.where(labels == label_id)
+        ys, xs = np.where(labels[y:y + h, x:x + w] == label_id)
         if len(xs) > 0:
-            x = int(np.min(xs))
-            y = int(np.min(ys))
-            w = int(np.max(xs) - x + 1)
-            h = int(np.max(ys) - y + 1)
+            x = int(x + np.min(xs))
+            y = int(y + np.min(ys))
+            w = int(np.max(xs) - np.min(xs) + 1)
+            h = int(np.max(ys) - np.min(ys) + 1)
             fill_ratio = area / max(w * h, 1)
 
     return x, y, w, h, fill_ratio
@@ -5220,20 +5298,24 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         float(np.sum(change_mask > 127)) / float(total_pixels) if total_pixels else 0.0
     )
 
+    _prog(52, "Filtering transients and shadows")
     change_mask = strip_transient_from_mask(
         change_mask, before_array, after_array, registration_ok=registration_ok)
     change_mask = strip_shadow_only_from_mask(
         change_mask, before_array, after_array, registration_ok=registration_ok)
+    _prog(54, "Filtering shadow fragments")
     change_mask = strip_shadow_fragments_from_mask(
         change_mask, before_array, after_array, registration_ok=registration_ok)
     if not registration_ok:
         change_mask = strip_alignment_edge_ribbons_from_mask(change_mask)
+    _prog(56, "Filtering parking and vegetation")
     change_mask = strip_parking_cluster_from_mask(change_mask, before_array, after_array)
     change_mask = strip_weak_seasonal_veg_from_mask(change_mask, before_array, after_array)
     # Recovery uses pre-normalization color so CLAHE/L-match cannot erase roofs.
     # On weak alignment skip all roof recovery (#77/#78). Light-roof recovery
     # is well-aligned-only (Priyanka): jitter brightens existing rooftops.
     if registration_ok:
+        _prog(58, "Recovering roof construction")
         change_mask = recover_chromatic_roof_construction(
             change_mask, before_chromatic, after_chromatic,
             registration_ok=True)
@@ -5243,7 +5325,8 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
         change_mask = recover_light_roof_construction(
             change_mask, before_chromatic, after_chromatic)
         # Re-strip shadow that recovery may have regrown; repeat until stable.
-        for _ in range(4):
+        for pass_i in range(4):
+            _prog(60 + pass_i, f"Cleaning recovered mask ({pass_i + 1}/4)")
             before_pass = change_mask
             change_mask = strip_shadow_only_from_mask(
                 change_mask, before_array, after_array, registration_ok=True)
@@ -5252,6 +5335,7 @@ def run_detection(before_pil, after_pil, method="AI-Based Deep Learning",
             if np.array_equal(change_mask, before_pass):
                 break
     else:
+        _prog(60, "Cleaning weak-alignment artifacts")
         change_mask = strip_shadow_fragments_from_mask(
             change_mask, before_array, after_array, registration_ok=False)
         # Mirror-image counterpart of the darkening strip: registration jitter

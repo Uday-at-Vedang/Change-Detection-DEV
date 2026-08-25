@@ -133,6 +133,8 @@ def init_dda_database():
             logger.info("Filesystem sync at startup: %s", sync_stats)
         except Exception as exc:
             logger.warning("Filesystem sync at startup failed: %s", exc)
+        from .auto_detect import reset_schedule_on_process_start
+        reset_schedule_on_process_start()
         from .job_runner import reconcile_stale_jobs
         reconcile_stale_jobs(db)
     finally:

@@ -80,7 +80,7 @@ function renderTreeSidebar(sidebar, tree, types) {
   let html = `<button type="button" class="dda-tree-all ${allActive ? 'active' : ''}" id="${allBtnId}">All images</button>`;
   html += renderTreeNodes(nodes, sidebar);
   if (!nodes.length) {
-    html += '<p class="dim">No nodes yet. Create folders on disk or use Manage to add zones.</p>';
+    html += '<p class="dim">No folders yet. Use Folders master to add zones and areas, or drop a folder onto Upload.</p>';
   }
   el.innerHTML = html;
 
@@ -99,6 +99,7 @@ function renderTreeSidebar(sidebar, tree, types) {
       renderAllTrees(treeData, imageTypes);
     });
   });
+  if (sidebar.containerId === 'lib-tree') bindLibraryTreeExtras(el);
 }
 
 function renderAllTrees(tree, types) {
@@ -146,13 +147,15 @@ function flattenNodes(nodes, out = []) {
 
 function populateNodeSelects(tree) {
   const flat = flattenNodes(tree || []);
-  const opts = '<option value="">— Select node —</option>' +
-    flat.map((n) => `<option value="${n.id}">${escapeHtml(n.nodePath || n.name)}</option>`).join('');
+  const pathOpts = flat.map((n) => `<option value="${n.id}">${escapeHtml(n.nodePath || n.name)}</option>`).join('');
+  const uploadOpts = '<option value="">— Select folder —</option>' + pathOpts;
+  const rootOpts = '<option value="">— Root —</option>' + pathOpts;
 
-  ['upload-node', 'manage-parent', 'move-parent', 'add-child-parent'].forEach((id) => {
+  const upload = document.getElementById('upload-node');
+  if (upload) upload.innerHTML = uploadOpts;
+  ['add-child-parent', 'move-parent'].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.innerHTML = id === 'manage-parent' ? '<option value="">— Root —</option>' + flat.map((n) =>
-      `<option value="${n.id}">${escapeHtml(n.nodePath || n.name)}</option>`).join('') : opts;
+    if (el) el.innerHTML = rootOpts;
   });
 
   const typeSel = document.getElementById('upload-image-type');
@@ -185,12 +188,12 @@ document.getElementById('btn-add-node')?.addEventListener('click', async () => {
   const parentVal = document.getElementById('add-child-parent')?.value;
   const name = document.getElementById('add-node-name')?.value?.trim();
   const type = document.getElementById('add-node-type')?.value || 'Folder';
-  if (!name) return showDdaError('Enter a node name.');
+  if (!name) return showDdaError('Enter a folder name.');
   const body = { node_name: name, node_type: type, parent_id: parentVal ? parseInt(parentVal, 10) : null };
   try {
     await ddaApi('POST', '/api/dda/tree/nodes', { body: JSON.stringify(body) });
     document.getElementById('add-node-name').value = '';
-    showDdaSuccess('Node created.');
+    showDdaSuccess('Folder created.');
     await window.ddaState.rescan();
   } catch (err) {
     showDdaError(err.message);
@@ -200,10 +203,10 @@ document.getElementById('btn-add-node')?.addEventListener('click', async () => {
 document.getElementById('btn-rename-node')?.addEventListener('click', async () => {
   const id = parseInt(document.getElementById('manage-node-select')?.value || '0', 10);
   const name = document.getElementById('rename-node-name')?.value?.trim();
-  if (!id || !name) return showDdaError('Select a node and enter a new name.');
+  if (!id || !name) return showDdaError('Select a folder and enter a new name.');
   try {
     await ddaApi('PUT', `/api/dda/tree/nodes/${id}/rename`, { body: JSON.stringify({ node_name: name }) });
-    showDdaSuccess('Node renamed.');
+    showDdaSuccess('Folder renamed.');
     await window.ddaState.rescan();
   } catch (err) {
     showDdaError(err.message);
@@ -212,11 +215,11 @@ document.getElementById('btn-rename-node')?.addEventListener('click', async () =
 
 document.getElementById('btn-delete-node')?.addEventListener('click', async () => {
   const id = parseInt(document.getElementById('manage-node-select')?.value || '0', 10);
-  if (!id || !confirm('Delete this node? Check delete files if removing images.')) return;
+  if (!id || !confirm('Remove this folder from the masters library? Images inside it will no longer be listed.')) return;
   const deleteFiles = document.getElementById('delete-files-check')?.checked;
   try {
     await ddaApi('DELETE', `/api/dda/tree/nodes/${id}`, { body: JSON.stringify({ delete_files: !!deleteFiles }) });
-    showDdaSuccess('Node deleted.');
+    showDdaSuccess('Folder removed.');
     await window.ddaState.rescan();
   } catch (err) {
     showDdaError(err.message);
@@ -226,12 +229,12 @@ document.getElementById('btn-delete-node')?.addEventListener('click', async () =
 document.getElementById('btn-move-node')?.addEventListener('click', async () => {
   const id = parseInt(document.getElementById('manage-node-select')?.value || '0', 10);
   const parentVal = document.getElementById('move-parent')?.value;
-  if (!id) return showDdaError('Select a node to move.');
+  if (!id) return showDdaError('Select a folder to move.');
   try {
     await ddaApi('POST', `/api/dda/tree/nodes/${id}/move`, {
       body: JSON.stringify({ parent_id: parentVal ? parseInt(parentVal, 10) : null }),
     });
-    showDdaSuccess('Node moved.');
+    showDdaSuccess('Folder moved.');
     await window.ddaState.rescan();
   } catch (err) {
     showDdaError(err.message);
@@ -246,8 +249,115 @@ function populateManageNodeSelect() {
     `<option value="${n.id}">${escapeHtml(n.nodePath || n.name)}</option>`).join('');
 }
 
+let treeMenuNodeId = null;
+
+function hideTreeMenu() {
+  document.getElementById('dda-tree-menu')?.classList.add('hidden');
+  treeMenuNodeId = null;
+}
+
+function showTreeMenu(x, y, nodeId) {
+  const menu = document.getElementById('dda-tree-menu');
+  if (!menu) return;
+  treeMenuNodeId = nodeId;
+  const admin = isAdmin();
+  menu.querySelectorAll('[data-admin-only]').forEach((el) => {
+    el.classList.toggle('hidden', !admin);
+  });
+  menu.classList.remove('hidden');
+  const pad = 8;
+  const w = menu.offsetWidth || 180;
+  const h = menu.offsetHeight || 160;
+  menu.style.left = `${Math.min(x, window.innerWidth - w - pad)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - h - pad)}px`;
+}
+
+function bindLibraryTreeExtras(el) {
+  el.querySelectorAll('.dda-tree-node-btn').forEach((btn) => {
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showTreeMenu(e.clientX, e.clientY, parseInt(btn.dataset.nodeId, 10));
+    });
+    ['dragenter', 'dragover'].forEach((ev) => {
+      btn.addEventListener(ev, (e) => {
+        if (![...e.dataTransfer.types].includes('Files')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        btn.classList.add('is-drop-target');
+      });
+    });
+    btn.addEventListener('dragleave', () => btn.classList.remove('is-drop-target'));
+    btn.addEventListener('drop', async (e) => {
+      btn.classList.remove('is-drop-target');
+      if (![...e.dataTransfer.types].includes('Files')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const nodeId = parseInt(btn.dataset.nodeId, 10);
+      if (typeof setUploadTargetNode === 'function') setUploadTargetNode(nodeId);
+      try {
+        const files = typeof window.readDroppedEntries === 'function'
+          ? await window.readDroppedEntries(e.dataTransfer)
+          : Array.from(e.dataTransfer.files || []);
+        if (!files.length) return;
+        if (typeof uploadLibraryFiles === 'function') {
+          await uploadLibraryFiles(files, { nodeId, preserveFolders: true });
+        }
+      } catch (err) {
+        showDdaError(err.message || 'Upload failed.');
+      }
+    });
+  });
+}
+
+document.getElementById('dda-tree-menu')?.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-tree-act]')?.dataset.treeAct;
+  if (!act || !treeMenuNodeId) return;
+  const nodeId = treeMenuNodeId;
+  hideTreeMenu();
+  if (act === 'upload') {
+    if (typeof setUploadTargetNode === 'function') setUploadTargetNode(nodeId);
+    document.getElementById('upload-file')?.click();
+    return;
+  }
+  if (act === 'manage') {
+    openManage();
+    const sel = document.getElementById('manage-node-select');
+    if (sel) sel.value = String(nodeId);
+    return;
+  }
+  if (act === 'add') {
+    openManage();
+    const parent = document.getElementById('add-child-parent');
+    if (parent) parent.value = String(nodeId);
+    document.getElementById('add-node-name')?.focus();
+    return;
+  }
+  if (act === 'rename') {
+    openManage();
+    const sel = document.getElementById('manage-node-select');
+    if (sel) sel.value = String(nodeId);
+    document.getElementById('rename-node-name')?.focus();
+    return;
+  }
+  if (act === 'delete') {
+    openManage();
+    const sel = document.getElementById('manage-node-select');
+    if (sel) sel.value = String(nodeId);
+    document.getElementById('btn-delete-node')?.focus();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#dda-tree-menu')) hideTreeMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideTreeMenu();
+});
+
 document.getElementById('dda-manage-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'dda-manage-modal') closeManage();
 });
 
 window.populateManageNodeSelect = populateManageNodeSelect;
+window.openManage = openManage;

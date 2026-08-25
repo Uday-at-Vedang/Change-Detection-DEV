@@ -56,13 +56,29 @@ function ensureDdaState() {
   return window.ddaState;
 }
 
+function runButtonLabel() {
+  if (compareState.roi) return 'Run on selection';
+  return compareState.mode === 'automatic' ? 'Run automatic detection' : 'Run Detection';
+}
+
+function forEachRunButton(fn) {
+  document.querySelectorAll('.btn-run-detection').forEach(fn);
+}
+
 function updateRunButton() {
-  const btn = document.getElementById('btn-run-job');
-  if (btn) {
-    btn.disabled = !(compareState.t1 && compareState.t2);
-    btn.textContent = compareState.roi
-      ? 'Run on selection'
-      : (compareState.mode === 'automatic' ? 'Run automatic detection' : 'Run Detection');
+  const disabled = !(compareState.t1 && compareState.t2);
+  const label = runButtonLabel();
+  forEachRunButton((btn) => {
+    btn.disabled = disabled;
+    btn.textContent = label;
+  });
+  const hint = document.getElementById('dda-run-bar-hint');
+  if (hint) {
+    hint.textContent = disabled
+      ? (compareState.mode === 'automatic'
+        ? 'Pick an area with Before and After images, or switch to Manual.'
+        : 'Select both Before and After images, then run detection.')
+      : 'Detection will use the options above (method, sensitivity, shape).';
   }
   updateRoiUi();
 }
@@ -85,8 +101,8 @@ function setDetectMode(mode, { applyPair } = { applyPair: true }) {
   const help = document.getElementById('dda-detect-mode-help');
   if (help) {
     help.innerHTML = compareState.mode === 'automatic'
-      ? 'Automatic: the system selects the oldest image as <strong>Before</strong> and the newest as <strong>After</strong> for the chosen area, then runs change detection.'
-      : 'Manual: pick the Before and After images yourself (dropdowns, library cards, or drag-and-drop), then run change detection.';
+      ? `Automatic: the system selects the oldest image as <strong>Before</strong> and the newest as <strong>After</strong> for the chosen area. Set the interval and time, then click <strong>Start schedule</strong> — it does not run when the app launches. Use <strong>Run automatic detection</strong> for a one-off run.`
+      : 'Manual: pick the Before and After images yourself (dropdowns, library cards, or drag-and-drop), then run change detection. Manual runs are not scheduled.';
   }
   if (compareState.mode === 'automatic' && applyPair !== false && typeof applySelectedAutoPair === 'function') {
     applySelectedAutoPair();
@@ -111,6 +127,7 @@ function initDetectMode() {
   document.getElementById('dda-auto-area')?.addEventListener('change', () => {
     if (typeof applySelectedAutoPair === 'function') applySelectedAutoPair();
   });
+  if (typeof initAutoScheduleControls === 'function') initAutoScheduleControls();
   setDetectMode(compareState.mode, { applyPair: false });
 }
 
@@ -149,15 +166,9 @@ function updateRoiUi() {
   const ctr = document.getElementById('dda-roi-controls');
   const hint = document.getElementById('dda-roi-hint');
   const clr = document.getElementById('btn-clear-roi');
-  const btn = document.getElementById('btn-run-job');
   if (hint) hint.textContent = roiHintText(compareState.roi);
   if (ctr) ctr.classList.toggle('hidden', !compareState.t2);
   if (clr) clr.classList.toggle('hidden', !compareState.roi);
-  if (btn && !compareState.roi) {
-    btn.textContent = compareState.mode === 'automatic' ? 'Run automatic detection' : 'Run Detection';
-  } else if (btn) {
-    btn.textContent = 'Run on selection';
-  }
 }
 
 function clearRoi(refreshUi = true) {
@@ -623,7 +634,9 @@ function setupCompareInteractions() {
   document.getElementById('dda-picker-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'dda-picker-modal') closePicker();
   });
-  document.getElementById('btn-run-job')?.addEventListener('click', runLibraryDetection);
+  document.querySelectorAll('.btn-run-detection').forEach((btn) => {
+    btn.addEventListener('click', runLibraryDetection);
+  });
   document.getElementById('btn-clear-roi')?.addEventListener('click', () => clearRoi());
 
   const notifyCb = document.getElementById('dda-detect-notify');
@@ -768,9 +781,8 @@ async function runLibraryDetection() {
     );
     return;
   }
-  const btn = document.getElementById('btn-run-job');
   if (typeof hideDdaError === 'function') hideDdaError();
-  btn.disabled = true;
+  forEachRunButton((btn) => { btn.disabled = true; });
 
   try {
     const preflightForm = new FormData();
@@ -782,13 +794,13 @@ async function runLibraryDetection() {
     const preflight = await ddaApi('POST', '/api/dda/detect/preflight', { body: preflightForm });
     if (preflight.hardFail) {
       await showPreflightModal(preflight);
-      btn.disabled = false;
+      updateRunButton();
       return;
     }
     if (preflight.warnings && preflight.warnings.length) {
       const proceed = await showPreflightModal(preflight);
       if (!proceed) {
-        btn.disabled = false;
+        updateRunButton();
         return;
       }
     }
@@ -832,7 +844,7 @@ async function runLibraryDetection() {
   } catch (err) {
     if (typeof showDdaError === 'function') showDdaError(err.message || 'Detection failed');
   } finally {
-    btn.disabled = !(compareState.t1 && compareState.t2);
+    updateRunButton();
     hideDetectProgress(2000);
   }
 }

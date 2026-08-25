@@ -71,6 +71,38 @@ class ImageAsset(Base):
     village = relationship("DdaVillage", back_populates="images")
 
 
+class AutoDetectSettings(Base):
+    """Singleton (id=1): automatic queue is opt-in and does not start on launch."""
+    __tablename__ = "dda_auto_detect_settings"
+
+    id = Column(Integer, primary_key=True)
+    running = Column(Boolean, default=False)
+    interval_days = Column(Integer, default=10)
+    run_at = Column(String(8), default="02:00")
+    next_run_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class AutoPairSchedule(Base):
+    """Periodic automatic detection for an identified same-area pair."""
+    __tablename__ = "dda_auto_pair_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pair_key = Column(String(64), unique=True, nullable=False, index=True)
+    group_label = Column(String(255), default="")
+    before_path = Column(String(512), nullable=False)
+    after_path = Column(String(512), nullable=False)
+    interval_days = Column(Integer, default=10)
+    enabled = Column(Boolean, default=True)
+    last_enqueued_at = Column(DateTime, nullable=True)
+    last_completed_at = Column(DateTime, nullable=True)
+    last_job_id = Column(Integer, nullable=True)
+    last_run_id = Column(Integer, nullable=True)
+    last_error = Column(Text, default="")
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class DetectionJob(Base):
     """Async change detection job (FR-04 skeleton)."""
     __tablename__ = "dda_detection_jobs"

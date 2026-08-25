@@ -28,11 +28,9 @@ def _require_dda():
 
 
 def _get_user_run(db: Session, run_id: int, user_id: int) -> DetectionRun:
-    run = db.query(DetectionRun).filter(
-        DetectionRun.id == run_id,
-        DetectionRun.user_id == user_id,
-    ).first()
-    if not run:
+    from .auto_detect import user_can_access_run
+    run = db.query(DetectionRun).filter(DetectionRun.id == run_id).first()
+    if not run or not user_can_access_run(db, run.id, user_id):
         raise HTTPException(status_code=404, detail="Report not found")
     return run
 

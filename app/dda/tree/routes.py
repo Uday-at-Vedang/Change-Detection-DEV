@@ -19,7 +19,15 @@ from .image_service import (
     list_images_for_node,
     upload_image,
 )
-from .tree_service import build_tree, create_node, delete_node, get_node_or_404, move_node, rename_node
+from .tree_service import (
+    build_tree,
+    create_node,
+    delete_node,
+    get_node_or_404,
+    get_or_create_node,
+    move_node,
+    rename_node,
+)
 
 router = APIRouter()
 
@@ -78,6 +86,35 @@ def api_create_node(
     return {"status": True, "message": "Node Created Successfully", "node": {
         "id": node.id, "name": node.node_name, "nodePath": node.node_path,
     }}
+
+
+@router.post("/tree/nodes/ensure")
+def api_ensure_node(
+    body: NodeCreateBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Create a folder if missing, otherwise return the existing sibling."""
+    _require_dda()
+    require_min_role(user, db, "admin")
+    node, created = get_or_create_node(
+        db,
+        parent_id=body.parent_id,
+        node_name=body.node_name,
+        node_type=body.node_type,
+        created_by=user.email or str(user.id),
+    )
+    return {
+        "status": True,
+        "created": created,
+        "message": "Node Created Successfully" if created else "Node already exists",
+        "node": {
+            "id": node.id,
+            "name": node.node_name,
+            "nodePath": node.node_path,
+            "parentId": node.parent_id,
+        },
+    }
 
 
 @router.put("/tree/nodes/{node_id}/rename")

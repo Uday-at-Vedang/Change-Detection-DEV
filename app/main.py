@@ -41,7 +41,7 @@ from .auth import (
 from .database import Base, engine, get_db, DATA_DIR
 from .models import User, DetectionRun, LoginHistory  # noqa: F401 — LoginHistory registered on Base.metadata for create_all()
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
-from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview  # noqa: F401
+from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview, AutoPairSchedule, AutoDetectSettings  # noqa: F401
 from .dda.tree.models import TreeNode, ImageLibrary, AuditLog  # noqa: F401
 from .dda.config import IS_DDA_MODE
 from .dda.bootstrap import init_dda_database, setup_dda
@@ -135,6 +135,11 @@ def log_startup():
         preload_model()
     except Exception as exc:
         logger.warning("Model preload at startup failed: %s", exc)
+    try:
+        from .dda.auto_detect import start_auto_detect_scheduler
+        start_auto_detect_scheduler()
+    except Exception as exc:
+        logger.warning("Auto-detect scheduler failed to start: %s", exc)
 
 # Mount static files
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -571,10 +576,26 @@ def history(
 ):
     if IS_DDA_MODE:
         from .dda.dda_auth import get_dda_user
+        from .dda.auto_detect import is_auto_schedule_job
         user = get_dda_user(request, db)
+        auto_ids = [
+            j.run_id for j in (
+                db.query(DetectionJob)
+                .filter(DetectionJob.run_id.isnot(None))
+                .order_by(DetectionJob.id.desc())
+                .limit(200)
+                .all()
+            )
+            if is_auto_schedule_job(j)
+        ]
+        from sqlalchemy import or_
+        filt = DetectionRun.user_id == user.id
+        if auto_ids:
+            filt = or_(filt, DetectionRun.id.in_(auto_ids))
+        runs = db.query(DetectionRun).filter(filt).order_by(DetectionRun.created_at.desc()).limit(100).all()
     else:
         user = get_or_create_guest_user(db)
-    runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(100).all()
+        runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(100).all()
     return [
         {
             "id": r.id,
@@ -604,12 +625,16 @@ def get_run(
     """Fetch a single run by id for opening from history (result view with slider, table, zoom)."""
     if IS_DDA_MODE:
         from .dda.dda_auth import get_dda_user
+        from .dda.auto_detect import user_can_access_run
         user = get_dda_user(request, db)
+        run = db.query(DetectionRun).filter(DetectionRun.id == run_id).first()
+        if not run or not user_can_access_run(db, run.id, user.id):
+            raise HTTPException(status_code=404, detail="Run not found")
     else:
         user = get_or_create_guest_user(db)
-    run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
+        run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
     regions = _load_regions_json(run.regions_json)
     if IS_DDA_MODE:
         from .dda.review_service import merge_reviews
