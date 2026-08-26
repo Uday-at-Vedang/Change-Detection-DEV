@@ -224,6 +224,7 @@ def run_detection_and_save(
             user = get_or_create_guest_user(db)
     else:
         user = get_or_create_guest_user(db)
+    db.commit()
     detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
     if min_region_area is not None:
         min_region_area = int(max(50, min(10000, min_region_area)))

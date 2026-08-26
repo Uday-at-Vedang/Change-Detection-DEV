@@ -267,23 +267,36 @@ function uploadWithProgress(url, formData, onProgress) {
       let data = null;
       try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (_) {}
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(data?.detail || xhr.statusText || 'Upload failed'));
+      else reject(new Error(formatApiError?.(data?.detail) || data?.detail || xhr.statusText || 'Upload failed'));
     });
     xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
     xhr.send(formData);
   });
 }
 
-document.getElementById('form-tree-upload')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  hideDdaError?.();
+const LIBRARY_IMAGE_EXTS = ['.tif', '.tiff', '.png', '.jpg', '.jpeg'];
+let pendingUploadFiles = [];
 
-  const nodeId = document.getElementById('upload-node')?.value;
-  const fileInput = document.getElementById('upload-file');
-  const file = fileInput?.files?.[0];
-  if (!nodeId) return showDdaError?.('Select a tree node.');
-  if (!file) return showDdaError?.('Select a file.');
+function isLibraryImageFile(file) {
+  const name = (file.name || '').toLowerCase();
+  if (!name || name.startsWith('.') || name === '.ds_store') return false;
+  if ((file._relativePath || file.webkitRelativePath || '').includes('__macosx')) return false;
+  return LIBRARY_IMAGE_EXTS.some((ext) => name.endsWith(ext));
+}
 
+function guessImageType(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'tif' || ext === 'tiff') return 'GeoTIFF';
+  if (ext === 'png') return 'PNG';
+  if (ext === 'jpg' || ext === 'jpeg') return 'JPEG';
+  return document.getElementById('upload-image-type')?.value || 'GeoTIFF';
+}
+
+function relativeUploadPath(file) {
+  return (file._relativePath || file.webkitRelativePath || '').replace(/\\/g, '/').replace(/^\//, '');
+}
+
+function fileTooLarge(file) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   const isTiff = ext === 'tif' || ext === 'tiff';
   const cfg = window.ddaState?.localCfg || {};
@@ -291,38 +304,240 @@ document.getElementById('form-tree-upload')?.addEventListener('submit', async (e
     ? (cfg.maxGeotiffBytes || (cfg.maxGeotiffMb || 15360) * 1024 * 1024)
     : (cfg.maxImageBytes || (cfg.maxImageMb || 15360) * 1024 * 1024);
   if (file.size > maxBytes) {
-    return showDdaError?.(`File is ${formatBytes(file.size)} — max ${formatBytes(maxBytes)}.`);
+    return `${file.name} is ${formatBytes(file.size)} — max ${formatBytes(maxBytes)}.`;
   }
+  return null;
+}
 
+function updateUploadSummary() {
+  const el = document.getElementById('upload-file-summary');
+  if (!el) return;
+  const images = pendingUploadFiles.filter(isLibraryImageFile);
+  const skipped = pendingUploadFiles.length - images.length;
+  if (!pendingUploadFiles.length) {
+    el.textContent = 'No files selected.';
+    return;
+  }
+  el.textContent = `${images.length} image${images.length === 1 ? '' : 's'} ready` +
+    (skipped ? ` · ${skipped} skipped` : '');
+}
+
+function setPendingUploadFiles(files) {
+  pendingUploadFiles = Array.from(files || []);
+  updateUploadSummary();
+}
+
+function setUploadTargetNode(nodeId) {
+  const sel = document.getElementById('upload-node');
+  if (sel && nodeId) sel.value = String(nodeId);
+  document.getElementById('upload-card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function ensureFolderPath(parentId, segments) {
+  let current = parentId ? Number(parentId) : null;
+  for (const raw of segments) {
+    const name = String(raw || '').trim();
+    if (!name || name === '.' || name === '..') continue;
+    const res = await ddaApi('POST', '/api/dda/tree/nodes/ensure', {
+      body: JSON.stringify({ parent_id: current, node_name: name, node_type: 'Folder' }),
+    });
+    current = res.node.id;
+  }
+  return current;
+}
+
+async function uploadOneLibraryFile(nodeId, file, { onProgress } = {}) {
+  const oversized = fileTooLarge(file);
+  if (oversized) throw new Error(oversized);
   const form = new FormData();
   form.append('file', file);
-  form.append('image_type', document.getElementById('upload-image-type')?.value || 'GeoTIFF');
+  form.append('image_type', document.getElementById('upload-image-type')?.value || guessImageType(file));
   form.append('capture_date', document.getElementById('upload-capture-date')?.value || '');
   const manualBounds = document.getElementById('upload-manual-bounds')?.value?.trim();
   if (manualBounds) form.append('manual_bounds', manualBounds);
+  return uploadWithProgress(`/api/dda/tree/nodes/${nodeId}/images/upload`, form, onProgress);
+}
+
+async function uploadLibraryFiles(files, { nodeId, preserveFolders = true } = {}) {
+  if (uploadLibraryFiles._busy) return 0;
+  const list = Array.from(files || []).filter(isLibraryImageFile);
+  if (!list.length) throw new Error('No GeoTIFF, PNG, or JPEG files to upload.');
+  const dest = nodeId || document.getElementById('upload-node')?.value;
+  const needsFolders = preserveFolders && list.some((f) => relativeUploadPath(f).includes('/'));
+  if (needsFolders && window.ddaState?.userRole !== 'admin') {
+    throw new Error('Creating subfolders from a dropped folder requires an admin account. Ask an admin, or upload files into an existing folder.');
+  }
+  if (!dest && !needsFolders) throw new Error('Select a destination folder.');
+  uploadLibraryFiles._busy = true;
 
   const btn = document.getElementById('btn-tree-upload');
   const progWrap = document.getElementById('upload-progress');
   const progFill = document.getElementById('upload-progress-fill');
   const progLabel = document.getElementById('upload-progress-label');
-
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   progWrap?.classList.remove('hidden');
-  if (progFill) progFill.style.width = '0%';
 
+  const folderCache = new Map();
+  let ok = 0;
+  const errors = [];
   try {
-    await uploadWithProgress(`/api/dda/tree/nodes/${nodeId}/images/upload`, form, (loaded, total) => {
-      const pct = total ? Math.round((loaded / total) * 100) : 0;
-      if (progFill) progFill.style.width = pct + '%';
-      if (progLabel) progLabel.textContent = `Uploading… ${pct}%`;
-    });
-    showDdaSuccess?.('Uploaded. Refreshing…');
-    fileInput.value = '';
-    await window.ddaState.rescan();
-  } catch (err) {
-    showDdaError?.(err.message || 'Upload failed.');
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      const rel = relativeUploadPath(file);
+      const parts = rel.split('/').filter(Boolean);
+      const dirParts = parts.length > 1 ? parts.slice(0, -1) : [];
+      let targetId = dest ? Number(dest) : null;
+      if (dirParts.length) {
+        const key = `${targetId || 'root'}|${dirParts.join('/')}`;
+        if (!folderCache.has(key)) {
+          folderCache.set(key, await ensureFolderPath(targetId, dirParts));
+        }
+        targetId = folderCache.get(key);
+      }
+      if (!targetId) throw new Error('Select a destination folder.');
+      if (progLabel) {
+        progLabel.textContent = `Uploading ${i + 1} of ${list.length}: ${file.name}`;
+      }
+      if (progFill) progFill.style.width = `${Math.round((i / list.length) * 100)}%`;
+      try {
+        await uploadOneLibraryFile(targetId, file, {
+          onProgress: (loaded, total) => {
+            const filePct = total ? loaded / total : 1;
+            const overall = ((i + filePct) / list.length) * 100;
+            if (progFill) progFill.style.width = `${Math.round(overall)}%`;
+          },
+        });
+        ok += 1;
+      } catch (err) {
+        errors.push(`${file.name}: ${err.message || 'failed'}`);
+      }
+    }
+    if (progFill) progFill.style.width = '100%';
+    if (ok && typeof window.ddaState?.rescan === 'function') await window.ddaState.rescan();
+    if (errors.length && ok) {
+      showDdaError?.(`${ok} uploaded, ${errors.length} failed. ${errors[0]}`);
+    } else if (errors.length) {
+      throw new Error(errors[0]);
+    } else {
+      showDdaSuccess?.(`Uploaded ${ok} image${ok === 1 ? '' : 's'}.`);
+    }
+    setPendingUploadFiles([]);
+    const fileInput = document.getElementById('upload-file');
+    const folderInput = document.getElementById('upload-folder');
+    if (fileInput) fileInput.value = '';
+    if (folderInput) folderInput.value = '';
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
+    uploadLibraryFiles._busy = false;
     setTimeout(() => progWrap?.classList.add('hidden'), 2000);
   }
+  return ok;
+}
+
+function readDroppedEntries(dataTransfer) {
+  const items = dataTransfer?.items;
+  if (!items || !items.length || !items[0].webkitGetAsEntry) {
+    return Promise.resolve(Array.from(dataTransfer?.files || []));
+  }
+  const readEntry = (entry, prefix = '') => new Promise((resolve) => {
+    if (!entry) return resolve([]);
+    if (entry.isFile) {
+      entry.file((file) => {
+        const rel = `${prefix}${entry.name}`.replace(/^\//, '');
+        try { Object.defineProperty(file, 'webkitRelativePath', { value: rel }); } catch (_) {
+          file._relativePath = rel;
+        }
+        resolve([file]);
+      }, () => resolve([]));
+      return;
+    }
+    if (!entry.isDirectory) return resolve([]);
+    const reader = entry.createReader();
+    const collected = [];
+    const readBatch = () => {
+      reader.readEntries(async (batch) => {
+        if (!batch.length) {
+          resolve(collected);
+          return;
+        }
+        for (const child of batch) {
+          const nextPrefix = `${prefix}${entry.name}/`;
+          collected.push(...await readEntry(child, nextPrefix));
+        }
+        readBatch();
+      }, () => resolve(collected));
+    };
+    readBatch();
+  });
+
+  return Promise.all(
+    Array.from(items)
+      .filter((it) => it.kind === 'file')
+      .map((it) => readEntry(it.webkitGetAsEntry())),
+  ).then((groups) => groups.flat());
+}
+
+function initLibraryDropzone() {
+  const zone = document.getElementById('dda-upload-dropzone');
+  if (!zone || zone.dataset.bound) return;
+  zone.dataset.bound = '1';
+
+  ['dragenter', 'dragover'].forEach((ev) => {
+    zone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.add('is-dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((ev) => {
+    zone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (ev === 'dragleave' && zone.contains(e.relatedTarget)) return;
+      zone.classList.remove('is-dragover');
+    });
+  });
+  zone.addEventListener('drop', async (e) => {
+    const files = await readDroppedEntries(e.dataTransfer);
+    if (!files.length) return;
+    setPendingUploadFiles(files);
+    const dest = document.getElementById('upload-node')?.value;
+    try {
+      await uploadLibraryFiles(files, { nodeId: dest, preserveFolders: true });
+    } catch (err) {
+      showDdaError?.(err.message || 'Upload failed.');
+    }
+  });
+
+  document.getElementById('upload-file')?.addEventListener('change', (e) => {
+    setPendingUploadFiles(e.target.files);
+  });
+  document.getElementById('upload-folder')?.addEventListener('change', (e) => {
+    setPendingUploadFiles(e.target.files);
+  });
+}
+
+document.getElementById('form-tree-upload')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideDdaError?.();
+  const files = pendingUploadFiles.length
+    ? pendingUploadFiles
+    : [
+        ...Array.from(document.getElementById('upload-file')?.files || []),
+        ...Array.from(document.getElementById('upload-folder')?.files || []),
+      ];
+  try {
+    await uploadLibraryFiles(files, {
+      nodeId: document.getElementById('upload-node')?.value,
+      preserveFolders: true,
+    });
+  } catch (err) {
+    showDdaError?.(err.message || 'Upload failed.');
+  }
 });
+
+initLibraryDropzone();
+window.uploadLibraryFiles = uploadLibraryFiles;
+window.setUploadTargetNode = setUploadTargetNode;
+window.setPendingUploadFiles = setPendingUploadFiles;
+window.readDroppedEntries = readDroppedEntries;

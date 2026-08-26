@@ -1,12 +1,7 @@
 /** Home dashboard — greeting + recent detection runs. */
 
 function formatHomeDate(iso) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  } catch (_) {
-    return iso;
-  }
+  return typeof formatDateIst === 'function' ? formatDateIst(iso) : (iso || '—');
 }
 
 async function loadHomeGreeting() {
@@ -35,7 +30,7 @@ async function loadHomeRecent() {
       <table class="dda-reports-table">
         <thead>
           <tr>
-            <th>Date</th>
+            <th>Date (IST)</th>
             <th>Title</th>
             <th>Change %</th>
             <th>Regions</th>
@@ -45,7 +40,7 @@ async function loadHomeRecent() {
         <tbody>
           ${rows.map((r) => `
             <tr>
-              <td>${formatHomeDate(r.createdAt)}</td>
+              <td><time class="dda-date" datetime="${escapeHtml(r.createdAt || '')}">${formatHomeDate(r.createdAt)}</time></td>
               <td>${escapeHtml(r.title)}</td>
               <td>${r.changePercentage != null ? r.changePercentage.toFixed(2) + '%' : '—'}</td>
               <td>${r.regionsCount ?? '—'}</td>

@@ -6,6 +6,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -131,10 +132,12 @@ async def create_job(
 @router.get("/jobs/{job_id}")
 def get_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
+    from .auto_detect import is_auto_schedule_job, is_auto_schedule_run
+
     job = db.query(DetectionJob).filter(DetectionJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.created_by and job.created_by != user.id:
+    if job.created_by and job.created_by != user.id and not is_auto_schedule_job(job):
         raise HTTPException(status_code=403, detail="Not allowed to view this job")
 
     run = None
@@ -159,8 +162,9 @@ def _run_detail(db: Session, run: DetectionRun, user_id: int) -> dict:
     import base64
 
     from ..database import DATA_DIR
+    from .auto_detect import is_auto_schedule_run
 
-    if run.user_id != user_id:
+    if run.user_id != user_id and not is_auto_schedule_run(db, run.id):
         raise HTTPException(status_code=403, detail="Not allowed")
 
     regions = json.loads(run.regions_json or "[]")
@@ -210,12 +214,72 @@ def list_jobs(
     _require_dda()
     from .job_runner import reconcile_stale_jobs
     reconcile_stale_jobs(db)
+    from .auto_detect import is_auto_schedule_job
     q = db.query(DetectionJob).filter(DetectionJob.created_by == user.id)
     if status:
         q = q.filter(DetectionJob.status == status)
     jobs = q.order_by(DetectionJob.created_at.desc()).limit(limit).all()
+    seen = {job.id for job in jobs}
+    extra = (
+        db.query(DetectionJob)
+        .order_by(DetectionJob.created_at.desc())
+        .limit(80)
+        .all()
+    )
+    for job in extra:
+        if job.id in seen:
+            continue
+        if not is_auto_schedule_job(job):
+            continue
+        if status and job.status != status:
+            continue
+        jobs.append(job)
+        seen.add(job.id)
+    jobs.sort(key=lambda j: j.id, reverse=True)
+    jobs = jobs[:limit]
     out = []
     for job in jobs:
         run = db.query(DetectionRun).filter(DetectionRun.id == job.run_id).first() if job.run_id else None
         out.append(job_to_dict(job, run=run))
     return {"jobs": out, "runnerBusy": is_job_runner_busy()}
+
+
+@router.get("/auto-detect")
+def auto_detect_status(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+    """Schedule for identified same-area pairs (Automatic mode)."""
+    _require_dda()
+    from .auto_detect import refresh_schedule_rows, schedule_status_payload
+
+    try:
+        refresh_schedule_rows()
+    except Exception as exc:
+        logger.warning("Auto-detect schedule sync skipped: %s", exc)
+    return schedule_status_payload(db)
+
+
+class AutoDetectStartBody(BaseModel):
+    intervalDays: int = Field(10, ge=1, le=365)
+    runAt: str = "02:00"
+
+
+@router.post("/auto-detect/start")
+def auto_detect_start(
+    body: AutoDetectStartBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Arm the automatic queue. Does not enqueue jobs immediately."""
+    _require_dda()
+    from .auto_detect import start_schedule
+    try:
+        return start_schedule(interval_days=body.intervalDays, run_at=body.runAt)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auto-detect/stop")
+def auto_detect_stop(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+    """Stop the automatic queue and cancel queued auto jobs."""
+    _require_dda()
+    from .auto_detect import stop_schedule
+    return stop_schedule()

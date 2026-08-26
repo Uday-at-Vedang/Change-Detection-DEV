@@ -114,6 +114,46 @@ def create_node(
     return node
 
 
+def find_child_node(db: Session, parent_id: Optional[int], node_name: str) -> Optional[TreeNode]:
+    want = (node_name or "").strip().lower()
+    if not want:
+        return None
+    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, TreeNode.is_active == True)  # noqa: E712
+    for node in q.all():
+        if (node.node_name or "").strip().lower() == want:
+            return node
+    return None
+
+
+def get_or_create_node(
+    db: Session,
+    *,
+    parent_id: Optional[int],
+    node_name: str,
+    node_type: str,
+    created_by: str,
+) -> tuple[TreeNode, bool]:
+    """Return (node, created). Reuses an existing sibling with the same name."""
+    existing = find_child_node(db, parent_id, node_name)
+    if existing:
+        return existing, False
+    try:
+        return create_node(
+            db,
+            parent_id=parent_id,
+            node_name=node_name,
+            node_type=node_type,
+            created_by=created_by,
+        ), True
+    except HTTPException as exc:
+        if exc.status_code != 400:
+            raise
+        existing = find_child_node(db, parent_id, node_name)
+        if existing:
+            return existing, False
+        raise
+
+
 def rename_node(
     db: Session,
     node_id: int,

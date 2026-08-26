@@ -85,10 +85,17 @@ def _run_job_sync(job_id: int) -> None:
         job.status = "running"
         job.started_at = _utcnow()
         job.error_message = ""
+        params = _parse_params(job)
+        method = job.method or params.get("method", "AI-Based Deep Learning")
+        created_by = job.created_by
+        notify_email = job.notify_email or params.get("notify_email")
         db.commit()
+        # Detach the job row so this session cannot overwrite progress_pct
+        # written by update_job_progress() on another connection, and so we
+        # do not hold a SQLite/InnoDB transaction across the long CPU work.
+        db.expunge_all()
         update_job_progress(job_id, 5, "Starting job")
 
-        params = _parse_params(job)
         base_path = params.get("base_path", "")
         comparison_path = params.get("comparison_path", "")
         if not base_path or not comparison_path:
@@ -101,8 +108,11 @@ def _run_job_sync(job_id: int) -> None:
         comp_file = safe_resolve(comparison_path)
         if preflight.warnings:
             params["preflightWarnings"] = preflight.warnings
-            job.params_json = json.dumps(params)
-            db.commit()
+            job = db.query(DetectionJob).filter(DetectionJob.id == job_id).first()
+            if job:
+                job.params_json = json.dumps(params)
+                db.commit()
+                db.expunge_all()
         if roi:
             logger.info("Job %d ROI crop %s -> working size %s",
                         job_id, roi, before_pil.size)
@@ -120,7 +130,7 @@ def _run_job_sync(job_id: int) -> None:
             db,
             before_pil,
             after_pil,
-            method=job.method or params.get("method", "AI-Based Deep Learning"),
+            method=method,
             title=title,
             zone=params.get("zone", ""),
             village=params.get("village", ""),
@@ -128,13 +138,13 @@ def _run_job_sync(job_id: int) -> None:
             enable_normalization=bool(params.get("enable_normalization", True)),
             detection_sensitivity=float(params.get("detection_sensitivity", 0.45)),
             min_region_area=params.get("min_region_area"),
-            notify_email=job.notify_email or params.get("notify_email"),
+            notify_email=notify_email,
             max_size=detect_max,
             geo_bounds_path=base_file,
             comparison_file=comp_file,
             base_path=base_path,
             comparison_path=comparison_path,
-            user_id=job.created_by,
+            user_id=created_by,
             job_id=job_id,
             gsd_debug=gsd_debug,
             shape_mode=params.get("shape_mode", "polygon"),
@@ -143,11 +153,17 @@ def _run_job_sync(job_id: int) -> None:
 
         update_job_progress(job_id, 100, "Complete")
 
+        job = db.query(DetectionJob).filter(DetectionJob.id == job_id).first()
+        if not job:
+            logger.error("Detection job %d vanished after completion", job_id)
+            return
         job.status = "completed"
         job.run_id = result["id"]
         job.completed_at = _utcnow()
         db.commit()
         logger.info("Detection job %d completed → run %s", job_id, result["id"])
+        from .auto_detect import mark_schedule_from_job
+        mark_schedule_from_job(job_id, status="completed", run_id=result["id"])
     except Exception as exc:
         logger.exception("Detection job %d failed", job_id)
         try:
@@ -157,6 +173,8 @@ def _run_job_sync(job_id: int) -> None:
                 job.error_message = str(exc)[:2000]
                 job.completed_at = _utcnow()
                 db.commit()
+            from .auto_detect import mark_schedule_from_job
+            mark_schedule_from_job(job_id, status="failed", run_id=None, error=str(exc)[:2000])
         except Exception:
             db.rollback()
     finally:
@@ -176,6 +194,10 @@ def _job_worker(job_id: int) -> None:
         with _runner_lock:
             if _active_job_id == job_id:
                 _active_job_id = None
+        try:
+            start_next_queued_job()
+        except Exception:
+            logger.exception("Could not start next queued detection job")
 
 
 def enqueue_detection_job(job_id: int) -> bool:
@@ -193,6 +215,32 @@ def enqueue_detection_job(job_id: int) -> bool:
 def is_job_runner_busy() -> bool:
     with _runner_lock:
         return _active_job_id is not None
+
+
+def start_next_queued_job() -> bool:
+    """Start the oldest queued job if the runner is idle.
+
+    Auto-scheduled jobs stay queued until the operator has clicked Start.
+    """
+    if is_job_runner_busy():
+        return False
+    from .auto_detect import is_auto_schedule_job, scheduler_is_armed
+    armed = scheduler_is_armed()
+    db = SessionLocal()
+    try:
+        pending = (
+            db.query(DetectionJob)
+            .filter(DetectionJob.status == "queued")
+            .order_by(DetectionJob.created_at.asc())
+            .all()
+        )
+        for job in pending:
+            if is_auto_schedule_job(job) and not armed:
+                continue
+            return enqueue_detection_job(job.id)
+        return False
+    finally:
+        db.close()
 
 
 def reconcile_stale_jobs(db: Session, max_running_hours: float = 3.0) -> int:
@@ -231,14 +279,7 @@ def reconcile_stale_jobs(db: Session, max_running_hours: float = 3.0) -> int:
         logger.info("Reconciled %d stale running job(s)", fixed)
 
     if not is_job_runner_busy():
-        next_queued = (
-            db.query(DetectionJob)
-            .filter(DetectionJob.status == "queued")
-            .order_by(DetectionJob.created_at.asc())
-            .first()
-        )
-        if next_queued:
-            enqueue_detection_job(next_queued.id)
+        start_next_queued_job()
     return fixed
 
 
@@ -259,6 +300,7 @@ def create_local_folder_job(
     created_by: Optional[int] = None,
     roi: Optional[dict] = None,
     shape_mode: str = "polygon",
+    extra_params: Optional[Dict[str, Any]] = None,
 ) -> DetectionJob:
     user = get_or_create_guest_user(db)
     params = {
@@ -274,6 +316,8 @@ def create_local_folder_job(
         "detection_sensitivity": detection_sensitivity,
         "min_region_area": min_region_area,
     }
+    if extra_params:
+        params.update(extra_params)
     if roi:
         params["roi"] = roi
     params["shape_mode"] = shape_mode
@@ -313,6 +357,10 @@ def job_to_dict(job: DetectionJob, run: Optional[DetectionRun] = None) -> dict:
         "createdAt": job.created_at.isoformat() if job.created_at else None,
         "startedAt": job.started_at.isoformat() if job.started_at else None,
         "completedAt": job.completed_at.isoformat() if job.completed_at else None,
+        "source": params.get("source") or "",
+        "autoScheduled": params.get("source") == "auto_schedule",
+        "zone": params.get("zone") or (getattr(run, "zone", None) if run else "") or "",
+        "village": params.get("village") or (getattr(run, "village", None) if run else "") or "",
     }
     if run:
         out["report"] = {

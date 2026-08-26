@@ -112,6 +112,7 @@ function applySelectedAutoPair() {
   if (typeof getDetectMode === 'function' && getDetectMode() !== 'automatic') return;
   if (!group) {
     if (status) status.textContent = 'No same-area pair found. Upload two dates of the same place, or switch to Manual.';
+    if (typeof updateAutoScheduleLine === 'function') updateAutoScheduleLine();
     return;
   }
   const before = group.suggestedBefore;
@@ -122,8 +123,9 @@ function applySelectedAutoPair() {
   const bDate = group.beforeDate || _pairDateLabel(before) || 'oldest';
   const aDate = group.afterDate || _pairDateLabel(after) || 'newest';
   if (status) {
-    status.textContent = `Selected automatically: Before = ${before?.filename || '—'} (${bDate}) → After = ${after?.filename || '—'} (${aDate}). Click Run to start change detection.`;
+    status.textContent = `Selected automatically: Before = ${before?.filename || '—'} (${bDate}) → After = ${after?.filename || '—'} (${aDate}). Use Run for a one-off detection. The schedule only runs after you click Start.`;
   }
+  if (typeof updateAutoScheduleLine === 'function') updateAutoScheduleLine();
 }
 
 function populateAutoAreaSelect() {
@@ -198,6 +200,7 @@ async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
     }
     populateAutoAreaSelect();
     applyPairFromUrl();
+    if (typeof loadAutoDetectStatus === 'function') loadAutoDetectStatus();
     if (autoFillCompare && !areaPairsState.autoApplied && areaPairsState.groups.length) {
       if (typeof getDetectMode !== 'function' || getDetectMode() !== 'automatic') {
         const first = areaPairsState.groups[0];
@@ -216,3 +219,119 @@ async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
 window.loadAreaPairs = loadAreaPairs;
 window.areaPairsState = areaPairsState;
 window.applySelectedAutoPair = applySelectedAutoPair;
+window.loadAutoDetectStatus = loadAutoDetectStatus;
+window.updateAutoScheduleLine = updateAutoScheduleLine;
+window.initAutoScheduleControls = initAutoScheduleControls;
+
+function _scheduleWhen(iso) {
+  if (!iso) return 'not yet';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch (_) {
+    return iso;
+  }
+}
+
+function fillAutoScheduleForm(data) {
+  const interval = document.getElementById('dda-auto-interval');
+  const runAt = document.getElementById('dda-auto-run-at');
+  if (interval && document.activeElement !== interval) {
+    interval.value = String(data.intervalDays || 10);
+  }
+  if (runAt && document.activeElement !== runAt) {
+    runAt.value = data.runAt || '02:00';
+  }
+  const start = document.getElementById('btn-auto-schedule-start');
+  const stop = document.getElementById('btn-auto-schedule-stop');
+  if (start) start.textContent = data.running ? 'Update schedule' : 'Start schedule';
+  if (stop) stop.disabled = !data.running;
+}
+
+function updateAutoScheduleLine() {
+  const box = document.getElementById('dda-auto-schedule');
+  if (!box) return;
+  const data = (window.ddaState && window.ddaState.autoDetect) || null;
+  if (!data) {
+    box.textContent = '';
+    return;
+  }
+  if (!data.enabled) {
+    box.textContent = 'Background schedule is turned off on the server.';
+    fillAutoScheduleForm(data);
+    return;
+  }
+  fillAutoScheduleForm(data);
+  const days = data.intervalDays || 10;
+  if (!data.running) {
+    box.textContent = `Schedule is stopped. It does not start when the app launches. Set interval and time, then click Start. First queue will be at that time (IST), then every ${days} day${days === 1 ? '' : 's'}.`;
+    return;
+  }
+  const groupId = document.getElementById('dda-auto-area')?.value;
+  const group = (areaPairsState.groups || []).find((g) => g.id === groupId);
+  const before = group?.suggestedBefore?.path || group?.beforePath;
+  const after = group?.suggestedAfter?.path || group?.afterPath;
+  const pair = (data.pairs || []).find((p) => p.beforePath === before && p.afterPath === after);
+  const next = _scheduleWhen(data.nextRunAt);
+  const last = pair?.lastCompletedAt ? _scheduleWhen(pair.lastCompletedAt) : 'not yet';
+  let line = `Schedule running · every ${days} days at ${data.runAt || '02:00'} IST · next queue ${next} · last report ${last}.`;
+  if (pair?.lastJobStatus === 'queued' || pair?.lastJobStatus === 'running') {
+    line += ` Job #${pair.lastJobId} ${pair.lastJobStatus}.`;
+  }
+  if (pair?.lastError) line += ` Last error: ${pair.lastError}`;
+  box.textContent = line;
+}
+
+async function loadAutoDetectStatus() {
+  try {
+    const data = await ddaApi('GET', '/api/dda/auto-detect');
+    window.ddaState = window.ddaState || {};
+    window.ddaState.autoDetect = data;
+    updateAutoScheduleLine();
+    if (typeof setDetectMode === 'function' && typeof getDetectMode === 'function' && getDetectMode() === 'automatic') {
+      setDetectMode('automatic', { applyPair: false });
+    }
+  } catch (_) {
+    const box = document.getElementById('dda-auto-schedule');
+    if (box) box.textContent = '';
+  }
+}
+
+function initAutoScheduleControls() {
+  const start = document.getElementById('btn-auto-schedule-start');
+  const stop = document.getElementById('btn-auto-schedule-stop');
+  if (!start || start.dataset.bound) return;
+  start.dataset.bound = '1';
+  start.addEventListener('click', async () => {
+    const interval = Number(document.getElementById('dda-auto-interval')?.value || 10);
+    const runAt = document.getElementById('dda-auto-run-at')?.value || '02:00';
+    start.disabled = true;
+    try {
+      const data = await ddaApi('POST', '/api/dda/auto-detect/start', {
+        body: JSON.stringify({ intervalDays: interval, runAt }),
+      });
+      window.ddaState = window.ddaState || {};
+      window.ddaState.autoDetect = data;
+      updateAutoScheduleLine();
+      if (typeof showDdaSuccess === 'function') {
+        showDdaSuccess(`Schedule started. First automatic queue at ${_scheduleWhen(data.nextRunAt)} (not now).`);
+      }
+    } catch (err) {
+      if (typeof showDdaError === 'function') showDdaError(err.message || 'Could not start schedule');
+    } finally {
+      start.disabled = false;
+    }
+  });
+  stop?.addEventListener('click', async () => {
+    stop.disabled = true;
+    try {
+      const data = await ddaApi('POST', '/api/dda/auto-detect/stop');
+      window.ddaState = window.ddaState || {};
+      window.ddaState.autoDetect = data;
+      updateAutoScheduleLine();
+      if (typeof showDdaSuccess === 'function') showDdaSuccess('Automatic schedule stopped.');
+    } catch (err) {
+      if (typeof showDdaError === 'function') showDdaError(err.message || 'Could not stop schedule');
+      stop.disabled = false;
+    }
+  });
+}

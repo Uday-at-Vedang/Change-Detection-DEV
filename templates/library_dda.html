@@ -6,7 +6,7 @@
   <title>Image Library — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=44" />
 </head>
 <body>
   <div class="app dda-app">
@@ -19,28 +19,29 @@
       <div class="dda-layout">
         <aside class="dda-sidebar card">
           <div class="card-header">
-            <h3>Library tree</h3>
+            <h3>Masters library</h3>
             <div class="dda-sidebar-actions">
-              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library" data-requires-permission="library:edit">Manage</button>
+              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library" data-requires-permission="library:edit">Folders master</button>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" data-requires-permission="library:edit">Refresh</button>
             </div>
           </div>
           <div id="lib-folder-path" class="dda-folder-path dim"></div>
-          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter nodes…" />
+          <input type="search" id="lib-tree-search" class="dda-search" placeholder="Filter folders…" />
+          <p class="dim dda-tree-hint">Right-click a folder to add, rename, or remove. Drop files onto a folder to upload.</p>
           <div id="lib-tree" class="dda-tree"><p class="dim">Loading…</p></div>
         </aside>
         <main class="dda-main">
             <div class="card" id="upload-card">
               <div class="card-header">
-                <h3>Upload image</h3>
-                <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload" data-requires-permission="library:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to upload images.">Upload to node</button>
+                <h3>Upload images</h3>
+                <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload" data-requires-permission="library:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to upload images.">Upload</button>
               </div>
-              <p class="sub" id="upload-limit-hint">Select a tree node and image type.</p>
+              <p class="sub" id="upload-limit-hint">Select a folder, then drop files here or browse. Folders keep their subfolder names.</p>
               <form id="form-tree-upload" class="dda-upload-form">
                 <div class="location-row dda-upload-row">
                   <div class="form-group">
-                    <label for="upload-node">Tree node</label>
-                    <select id="upload-node" required><option value="">— Select node —</option></select>
+                    <label for="upload-node">Destination folder</label>
+                    <select id="upload-node" required><option value="">— Select folder —</option></select>
                   </div>
                   <div class="form-group">
                     <label for="upload-image-type">Image type</label>
@@ -52,16 +53,25 @@
                   </div>
                   <div class="form-group">
                     <label for="upload-capture-date">Capture date</label>
-                    <input type="date" id="upload-capture-date" />
-                  </div>
-                  <div class="form-group">
-                    <label for="upload-file">File</label>
-                    <input type="file" id="upload-file" accept=".tif,.tiff,.png,.jpg,.jpeg" required />
+                    <input type="date" id="upload-capture-date" class="dda-date-input" />
                   </div>
                   <div class="form-group">
                     <label for="upload-manual-bounds">Geo bounds (W,S,E,N)</label>
                     <input type="text" id="upload-manual-bounds" placeholder="optional, e.g. 77.5,12.9,77.6,13.0" />
                   </div>
+                </div>
+                <div id="dda-upload-dropzone" class="dda-dropzone" tabindex="0">
+                  <p class="dda-dropzone-title">Drag &amp; drop files or a folder</p>
+                  <p class="dim">GeoTIFF, PNG, or JPEG. Multiple files and nested folders are supported.</p>
+                  <div class="dda-dropzone-actions">
+                    <label class="btn btn-secondary btn-sm dda-file-btn">Choose images
+                      <input type="file" id="upload-file" accept=".tif,.tiff,.png,.jpg,.jpeg" multiple />
+                    </label>
+                    <label class="btn btn-secondary btn-sm dda-file-btn">Choose folder
+                      <input type="file" id="upload-folder" webkitdirectory multiple />
+                    </label>
+                  </div>
+                  <p id="upload-file-summary" class="dim dda-upload-summary">No files selected.</p>
                 </div>
                 <div id="upload-progress" class="dda-upload-progress hidden">
                   <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
@@ -139,52 +149,61 @@
     </div>
   </div>
 
-  <div id="dda-manage-modal" class="dda-modal hidden" role="dialog">
+  <div id="dda-manage-modal" class="dda-modal hidden" role="dialog" aria-labelledby="dda-manage-title">
     <div class="dda-modal-panel card dda-manage-panel">
       <div class="card-header">
-        <h3>Manage tree</h3>
+        <h3 id="dda-manage-title">Folders master</h3>
         <button type="button" class="btn btn-secondary btn-sm" id="dda-manage-close">Close</button>
       </div>
+      <p class="sub dim">Create, rename, move, or remove folders in the masters library. Images stay in the destination folder you pick on upload.</p>
       <div class="dda-manage-section">
-        <h4>Add node</h4>
+        <h4>Add folder</h4>
         <div class="location-row">
-          <select id="add-child-parent"><option value="">— Root —</option></select>
-          <input type="text" id="add-node-name" placeholder="Node name" />
-          <select id="add-node-type">
+          <select id="add-child-parent" aria-label="Parent folder"><option value="">— Root —</option></select>
+          <input type="text" id="add-node-name" placeholder="Folder name" />
+          <select id="add-node-type" aria-label="Folder type">
+            <option>Folder</option>
             <option>Zone</option><option>Area</option><option>Year</option>
             <option>Satellite Images</option><option>Drone Survey</option><option>Change Detection</option>
-            <option>Folder</option>
           </select>
           <button type="button" class="btn btn-primary btn-sm" id="btn-add-node" data-requires-permission="library:create">Add</button>
         </div>
       </div>
       <div class="dda-manage-section">
-        <h4>Edit / move / delete</h4>
-        <select id="manage-node-select"></select>
+        <h4>Edit / move / remove</h4>
+        <select id="manage-node-select" aria-label="Folder to edit"></select>
         <div class="location-row">
           <input type="text" id="rename-node-name" placeholder="Rename to…" />
           <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-node" data-requires-permission="library:edit">Rename</button>
         </div>
         <div class="location-row">
-          <select id="move-parent"><option value="">— Move to root —</option></select>
+          <select id="move-parent" aria-label="Move under"><option value="">— Move to root —</option></select>
           <button type="button" class="btn btn-secondary btn-sm" id="btn-move-node" data-requires-permission="library:edit">Move</button>
         </div>
-        <label class="dda-check"><input type="checkbox" id="delete-files-check" /> Delete files on disk</label>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-node" data-requires-permission="library:delete">Delete node</button>
+        <label class="dda-check"><input type="checkbox" id="delete-files-check" /> Also delete files on disk</label>
+        <button type="button" class="btn btn-danger btn-sm" id="btn-delete-node" data-requires-permission="library:delete">Remove folder</button>
       </div>
     </div>
   </div>
 
+  <div id="dda-tree-menu" class="dda-tree-menu hidden" role="menu">
+    <button type="button" role="menuitem" data-tree-act="upload">Upload images here</button>
+    <button type="button" role="menuitem" data-tree-act="add" data-admin-only="1">Add subfolder</button>
+    <button type="button" role="menuitem" data-tree-act="rename" data-admin-only="1">Rename</button>
+    <button type="button" role="menuitem" data-tree-act="delete" data-admin-only="1">Remove</button>
+    <button type="button" role="menuitem" data-tree-act="manage" data-admin-only="1">Open Folders master</button>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/static/js/dda/shared.js?v=3"></script>
-  <script src="/static/js/dda/app.js?v=26"></script>
-  <script src="/static/js/dda/tree.js?v=2"></script>
+  <script src="/static/js/dda/app.js?v=27"></script>
+  <script src="/static/js/dda/tree.js?v=4"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=15"></script>
-  <script src="/static/js/dda/pairs.js?v=3"></script>
-  <script src="/static/js/dda/result.js?v=21"></script>
-  <script src="/static/js/dda/compare.js?v=22"></script>
-  <script src="/static/js/dda/reports.js?v=7"></script>
+  <script src="/static/js/dda/library.js?v=17"></script>
+  <script src="/static/js/dda/pairs.js?v=7"></script>
+  <script src="/static/js/dda/result.js?v=22"></script>
+  <script src="/static/js/dda/compare.js?v=24"></script>
+  <script src="/static/js/dda/reports.js?v=10"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>
 </html>

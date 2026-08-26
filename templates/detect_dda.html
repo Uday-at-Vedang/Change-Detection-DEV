@@ -6,7 +6,7 @@
   <title>Change Detection — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=44" />
 </head>
 <body>
   <div class="app dda-app">
@@ -30,7 +30,7 @@
           <div class="card">
             <div class="card-header">
               <h3>Detection options</h3>
-              <button type="button" class="btn btn-primary" id="btn-run-job" disabled data-requires-permission="detect:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to run detections.">Run Detection</button>
+              <button type="button" class="btn btn-primary btn-run-detection" id="btn-run-job" disabled data-requires-permission="detect:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to run detections.">Run Detection</button>
             </div>
             <div class="dda-detect-options">
               <div class="form-group">
@@ -94,6 +94,17 @@
                 </select>
               </div>
               <p id="dda-auto-status" class="dim"></p>
+              <div class="dda-auto-schedule-controls" id="dda-auto-schedule-controls">
+                <label class="dda-auto-field">Interval (days)
+                  <input type="number" id="dda-auto-interval" min="1" max="365" value="10" />
+                </label>
+                <label class="dda-auto-field">Run at (IST)
+                  <input type="time" id="dda-auto-run-at" value="02:00" />
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-auto-schedule-start">Start schedule</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-auto-schedule-stop" disabled>Stop</button>
+              </div>
+              <p id="dda-auto-schedule" class="dda-auto-schedule dim"></p>
             </div>
             <div class="dda-compare-slots">
               <div class="dda-slot" id="slot-t1" data-slot="t1">
@@ -133,6 +144,14 @@
               <div class="pagination" id="compare-lib-pagination"></div>
             </div>
           </div>
+
+          <div class="dda-run-bar" id="dda-run-bar">
+            <div>
+              <p class="dda-run-bar-title">Ready to detect?</p>
+              <p class="dim" id="dda-run-bar-hint">Select Before and After images, then run detection from here or the top of the page.</p>
+            </div>
+            <button type="button" class="btn btn-primary btn-run-detection" id="btn-run-job-bottom" disabled data-requires-permission="detect:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to run detections.">Run Detection</button>
+          </div>
         </main>
       </div>
       </section>
@@ -166,14 +185,14 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/static/js/dda/shared.js?v=3"></script>
-  <script src="/static/js/dda/app.js?v=26"></script>
-  <script src="/static/js/dda/tree.js?v=2"></script>
+  <script src="/static/js/dda/app.js?v=27"></script>
+  <script src="/static/js/dda/tree.js?v=4"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=15"></script>
-  <script src="/static/js/dda/pairs.js?v=3"></script>
-  <script src="/static/js/dda/result.js?v=21"></script>
-  <script src="/static/js/dda/compare.js?v=22"></script>
-  <script src="/static/js/dda/reports.js?v=7"></script>
+  <script src="/static/js/dda/library.js?v=17"></script>
+  <script src="/static/js/dda/pairs.js?v=7"></script>
+  <script src="/static/js/dda/result.js?v=22"></script>
+  <script src="/static/js/dda/compare.js?v=24"></script>
+  <script src="/static/js/dda/reports.js?v=10"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>
 </html>
