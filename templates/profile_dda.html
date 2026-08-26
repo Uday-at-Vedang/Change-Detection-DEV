@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Profile — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+</head>
+<body>
+  <div class="app dda-app">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section id="tab-profile" class="dda-panel active" role="tabpanel">
+        <div class="dda-hero">
+          <h1>My Profile</h1>
+          <p class="sub">View and update your account information.</p>
+        </div>
+
+        <div class="dda-admin-2col dda-admin-2col-roles">
+          <div class="card">
+            <div class="dda-profile-summary">
+              <span id="profile-avatar" class="dda-profile-avatar" aria-hidden="true"></span>
+              <h3 id="profile-name">&nbsp;</h3>
+              <p class="dim" id="profile-email">&nbsp;</p>
+              <span id="profile-role-badge" class="dda-profile-badge"></span>
+              <div class="dda-profile-meta">
+                <div>
+                  <span class="dda-profile-meta-label">Account status</span>
+                  <span class="dda-profile-meta-value">Active</span>
+                </div>
+                <div>
+                  <span class="dda-profile-meta-label">Last login</span>
+                  <span class="dda-profile-meta-value" id="profile-last-login">&mdash;</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:1rem;">
+            <div class="card">
+              <div class="card-header"><h3>Personal Information</h3></div>
+              <div id="profile-error" class="alert alert-error hidden"></div>
+              <div id="profile-success" class="alert alert-success hidden"></div>
+              <form id="profile-form">
+                <div class="location-row">
+                  <div class="form-group">
+                    <label for="profile-full-name">Full name</label>
+                    <input type="text" id="profile-full-name" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-email-field">Email <span class="dim">(sign-in identity, not editable here)</span></label>
+                    <input type="email" id="profile-email-field" disabled />
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Save changes</button>
+              </form>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>Change Password</h3></div>
+              <div id="password-error" class="alert alert-error hidden"></div>
+              <div id="password-success" class="alert alert-success hidden"></div>
+              <form id="password-form">
+                <div class="form-group">
+                  <label for="current-password">Current password</label>
+                  <input type="password" id="current-password" autocomplete="current-password" required />
+                </div>
+                <div class="location-row">
+                  <div class="form-group">
+                    <label for="new-password">New password</label>
+                    <input type="password" id="new-password" autocomplete="new-password" required />
+                    <div class="field-hint" style="color:var(--text-dim); font-size:0.78rem; margin-top:0.35rem;">At least 8 characters</div>
+                  </div>
+                  <div class="form-group">
+                    <label for="confirm-new-password">Confirm new password</label>
+                    <input type="password" id="confirm-new-password" autocomplete="new-password" required />
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Change password</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/app.js?v=26"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/profile.js?v=1"></script>
+</body>
+</html>

@@ -17,9 +17,15 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), default="")
     role = Column(String(32), default="analyst")
+    # FK into the dynamic RBAC role table (app/dda/rbac/models.py). Nullable +
+    # the legacy `role` string column both stay: existing role-rank checks in
+    # dda_auth.py fall back to matching `role` by name for any user not yet
+    # backfilled (see app/dda/rbac/seed.py).
+    role_id = Column(Integer, ForeignKey("dda_roles.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=_utcnow)
 
     detections = relationship("DetectionRun", back_populates="user", order_by="desc(DetectionRun.created_at)")
+    role_obj = relationship("Role", foreign_keys=[role_id])
 
 
 class DetectionRun(Base):
@@ -44,6 +50,20 @@ class DetectionRun(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="detections")
+
+
+class PasswordResetToken(Base):
+    """One-time, expiring token backing the Forgot Password flow. The raw
+    token is only ever emailed to the user — this table stores its SHA-256
+    hash, same principle as never storing plaintext passwords."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class LoginHistory(Base):

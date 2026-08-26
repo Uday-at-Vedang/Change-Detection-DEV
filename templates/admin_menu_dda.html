@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Menu Management — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+</head>
+<body>
+  <div class="app dda-app dda-app-full">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section id="tab-admin-menu" class="dda-panel active" role="tabpanel">
+        <div class="dda-hero">
+          <h1>Menu Management</h1>
+          <p class="sub">Create, reorder, and nest navigation menu items.</p>
+        </div>
+
+        <div class="dda-admin-2col">
+          <div class="card">
+            <div class="card-header">
+              <h3>Menu Items</h3>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-new-menu-item">+ Add Menu Item</button>
+            </div>
+            <div id="menu-item-list" class="dda-menu-list"><p class="dim">Loading menu items…</p></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Instructions</h3></div>
+            <div class="dda-admin-side-panel">
+              <p><strong>Label</strong> — the text shown in the sidebar.</p>
+              <p><strong>Icon</strong> — optional emoji shown next to the label.</p>
+              <p><strong>Module</strong> — links the item to a permission module. The item is hidden from a user's sidebar if their role has no "View" permission for that module. Leave unset for an item that's always visible.</p>
+              <p><strong>Parent item</strong> — makes this a sub-item, indented under its parent. Only one level of nesting is supported. A parent with visible sub-items renders as a collapsible group in the sidebar (like "Configuration"); a parent with no visible sub-items is hidden.</p>
+              <p><strong>URL</strong> — the route this item navigates to.</p>
+              <p>Use <strong>▲ / ▼</strong> to reorder items within their group (top-level items reorder among themselves; sub-items reorder among their siblings).</p>
+            </div>
+            <div class="card-header" style="margin-top:1.25rem"><h3>Module Keys</h3></div>
+            <div id="module-keys-list" class="dda-module-keys"><p class="dim">Loading…</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="menu-item-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card" style="max-width:480px">
+      <div class="card-header">
+        <h3 id="menu-item-modal-title">Add Menu Item</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="menu-item-modal-close">Close</button>
+      </div>
+      <form id="menu-item-form">
+        <input type="hidden" id="menu-item-id" />
+        <div class="form-group">
+          <label for="menu-item-label">Label</label>
+          <input type="text" id="menu-item-label" required />
+        </div>
+        <div class="location-row">
+          <div class="form-group">
+            <label for="menu-item-icon">Icon <span class="dim">(emoji, optional)</span></label>
+            <input type="text" id="menu-item-icon" maxlength="8" placeholder="📄" />
+          </div>
+          <div class="form-group">
+            <label for="menu-item-url">URL</label>
+            <input type="text" id="menu-item-url" placeholder="/example" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="menu-item-module">Module <span class="dim">(gates visibility)</span></label>
+          <select id="menu-item-module">
+            <option value="">— No module (always visible) —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="menu-item-parent">Parent item <span class="dim">(sub-menus)</span></label>
+          <select id="menu-item-parent">
+            <option value="">— Top Level —</option>
+          </select>
+        </div>
+        <label class="dda-check"><input type="checkbox" id="menu-item-active" checked /> Active (visible in the sidebar)</label>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.75rem">Save menu item</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/app.js?v=26"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/admin_menu.js?v=2"></script>
+</body>
+</html>

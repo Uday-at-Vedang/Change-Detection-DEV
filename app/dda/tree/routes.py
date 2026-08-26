@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from ...database import get_db
 from ...models import User
 from ..config import IS_DDA_MODE
-from ..dda_auth import current_dda_user, get_user_role, require_min_role
+from ..dda_auth import current_dda_user, get_user_role
+from ..rbac.permissions import require_module_permission
 from .image_service import (
     IMAGE_TYPES,
     delete_library_image,
@@ -64,10 +65,9 @@ def get_tree(db: Session = Depends(get_db), user: User = Depends(current_dda_use
 def api_create_node(
     body: NodeCreateBody,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "create")),
 ):
     _require_dda()
-    require_min_role(user, db, "admin")
     node = create_node(
         db,
         parent_id=body.parent_id,
@@ -85,10 +85,9 @@ def api_rename_node(
     node_id: int,
     body: NodeRenameBody,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "edit")),
 ):
     _require_dda()
-    require_min_role(user, db, "admin")
     node = rename_node(
         db, node_id, body.node_name,
         action_by=user.email or str(user.id),
@@ -104,10 +103,9 @@ def api_move_node(
     node_id: int,
     body: NodeMoveBody,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "edit")),
 ):
     _require_dda()
-    require_min_role(user, db, "admin")
     node = move_node(db, node_id, body.parent_id, action_by=user.email or str(user.id))
     return {"status": True, "message": "Node Moved Successfully", "node": {
         "id": node.id, "parentId": node.parent_id, "nodePath": node.node_path,
@@ -119,10 +117,9 @@ def api_delete_node(
     node_id: int,
     body: NodeDeleteBody = NodeDeleteBody(),
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "delete")),
 ):
     _require_dda()
-    require_min_role(user, db, "admin")
     result = delete_node(db, node_id, delete_files=body.delete_files, action_by=user.email or str(user.id))
     return {"status": True, "message": "Node Deleted Successfully", **result}
 
@@ -166,10 +163,9 @@ async def api_upload_image(
     capture_date: str = Form(""),
     manual_bounds: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "create")),
 ):
     _require_dda()
-    require_min_role(user, db, "uploader")
     img = await upload_image(
         db, node_id, file,
         image_type=image_type,
@@ -185,10 +181,9 @@ async def api_upload_image(
 def api_delete_image(
     image_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "delete")),
 ):
     _require_dda()
-    require_min_role(user, db, "viewer")
     result = delete_library_image(
         db, image_id=image_id, action_by=user.email or str(user.id),
     )

@@ -42,7 +42,6 @@ async function initDda() {
     const localCfg = await ddaApi('GET', '/api/dda/local/config');
     window._localCfg = localCfg;
 
-    document.getElementById('btn-manage-library')?.classList.toggle('hidden', window.ddaState.userRole !== 'admin');
 
     const pathEl = document.getElementById('lib-path-display');
     if (pathEl) {
@@ -109,7 +108,7 @@ function renderLibGrid() {
     const encPath = encodeURIComponent(img.path);
     return `
     <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
-      <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image">×</button>
+      <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image" data-requires-permission="library:delete">×</button>
       ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
       <div class="meta">
         <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
@@ -118,6 +117,7 @@ function renderLibGrid() {
     </div>`;
   }).join('');
   if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
+  if (typeof applyPermissionGating === 'function') applyPermissionGating(window.ddaPermissions || {}, grid);
 
   if (typeof renderPaginationControls === 'function') {
     renderPaginationControls(document.getElementById('lib-grid-pagination'), libGridPage, totalPages, (p) => {
@@ -187,6 +187,40 @@ document.getElementById('btn-refresh-lib')?.addEventListener('click', async () =
     // Not authenticated — the page-load redirect to /login should already
     // have caught this; leave the chip blank rather than erroring loudly.
   }
+})();
+
+// Dynamic role permissions — fetched once per page load, cached on
+// window.ddaPermissions for page-specific JS (e.g. per-row Delete buttons
+// rendered by library.js/reports.js) to check directly, and also applied
+// declaratively to any static element carrying data-requires-permission.
+(async function initPermissionGating() {
+  const permissions = await loadMyPermissions();
+  window.ddaPermissions = permissions;
+  applyPermissionGating(permissions);
+  document.dispatchEvent(new CustomEvent('dda:permissions-ready', { detail: permissions }));
+})();
+
+// Sidebar collapse/expand toggle — persisted so it stays collapsed across
+// page loads, same as the LMS reference sidebar.
+(function initSidebarToggle() {
+  const sidebar = document.querySelector('.dda-sidebar-nav');
+  const toggleBtn = document.getElementById('dda-sidebar-toggle');
+  if (!sidebar || !toggleBtn) return;
+
+  const STORAGE_KEY = 'ddaSidebarCollapsed';
+  const applyState = (collapsed) => {
+    sidebar.classList.toggle('collapsed', collapsed);
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    toggleBtn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  };
+
+  applyState(localStorage.getItem(STORAGE_KEY) === 'true');
+
+  toggleBtn.addEventListener('click', () => {
+    const collapsed = !sidebar.classList.contains('collapsed');
+    applyState(collapsed);
+    localStorage.setItem(STORAGE_KEY, String(collapsed));
+  });
 })();
 
 document.getElementById('dda-logout-btn')?.addEventListener('click', async () => {

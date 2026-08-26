@@ -59,7 +59,17 @@ function ensureDdaState() {
 function updateRunButton() {
   const btn = document.getElementById('btn-run-job');
   if (btn) {
-    btn.disabled = !(compareState.t1 && compareState.t2);
+    const hasPair = !!(compareState.t1 && compareState.t2);
+    // Fails closed until permissions are known — otherwise this runs before
+    // app.js's permission fetch resolves (it hits the DB) and would
+    // re-enable the button for a beat before the gate catches up, or worse,
+    // permanently — this function runs on every pair selection, which would
+    // undo a permission-denied disable the moment a pair is auto-selected.
+    const permitted = window.ddaPermissions
+      ? hasPermission(window.ddaPermissions, 'detect', 'create')
+      : false;
+    btn.disabled = !hasPair || !permitted;
+    btn.title = permitted ? '' : "Your role doesn't have permission to run detections.";
     btn.textContent = compareState.roi
       ? 'Run on selection'
       : (compareState.mode === 'automatic' ? 'Run automatic detection' : 'Run Detection');
@@ -625,6 +635,10 @@ function setupCompareInteractions() {
   });
   document.getElementById('btn-run-job')?.addEventListener('click', runLibraryDetection);
   document.getElementById('btn-clear-roi')?.addEventListener('click', () => clearRoi());
+  // updateRunButton() may have run (and failed closed) before app.js's
+  // permission fetch resolved — re-check once it's actually known so a
+  // permitted user's button doesn't stay stuck disabled.
+  document.addEventListener('dda:permissions-ready', updateRunButton);
 
   const notifyCb = document.getElementById('dda-detect-notify');
   const notifyEmail = document.getElementById('dda-detect-notify-email');

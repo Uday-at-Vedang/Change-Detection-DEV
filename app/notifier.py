@@ -233,6 +233,24 @@ def send_notification(
     return _send_html_email(recipient, subject, html_body)
 
 
+def send_password_reset_email(recipient: str, reset_link: str, expire_minutes: int = 30):
+    """Send the Forgot Password reset link. Returns (success, error_message)
+    same as send_notification — callers should log a failure, not surface it
+    to the requester (would leak whether the account exists)."""
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #222;">
+        <h2>Reset your password</h2>
+        <p>We received a request to reset the password for your Vedangsoft Change Detection account.</p>
+        <p><a href="{reset_link}" style="display:inline-block;padding:10px 20px;background:#2e33c5;color:#fff;text-decoration:none;border-radius:6px;">Reset password</a></p>
+        <p>Or copy this link into your browser:<br><span style="word-break:break-all;">{reset_link}</span></p>
+        <p>This link expires in {expire_minutes} minutes. If you didn't request this, you can safely ignore this email.</p>
+      </body>
+    </html>
+    """
+    return _send_html_email(recipient, "Reset your Vedangsoft Change Detection password", html_body)
+
+
 def send_test_email(recipient: str):
     """Send a small test email to verify delivery."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

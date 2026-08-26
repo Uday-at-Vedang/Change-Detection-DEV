@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>App Modules — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+</head>
+<body>
+  <div class="app dda-app dda-app-full">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section id="tab-admin-modules" class="dda-panel active" role="tabpanel">
+        <div class="dda-hero">
+          <h1>App Modules</h1>
+          <p class="sub">Centralized module master used by the nav menu and role permissions.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Modules</h3>
+            <div class="dda-reports-toolbar">
+              <input type="search" id="module-filter" class="dda-search" placeholder="Search modules…" />
+              <button type="button" class="btn btn-primary btn-sm" id="btn-new-module">+ Add App Module</button>
+            </div>
+          </div>
+          <div class="dda-table-toolbar">
+            <span>Show</span>
+            <select id="module-page-size">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+            <span>entries</span>
+          </div>
+          <div id="module-table-wrap"><p class="dim">Loading modules…</p></div>
+          <div class="pagination" id="module-pagination"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="module-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card" style="max-width:480px">
+      <div class="card-header">
+        <h3 id="module-modal-title">Add App Module</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="module-modal-close">Close</button>
+      </div>
+      <form id="module-form">
+        <input type="hidden" id="module-id" />
+        <div class="form-group">
+          <label for="module-key">Key <span class="dim">(unique, e.g. "reports")</span></label>
+          <input type="text" id="module-key" required />
+        </div>
+        <div class="form-group">
+          <label for="module-name">Name</label>
+          <input type="text" id="module-name" required />
+        </div>
+        <div class="form-group">
+          <label for="module-description">Description</label>
+          <input type="text" id="module-description" />
+        </div>
+        <div class="form-group">
+          <label for="module-status">Status</label>
+          <select id="module-status">
+            <option value="in_use">In Use</option>
+            <option value="deprecated">Deprecated</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Save module</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="module-view-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card" style="max-width:440px">
+      <div class="card-header">
+        <h3 id="module-view-title">Module</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="module-view-close">Close</button>
+      </div>
+      <div id="module-view-body" class="dda-admin-side-panel"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/app.js?v=26"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/admin_modules.js?v=2"></script>
+</body>
+</html>

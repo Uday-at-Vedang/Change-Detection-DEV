@@ -6,7 +6,7 @@
   <title>Image Library — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=37" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
 </head>
 <body>
   <div class="app dda-app">
@@ -21,8 +21,8 @@
           <div class="card-header">
             <h3>Library tree</h3>
             <div class="dda-sidebar-actions">
-              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library">Manage</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib">Refresh</button>
+              <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library" data-requires-permission="library:edit">Manage</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" data-requires-permission="library:edit">Refresh</button>
             </div>
           </div>
           <div id="lib-folder-path" class="dda-folder-path dim"></div>
@@ -33,7 +33,7 @@
             <div class="card" id="upload-card">
               <div class="card-header">
                 <h3>Upload image</h3>
-                <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload">Upload to node</button>
+                <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload" data-requires-permission="library:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to upload images.">Upload to node</button>
               </div>
               <p class="sub" id="upload-limit-hint">Select a tree node and image type.</p>
               <form id="form-tree-upload" class="dda-upload-form">
@@ -102,7 +102,7 @@
       <div class="card-header">
         <h3 id="dda-image-viewer-title">Image</h3>
         <div class="dda-image-viewer-actions">
-          <button type="button" class="btn btn-danger btn-sm" id="dda-image-delete-btn">Delete</button>
+          <button type="button" class="btn btn-danger btn-sm" id="dda-image-delete-btn" data-requires-permission="library:delete">Delete</button>
           <button type="button" class="btn btn-secondary btn-sm" id="dda-image-viewer-close">Close</button>
         </div>
       </div>
@@ -155,7 +155,7 @@
             <option>Satellite Images</option><option>Drone Survey</option><option>Change Detection</option>
             <option>Folder</option>
           </select>
-          <button type="button" class="btn btn-primary btn-sm" id="btn-add-node">Add</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-add-node" data-requires-permission="library:create">Add</button>
         </div>
       </div>
       <div class="dda-manage-section">
@@ -163,27 +163,27 @@
         <select id="manage-node-select"></select>
         <div class="location-row">
           <input type="text" id="rename-node-name" placeholder="Rename to…" />
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-node">Rename</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-rename-node" data-requires-permission="library:edit">Rename</button>
         </div>
         <div class="location-row">
           <select id="move-parent"><option value="">— Move to root —</option></select>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-move-node">Move</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-move-node" data-requires-permission="library:edit">Move</button>
         </div>
         <label class="dda-check"><input type="checkbox" id="delete-files-check" /> Delete files on disk</label>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-node">Delete node</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-node" data-requires-permission="library:delete">Delete node</button>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/static/js/dda/shared.js?v=2"></script>
-  <script src="/static/js/dda/app.js?v=24"></script>
+  <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/app.js?v=26"></script>
   <script src="/static/js/dda/tree.js?v=2"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
   <script src="/static/js/dda/library.js?v=15"></script>
   <script src="/static/js/dda/pairs.js?v=3"></script>
-  <script src="/static/js/dda/result.js?v=20"></script>
-  <script src="/static/js/dda/compare.js?v=21"></script>
+  <script src="/static/js/dda/result.js?v=21"></script>
+  <script src="/static/js/dda/compare.js?v=22"></script>
   <script src="/static/js/dda/reports.js?v=7"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>

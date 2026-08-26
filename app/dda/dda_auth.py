@@ -66,10 +66,26 @@ def current_dda_user(request: Request, db: Session = Depends(get_db)) -> User:
     return get_dda_user(request, db)
 
 
+def _role_rank_from_db(db: Session, role_name: str) -> Optional[int]:
+    """Rank now lives on the dda_roles table (app/dda/rbac/models.py) so admins
+    can add/reorder roles without a code change. Falls back to None (caller
+    uses ROLE_RANK) if the table isn't seeded yet or the name isn't found."""
+    try:
+        from .rbac.models import Role
+        row = db.query(Role).filter(Role.name == role_name).first()
+        return row.rank if row else None
+    except Exception:
+        return None
+
+
 def require_min_role(user: User, db: Session, minimum: str) -> None:
     role = get_user_role(db, user)
-    need = ROLE_RANK.get(minimum, 99)
-    have = ROLE_RANK.get(role, 0)
+    need = _role_rank_from_db(db, minimum)
+    if need is None:
+        need = ROLE_RANK.get(minimum, 99)
+    have = _role_rank_from_db(db, role)
+    if have is None:
+        have = ROLE_RANK.get(role, 0)
     if have < need:
         raise HTTPException(
             status_code=403,

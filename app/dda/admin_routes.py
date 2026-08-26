@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from ..database import DATA_DIR, get_db
 from ..models import DetectionRun, User
-from .dda_auth import current_dda_user, get_user_role, require_min_role
+from .dda_auth import get_user_role
 from .job_runner import is_job_runner_busy, reconcile_stale_jobs
 from .tree.image_service import list_all_images
 from .models import DetectionJob, RegionReview
+from .rbac.permissions import require_module_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,11 +30,10 @@ def _require_dda():
 def admin_status(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("admin", "view")),
 ):
-    """System status for UAT / ops (analyst+)."""
+    """System status for UAT / ops."""
     _require_dda()
-    require_min_role(user, db, "analyst")
 
     runs = db.query(DetectionRun).count()
     jobs_queued = db.query(DetectionJob).filter(DetectionJob.status == "queued").count()
@@ -59,10 +59,9 @@ def admin_status(
 def admin_reconcile_jobs(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("admin", "edit")),
 ):
     _require_dda()
-    require_min_role(user, db, "admin")
     fixed = reconcile_stale_jobs(db)
     return {"ok": True, "staleRunningFixed": fixed}
 
@@ -72,11 +71,10 @@ def admin_purge_old_runs(
     request: Request,
     days: int = Query(90, ge=7, le=3650),
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("admin", "delete")),
 ):
     """Delete detection runs older than N days (admin only)."""
     _require_dda()
-    require_min_role(user, db, "admin")
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     old = db.query(DetectionRun).filter(DetectionRun.created_at < cutoff).all()
     count = 0

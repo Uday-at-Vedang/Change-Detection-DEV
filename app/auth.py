@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import secrets
@@ -11,7 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import User, LoginHistory
+from .models import User, LoginHistory, PasswordResetToken
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,57 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
+
+
+def _hash_reset_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def create_password_reset_token(db: Session, user: User) -> str:
+    """Issue a fresh one-time reset token for `user`, invalidating any
+    previous unused ones (so an old, possibly-leaked link can't still work
+    once a new reset was requested). Returns the raw token — only the caller
+    (the emailed link) ever sees it; the DB only keeps its hash."""
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).delete(synchronize_session=False)
+
+    raw_token = secrets.token_urlsafe(32)
+    db.add(PasswordResetToken(
+        user_id=user.id,
+        token_hash=_hash_reset_token(raw_token),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+    ))
+    db.commit()
+    return raw_token
+
+
+def consume_password_reset_token(db: Session, raw_token: str) -> Optional[User]:
+    """Validate + burn a reset token in one step (single use). The expiry
+    comparison is done in the SQL filter, not in Python, so it's never
+    exposed to naive/aware datetime mismatches from what the DB driver hands
+    back for a stored DATETIME column."""
+    if not raw_token:
+        return None
+    now = datetime.now(timezone.utc)
+    entry = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.token_hash == _hash_reset_token(raw_token),
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at >= now,
+        )
+        .first()
+    )
+    if not entry:
+        return None
+    entry.used_at = now
+    db.commit()
+    return get_user_by_id(db, entry.user_id)
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:

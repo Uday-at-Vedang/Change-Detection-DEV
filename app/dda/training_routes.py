@@ -32,6 +32,7 @@ def _require_dda():
 
 @router.post("/training/pack")
 def export_training_pack(
+    request: Request,
     base_path: str = Form(...),
     comparison_path: str = Form(...),
     roi: Optional[str] = Form(None),
@@ -50,6 +51,7 @@ def export_training_pack(
     draft mask so labelers start from the detector's output.
     """
     _require_dda()
+    require_admin_or_key(request, user, db)
     from .geotiff_io import load_rgb_roi, parse_roi
     from .local_routes import safe_resolve
     from .training_pack import make_pair_id, rasterize_regions, write_labeling_pack

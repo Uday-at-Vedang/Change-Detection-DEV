@@ -13,6 +13,7 @@ from ..database import get_db
 from ..models import DetectionRun, User
 from .dda_auth import current_dda_user
 from .dept_export import ExportResult, get_exporter, regions_to_csv_rows
+from .rbac.permissions import require_module_permission
 from .review_service import (
     filter_regions_by_review,
     load_regions,
@@ -53,7 +54,7 @@ def patch_region_review(
     region_id: int,
     body: RegionReviewBody,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("reports", "edit")),
 ):
     """Mark a region as confirmed or false positive."""
     _require_dda()
@@ -107,7 +108,7 @@ def export_csv(
 
 
 @router.post("/reports/{run_id}/submit")
-def submit_confirmed(run_id: int, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def submit_confirmed(run_id: int, db: Session = Depends(get_db), user: User = Depends(require_module_permission("reports", "edit"))):
     """Submit confirmed regions to departmental API (or file fallback)."""
     _require_dda()
     run = _get_user_run(db, run_id, user.id)

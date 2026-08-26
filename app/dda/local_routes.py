@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from .dda_auth import current_dda_user, require_min_role
+from .dda_auth import current_dda_user
 from .detect_service import run_detection_and_save
 from .geotiff_io import load_rgb_pil
+from .rbac.permissions import require_module_permission, user_can
 
 from .config import (
     IS_DDA_MODE,
@@ -48,7 +49,8 @@ def _normalize_library_path(path: str) -> str:
 
 
 def _delete_image_by_path(db: Session, user: User, rel: str) -> dict:
-    require_min_role(user, db, "viewer")
+    if not user_can(user, db, "library", "delete"):
+        raise HTTPException(status_code=403, detail="Missing 'delete' permission on 'library'.")
     if not rel:
         raise HTTPException(status_code=400, detail="path is required")
     result = delete_library_image(
@@ -286,7 +288,7 @@ def local_delete_image(
 
 
 @router.post("/local/rescan")
-def local_rescan(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def local_rescan(db: Session = Depends(get_db), user: User = Depends(require_module_permission("library", "edit"))):
     _require_dda()
     from .tree.sync_service import sync_from_filesystem
 
@@ -312,7 +314,7 @@ async def detect_preflight(
     comparison_path: str = Form(...),
     roi: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("detect", "create")),
 ):
     """Check a library image pair (CRS/GSD/bands/georef/overlap) without running detection.
 
@@ -372,7 +374,7 @@ async def detect_from_library(
     roi: Optional[str] = Form(None),
     shape_mode: str = Form("polygon"),
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("detect", "create")),
 ):
     """Run change detection on two library images by relative path.
 

@@ -40,6 +40,8 @@
       font-weight: 500;
     }
     .auth-toggle a:hover { text-decoration: underline; }
+    .auth-forgot-link { color: var(--accent); font-size: 0.82rem; text-decoration: none; }
+    .auth-forgot-link:hover { text-decoration: underline; }
     .register-only.hidden, .login-only.hidden, .field-error.hidden, .field-hint.hidden { display: none; }
     .field-error { color: var(--danger); font-size: 0.78rem; margin-top: 0.35rem; }
     .field-hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 0.35rem; }
@@ -99,6 +101,7 @@
               <input type="checkbox" id="remember_me" />
               Remember me
             </label>
+            <a href="/forgot-password" class="auth-forgot-link">Forgot password?</a>
           </div>
 
           <button type="submit" id="auth-submit" class="btn btn-primary btn-block">Sign in</button>
@@ -112,7 +115,7 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/shared.js?v=1"></script>
+  <script src="/static/js/dda/shared.js?v=3"></script>
   <script src="/static/js/dda/login.js?v=3"></script>
 </body>
 </html>

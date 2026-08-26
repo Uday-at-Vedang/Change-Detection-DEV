@@ -20,6 +20,7 @@ from .job_runner import (
 )
 from .local_routes import safe_resolve
 from .models import DetectionJob
+from .rbac.permissions import require_module_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,7 +48,7 @@ async def create_job(
     roi: Optional[str] = Form(None),
     shape_mode: str = Form("polygon"),
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("detect", "create")),
 ):
     """Queue async detection from local library paths. Returns immediately with jobId.
 

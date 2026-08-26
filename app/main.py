@@ -27,7 +27,9 @@ from .auth import (
     IS_SECURE_COOKIE,
     check_account_lockout,
     check_ip_throttle,
+    consume_password_reset_token,
     create_access_token,
+    create_password_reset_token,
     get_client_ip,
     get_password_hash,
     get_user_by_email,
@@ -39,13 +41,15 @@ from .auth import (
     verify_password,
 )
 from .database import Base, engine, get_db, DATA_DIR
-from .models import User, DetectionRun, LoginHistory  # noqa: F401 — LoginHistory registered on Base.metadata for create_all()
+from .models import User, DetectionRun, LoginHistory, PasswordResetToken  # noqa: F401 — LoginHistory/PasswordResetToken registered on Base.metadata for create_all()
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
 from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview  # noqa: F401
 from .dda.tree.models import TreeNode, ImageLibrary, AuditLog  # noqa: F401
+from .dda.rbac.models import Role, Module, RolePermission, MenuItem  # noqa: F401
+from .dda.rbac.permissions import get_user_role_row, resolve_user_menu, user_can
 from .dda.config import IS_DDA_MODE
 from .dda.bootstrap import init_dda_database, setup_dda
-from .notifier import send_notification, send_test_email
+from .notifier import send_notification, send_password_reset_email, send_test_email
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -334,16 +338,101 @@ def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
     return {"ok": True, "message": "Password has been reset. You can now sign in."}
 
 
-# NOTE: This reset flow has no email verification. In production, implement
-# a token-based flow: POST /forgot sends email with one-time link,
-# GET /reset?token=... validates token, POST /reset sets new password.
+# NOTE: reset_password() above has no email verification and is kept only
+# for backward compatibility with any existing caller of the base SPA's old
+# flow. The DDA-mode Forgot Password page (below) uses the real token-based
+# flow instead: POST /api/auth/forgot-password emails a one-time link,
+# POST /api/auth/reset-password-token validates it and sets the new password.
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    email = data.email.strip().lower()
+    user = get_user_by_email(db, email) if email else None
+    if user and not user.email.startswith("__guest__"):
+        raw_token = create_password_reset_token(db, user)
+        reset_link = f"{str(request.base_url).rstrip('/')}/reset-password?token={raw_token}"
+        ok, err = send_password_reset_email(user.email, reset_link)
+        if not ok:
+            logger.warning("Password reset email to %s not sent: %s", user.email, err)
+    # Always the same response regardless of whether the email exists or the
+    # send actually succeeded — anything else would let a caller enumerate
+    # accounts, or infer that SMTP is misconfigured.
+    return {"ok": True, "message": "If an account exists for that email, a reset link has been sent."}
+
+
+class ResetPasswordWithToken(BaseModel):
+    token: str
+    new_password: str
+
+
+@app.post("/api/auth/reset-password-token")
+def reset_password_with_token(data: ResetPasswordWithToken, db: Session = Depends(get_db)):
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    user = consume_password_reset_token(db, data.token)
+    if not user:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+    user.hashed_password = get_password_hash(data.new_password)
+    db.commit()
+    return {"ok": True, "message": "Password has been reset. You can now sign in."}
 
 
 @app.get("/api/me")
-def me(user: Optional[User] = Depends(get_current_user)):
+def me(user: Optional[User] = Depends(get_current_user), db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return {"id": user.id, "email": user.email, "full_name": user.full_name}
+    role_row = get_user_role_row(user, db)
+    last_login = (
+        db.query(LoginHistory)
+        .filter(LoginHistory.user_id == user.id, LoginHistory.event_type == "login_success")
+        .order_by(LoginHistory.created_at.desc())
+        .first()
+    )
+    return {
+        "id": user.id, "email": user.email, "full_name": user.full_name,
+        "role": role_row.name if role_row else (user.role or "analyst"),
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_login": last_login.created_at.isoformat() if last_login else None,
+    }
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str
+
+
+@app.put("/api/me")
+def update_me(data: UpdateProfileRequest, user: Optional[User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    full_name = data.full_name.strip()
+    if not full_name:
+        raise HTTPException(status_code=400, detail="Full name is required")
+    user.full_name = full_name
+    db.commit()
+    return {"ok": True, "full_name": user.full_name}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/change-password")
+def change_password(data: ChangePasswordRequest, user: Optional[User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not verify_password(data.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    user.hashed_password = get_password_hash(data.new_password)
+    db.commit()
+    return {"ok": True, "message": "Password changed."}
 
 
 # --- Detection route ---
@@ -736,6 +825,14 @@ def dda_report_page(run_id: int):
     return FileResponse(report_file)
 
 
+# no-store on every auth page below: FileResponse otherwise sends
+# Last-Modified/ETag with no Cache-Control, which lets browsers serve a
+# heuristically-"fresh" copy straight from disk cache for hours without even
+# a revalidation request — invisible until you edit the page and it doesn't
+# show up. Also just the right default for a login/reset form regardless.
+_NO_STORE_HEADERS = {"Cache-Control": "no-store"}
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
     if not IS_DDA_MODE:
@@ -743,11 +840,42 @@ def login_page():
     login_file = TEMPLATES_DIR / "login_dda.html"
     if not login_file.exists():
         raise HTTPException(status_code=404, detail="Login template missing")
-    return FileResponse(login_file)
+    return FileResponse(login_file, headers=_NO_STORE_HEADERS)
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page():
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    page_file = TEMPLATES_DIR / "forgot_password_dda.html"
+    if not page_file.exists():
+        raise HTTPException(status_code=404, detail="Template missing")
+    return FileResponse(page_file, headers=_NO_STORE_HEADERS)
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page():
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    page_file = TEMPLATES_DIR / "reset_password_dda.html"
+    if not page_file.exists():
+        raise HTTPException(status_code=404, detail="Template missing")
+    return FileResponse(page_file, headers=_NO_STORE_HEADERS)
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def dda_profile_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return redirect
+    menu_items = resolve_user_menu(user, db)
+    return templates.TemplateResponse(request, "profile_dda.html", {"active_page": "profile", "menu_items": menu_items})
 
 
 def _dda_session_or_redirect(request: Request, db: Session):
-    """Shared by every DDA-mode page route (Home/Library/Detect/Reports).
+    """Shared by every DDA-mode page route (Home/Library/Detect/Reports/Admin).
 
     Deliberately not calling get_dda_user() here — it still has the
     session/guest fallback until Step 7 flips it, so it would never report
@@ -755,22 +883,36 @@ def _dda_session_or_redirect(request: Request, db: Session):
     first branch, without the fallback, so a redirect here is meaningful
     and independently testable before that flip lands.
 
-    Returns a RedirectResponse to /login if there's no session, else None.
+    Returns (user, None) if there's a session, or (None, RedirectResponse)
+    to /login if there isn't.
     """
     token = request.cookies.get(COOKIE_NAME)
     user = get_user_from_token(token, db) if token else None
     if not user:
-        return RedirectResponse("/login")
-    return None
+        return None, RedirectResponse("/login")
+    return user, None
+
+
+def _dda_admin_page_or_redirect(request: Request, db: Session):
+    """Session check plus the 'admin' module's view permission — shared by the
+    3 RBAC admin pages. Redirects to Home (not a bare 403) if the user is
+    logged in but not permitted, since this is a page, not an API call."""
+    user, redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return None, None, redirect
+    if not user_can(user, db, "admin", "view"):
+        return None, None, RedirectResponse("/")
+    return user, resolve_user_menu(user, db), None
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, db: Session = Depends(get_db)):
     if IS_DDA_MODE:
-        redirect = _dda_session_or_redirect(request, db)
+        user, redirect = _dda_session_or_redirect(request, db)
         if redirect:
             return redirect
-        return templates.TemplateResponse(request, "home_dda.html", {"active_page": "home"})
+        menu_items = resolve_user_menu(user, db)
+        return templates.TemplateResponse(request, "home_dda.html", {"active_page": "home", "menu_items": menu_items})
     index_file = TEMPLATES_DIR / "index.html"
     if not index_file.exists():
         return HTMLResponse("<h1>Satellite Change Detection</h1><p>Create <code>templates/index.html</code> and <code>static/</code>.</p>")
@@ -781,27 +923,60 @@ def index(request: Request, db: Session = Depends(get_db)):
 def dda_library_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    redirect = _dda_session_or_redirect(request, db)
+    user, redirect = _dda_session_or_redirect(request, db)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request, "library_dda.html", {"active_page": "library"})
+    menu_items = resolve_user_menu(user, db)
+    return templates.TemplateResponse(request, "library_dda.html", {"active_page": "library", "menu_items": menu_items})
 
 
 @app.get("/detect", response_class=HTMLResponse)
 def dda_detect_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    redirect = _dda_session_or_redirect(request, db)
+    user, redirect = _dda_session_or_redirect(request, db)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request, "detect_dda.html", {"active_page": "detect"})
+    menu_items = resolve_user_menu(user, db)
+    return templates.TemplateResponse(request, "detect_dda.html", {"active_page": "detect", "menu_items": menu_items})
 
 
 @app.get("/reports", response_class=HTMLResponse)
 def dda_reports_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    redirect = _dda_session_or_redirect(request, db)
+    user, redirect = _dda_session_or_redirect(request, db)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request, "reports_dda.html", {"active_page": "reports"})
+    menu_items = resolve_user_menu(user, db)
+    return templates.TemplateResponse(request, "reports_dda.html", {"active_page": "reports", "menu_items": menu_items})
+
+
+@app.get("/admin/roles-users", response_class=HTMLResponse)
+def dda_admin_roles_users_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_admin_page_or_redirect(request, db)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "admin_roles_users_dda.html", {"active_page": "admin-roles-users", "menu_items": menu_items})
+
+
+@app.get("/admin/modules", response_class=HTMLResponse)
+def dda_admin_modules_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_admin_page_or_redirect(request, db)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "admin_modules_dda.html", {"active_page": "admin-modules", "menu_items": menu_items})
+
+
+@app.get("/admin/menu", response_class=HTMLResponse)
+def dda_admin_menu_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_admin_page_or_redirect(request, db)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "admin_menu_dda.html", {"active_page": "admin-menu", "menu_items": menu_items})

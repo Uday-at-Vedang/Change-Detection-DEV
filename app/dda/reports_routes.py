@@ -14,6 +14,7 @@ from ..models import DetectionRun, User
 from ..notifier import send_notification
 from .dda_auth import current_dda_user
 from .config import get_public_base_url
+from .rbac.permissions import require_module_permission
 from .report_pdf import build_report_dict, generate_report_pdf
 from .review_service import load_regions, merge_reviews
 
@@ -144,7 +145,7 @@ class ReportNotifyBody(BaseModel):
 
 
 @router.post("/reports/{run_id}/notify")
-def notify_report(run_id: int, body: ReportNotifyBody, db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def notify_report(run_id: int, body: ReportNotifyBody, db: Session = Depends(get_db), user: User = Depends(require_module_permission("reports", "edit"))):
     """Email report summary with link to the browser report page."""
     _require_dda()
     run = _get_user_run(db, run_id, user.id)

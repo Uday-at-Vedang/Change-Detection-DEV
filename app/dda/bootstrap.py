@@ -13,6 +13,7 @@ from .reports_routes import router as reports_router
 from .review_routes import router as review_router
 from .training_routes import router as training_router
 from .tree.routes import router as tree_router
+from .rbac.routes import router as rbac_router
 from .dda_auth import seed_dda_admin
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def init_dda_database():
         with engine.connect() as conn:
             for stmt in (
                 "ALTER TABLE users ADD COLUMN role VARCHAR(32) DEFAULT 'analyst'",
+                "ALTER TABLE users ADD COLUMN role_id INTEGER DEFAULT NULL",
                 "ALTER TABLE detection_runs ADD COLUMN after_full_path VARCHAR(512) DEFAULT ''",
             ):
                 try:
@@ -124,6 +126,11 @@ def init_dda_database():
     db = SessionLocal()
     try:
         seed_dda_admin(db)
+        from .rbac.seed import seed_rbac
+        try:
+            seed_rbac(db)
+        except Exception as exc:
+            logger.warning("RBAC seed skipped: %s", exc)
         from .tree.migration import run_tree_migration
         mig = run_tree_migration(db)
         logger.info("Tree migration: %s", mig)
@@ -168,4 +175,5 @@ def setup_dda(app: FastAPI) -> None:
     app.include_router(training_router, prefix="/api/dda", tags=["dda-training"])
     app.include_router(admin_router, prefix="/api/dda", tags=["dda-admin"])
     app.include_router(local_router, prefix="/api/dda", tags=["dda-local"])
-    logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local)")
+    app.include_router(rbac_router, prefix="/api/dda", tags=["dda-rbac"])
+    logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local, rbac)")

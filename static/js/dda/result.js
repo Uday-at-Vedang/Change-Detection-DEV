@@ -220,8 +220,8 @@ function buildDdaRegionRow(r) {
       <td>${stage}</td>
       <td><span class="${reviewBadgeClass(reviewStatus)}">${reviewStatus.replace('_', ' ')}</span></td>
       <td class="dda-review-btns">
-        <button type="button" class="btn btn-secondary btn-sm btn-review-ok${okActive}" data-action="confirmed" ${locked ? 'disabled' : ''} title="Confirm">✓</button>
-        <button type="button" class="btn btn-secondary btn-sm btn-review-fp${fpActive}" data-action="false_positive" ${locked ? 'disabled' : ''} title="False positive">✗</button>
+        <button type="button" class="btn btn-secondary btn-sm btn-review-ok${okActive}" data-action="confirmed" ${locked ? 'disabled' : ''} data-requires-permission="reports:edit" data-permission-mode="disable" title="Confirm">✓</button>
+        <button type="button" class="btn btn-secondary btn-sm btn-review-fp${fpActive}" data-action="false_positive" ${locked ? 'disabled' : ''} data-requires-permission="reports:edit" data-permission-mode="disable" title="False positive">✗</button>
         <button type="button" class="btn btn-secondary btn-sm btn-review-locate" title="Locate">◎</button>
         ${mapsUrl ? `<a class="btn btn-secondary btn-sm" href="${mapsUrl}" target="_blank" rel="noopener" title="Open in Google Maps">Map</a>` : ''}
       </td>
@@ -396,6 +396,7 @@ function renderDdaRegionPage() {
   pageRows.forEach((tr) => tbody.appendChild(tr));
   setupDdaRegionHover(tbody, pageData);
   setupDdaReviewButtons(tbody, pageData);
+  if (typeof applyPermissionGating === 'function') applyPermissionGating(window.ddaPermissions || {}, tbody);
 
   if (!pag) return;
   pag.innerHTML = '';

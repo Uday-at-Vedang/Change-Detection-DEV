@@ -58,6 +58,59 @@ function formatBytes(n) {
   return (n / 1024).toFixed(0) + ' KB';
 }
 
+// --- Dynamic role permissions (drives show/hide/disable in the UI so it
+// always matches whatever's set in the Roles & Users permission matrix,
+// without hardcoding any role name in a template or JS file). ---
+
+let _ddaPermissionsPromise = null;
+
+/** Fetch (once, cached for the page's lifetime) the current user's
+ * per-module permissions: { moduleKey: { view, create, edit, delete } }.
+ * Call this during page init, before hasPermission()/applyPermissionGating()
+ * are used. Resolves to {} (nothing permitted) if the request fails, rather
+ * than throwing — a permission check should fail closed, not break the page. */
+function loadMyPermissions() {
+  if (!_ddaPermissionsPromise) {
+    _ddaPermissionsPromise = ddaApi('GET', '/api/dda/rbac/me/permissions').catch(() => ({}));
+  }
+  return _ddaPermissionsPromise;
+}
+
+/** Sync check against an already-resolved permissions map (from
+ * loadMyPermissions()). */
+function hasPermission(permissions, moduleKey, action) {
+  return !!(permissions && permissions[moduleKey] && permissions[moduleKey][action]);
+}
+
+/** Declaratively hides/disables every element carrying
+ * data-requires-permission="moduleKey:action" based on the resolved
+ * permissions map, e.g. <button data-requires-permission="detect:create">.
+ * By default the element is hidden when not permitted; add
+ * data-permission-mode="disable" to keep it visible but disabled instead
+ * (for controls where it should stay clear the feature exists). Safe to
+ * call again after re-rendering a list/table to gate newly-added elements. */
+function applyPermissionGating(permissions, root = document) {
+  root.querySelectorAll('[data-requires-permission]').forEach((el) => {
+    const [moduleKey, action] = el.getAttribute('data-requires-permission').split(':');
+    const allowed = hasPermission(permissions, moduleKey, action);
+    if (el.getAttribute('data-permission-mode') === 'disable') {
+      // Only ever force it OFF for a denied permission — never force it back
+      // ON, since the element may also be legitimately disabled by other
+      // page logic (e.g. "no pair selected yet") that this must not override.
+      if (!allowed) {
+        el.disabled = true;
+        el.classList.add('perm-disabled');
+        el.title = el.getAttribute('data-permission-denied-title') || "You don't have permission for this action.";
+      }
+    } else {
+      // Reuses the existing global .hidden utility (style.css) rather than a
+      // separate class — plays correctly with any other code that also
+      // toggles 'hidden' on the same element (e.g. an admin-only button).
+      el.classList.toggle('hidden', !allowed);
+    }
+  });
+}
+
 /** Shared prev/numbered/next pagination control — same markup/behavior as
  * the region-review table's pagination (result.js), reused by any list/grid
  * that needs paging instead of an internal scrollbar. */

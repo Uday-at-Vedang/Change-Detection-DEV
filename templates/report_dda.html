@@ -56,14 +56,14 @@
         <h3>Email this report</h3>
         <div class="dda-report-email-row">
           <input type="email" id="report-email" placeholder="recipient@example.com" />
-          <button type="button" class="btn btn-secondary" id="report-email-btn">Send link</button>
+          <button type="button" class="btn btn-secondary" id="report-email-btn" data-requires-permission="reports:edit" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to email reports.">Send link</button>
         </div>
         <p class="dim" id="report-email-msg"></p>
       </div>
     </div>
   </div>
-  <script src="/static/js/dda/shared.js?v=2"></script>
-  <script src="/static/js/dda/app.js?v=24"></script>
+  <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/app.js?v=26"></script>
   <script src="/static/js/dda/report_page.js?v=4"></script>
 </body>
 </html>

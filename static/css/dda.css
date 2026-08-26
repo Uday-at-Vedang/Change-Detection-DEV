@@ -16,14 +16,46 @@
   width: 252px;
   height: 100vh;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
   padding: 1.5rem 1.15rem;
   border-right: 1px solid var(--border);
   background: var(--bg-surface);
+  transition: flex-basis var(--transition), width var(--transition);
 }
 .dda-sidebar-brand { display: flex; align-items: center; gap: 0.65rem; padding: 0 0.15rem; }
+.dda-sidebar-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.dda-sidebar-toggle:hover { background: var(--bg-hover); color: var(--text); }
+
+/* Collapsed state: icon-only rail, like the LMS reference sidebar. */
+.dda-sidebar-nav.collapsed { flex-basis: 72px; width: 72px; padding-left: 0.6rem; padding-right: 0.6rem; }
+.dda-sidebar-nav.collapsed .dda-sidebar-brand { justify-content: center; }
+.dda-sidebar-nav.collapsed .dda-sidebar-brand-text { display: none; }
+.dda-sidebar-nav.collapsed .dda-sidebar-toggle { margin-left: 0; }
+.dda-sidebar-nav.collapsed .dda-tab { justify-content: center; padding: 0.65rem; }
+.dda-sidebar-nav.collapsed .dda-tab span,
+.dda-sidebar-nav.collapsed .dda-sidebar-chevron,
+.dda-sidebar-nav.collapsed .dda-notify-btn span,
+.dda-sidebar-nav.collapsed .dda-notify-badge,
+.dda-sidebar-nav.collapsed .dda-user-wrap #dda-user-email { display: none; }
+.dda-sidebar-nav.collapsed .dda-sidebar-submenu { display: none; }
+.dda-sidebar-nav.collapsed .dda-notify-wrap,
+.dda-sidebar-nav.collapsed .dda-user-wrap { justify-content: center; }
 .dda-sidebar-brand > svg { flex-shrink: 0; color: var(--grad-start); }
 .dda-sidebar-brand-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .dda-sidebar-brand-name {
@@ -65,6 +97,27 @@
 }
 .dda-tab.active svg { opacity: 1; }
 
+/* Collapsible sidebar group (e.g. "Configuration" > Roles & Users / App
+   Modules / Menu Management) — native <details>/<summary>, no JS needed. */
+.dda-sidebar-group { border: none; }
+.dda-sidebar-group > summary.dda-tab-group {
+  list-style: none;
+  justify-content: flex-start;
+}
+.dda-sidebar-group > summary.dda-tab-group::-webkit-details-marker { display: none; }
+.dda-sidebar-group > summary.dda-tab-group::marker { content: ""; }
+.dda-sidebar-chevron { margin-left: auto; flex-shrink: 0; opacity: 0.6; transition: transform var(--transition); }
+.dda-sidebar-group[open] > summary .dda-sidebar-chevron { transform: rotate(90deg); }
+.dda-sidebar-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.2rem 0 0.15rem 0.95rem;
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--border);
+}
+.dda-subtab { padding: 0.5rem 0.7rem; font-size: 0.86rem; }
+
 .dda-sidebar-footer {
   margin-top: auto;
   display: flex;
@@ -93,6 +146,58 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* User menu — click the avatar/email row to reveal My Profile / Sign out.
+   Native <details>/<summary>, same zero-JS pattern as the sidebar's
+   "Configuration" group. */
+.dda-user-menu { border: none; }
+.dda-user-menu > summary.dda-user-wrap { list-style: none; cursor: pointer; }
+.dda-user-menu > summary.dda-user-wrap::-webkit-details-marker { display: none; }
+.dda-user-menu > summary.dda-user-wrap::marker { content: ""; }
+.dda-user-menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.dda-user-menu-link {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.dda-user-menu-link:hover { background: var(--bg-hover); color: var(--text); }
+.dda-user-menu-link.active { color: var(--grad-start); font-weight: 600; }
+.dda-user-menu-danger { color: var(--danger); }
+.dda-user-menu-danger:hover { background: rgba(207, 32, 64, 0.08); color: var(--danger); }
+
+/* Collapsed rail: the panel can't render inline at 72px, so it escapes as a
+   fixed-position flyout instead — same reasoning as the notification panel
+   (overflow-x:hidden on the sidebar would otherwise clip it). */
+.dda-sidebar-nav.collapsed .dda-user-menu-panel {
+  position: fixed;
+  left: 84px;
+  bottom: 1.25rem;
+  width: 190px;
+  margin-top: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  z-index: 30;
 }
 
 /* Main content column, to the right of the sidebar */
@@ -164,6 +269,7 @@
   .dda-notify-btn span { display: none; }
   .dda-user-wrap #dda-user-email { display: none; }
   .dda-main-col { padding: 1.25rem 1.25rem 2rem; }
+  .dda-sidebar-toggle { display: none; }
 }
 
 .dda-layout {
@@ -1065,3 +1171,165 @@
   .dda-area-pair-head { grid-column: 1 / -1; }
   .dda-area-pair-actions { grid-column: 1 / -1; }
 }
+
+/* ---------------------------------------------------------------------
+   Admin pages: Roles & Users, App Modules, Menu Management
+   --------------------------------------------------------------------- */
+.dda-admin-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .dda-admin-2col { grid-template-columns: 1fr; }
+}
+
+/* Roles & Users gets its own ratio — role hierarchy narrower, users table
+   wider, so the table has real room to breathe on a full-width page. */
+.dda-admin-2col-roles { grid-template-columns: 0.85fr 1.3fr; }
+@media (max-width: 1100px) {
+  .dda-admin-2col-roles { grid-template-columns: 1fr; }
+}
+
+/* Dynamic role permissions — elements gated via shared.js's
+   applyPermissionGating() against the Roles & Users permission matrix.
+   Hidden elements reuse the existing global .hidden utility; this is just
+   the "still visible but blocked" state for data-permission-mode="disable". */
+.perm-disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* My Profile page */
+.dda-profile-summary { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.3rem; padding: 0.5rem 0 0.25rem; }
+.dda-profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--gradient);
+  color: #fff;
+  font-size: 1.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.4rem;
+}
+.dda-profile-badge {
+  display: inline-block;
+  margin: 0.35rem 0 0.9rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(46,51,197,0.12), rgba(207,32,64,0.08));
+  color: var(--grad-start);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.dda-profile-meta {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+.dda-profile-meta > div { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; }
+.dda-profile-meta-label { color: var(--text-dim); }
+.dda-profile-meta-value { font-weight: 600; }
+
+/* Admin pages (Roles & Users / App Modules / Menu Management) use the full
+   viewport width instead of the app's normal 1600px cap, so the wider
+   tables/panels have as much room as the LMS reference layout does. */
+.dda-app-full { max-width: none; }
+
+.dda-role-list { display: flex; flex-direction: column; gap: 0.65rem; }
+.dda-role-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--grad-start);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  flex-wrap: wrap;
+}
+.dda-role-card-info { min-width: 0; }
+.dda-role-card-name { font-weight: 600; text-transform: capitalize; }
+.dda-role-card-name .dda-badge-system {
+  margin-left: 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+}
+.dda-role-card-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.1rem; }
+.dda-role-card-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+
+.dda-perm-matrix { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.dda-perm-matrix th, .dda-perm-matrix td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.6rem;
+  text-align: center;
+}
+.dda-perm-matrix th:first-child, .dda-perm-matrix td:first-child { text-align: left; }
+.dda-perm-matrix input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+
+.dda-menu-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.dda-menu-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+.dda-menu-item-order { display: flex; flex-direction: column; gap: 0.15rem; }
+.dda-menu-item-order button {
+  width: 22px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.dda-menu-item-order button:hover:not(:disabled) { color: var(--grad-start); border-color: var(--grad-start); }
+.dda-menu-item-order button:disabled { opacity: 0.35; cursor: default; }
+.dda-menu-item-info { flex: 1 1 auto; min-width: 0; }
+.dda-menu-item-label { font-weight: 600; }
+.dda-menu-item-meta { font-size: 0.78rem; color: var(--text-muted); }
+.dda-menu-item-meta code { background: var(--bg); padding: 0.05rem 0.3rem; border-radius: 4px; }
+.dda-menu-item-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+.dda-status-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+.dda-status-badge.is-active { background: rgba(16,185,129,0.12); color: #0d9488; }
+.dda-status-badge.is-inactive { background: rgba(220,38,38,0.1); color: var(--danger); }
+
+.dda-perm-matrix-actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+
+.dda-menu-item-row.is-child { margin-left: 2.25rem; }
+.dda-menu-item-icon { font-size: 1.1rem; margin-right: 0.3rem; }
+
+.dda-admin-side-panel { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; }
+.dda-admin-side-panel strong { color: var(--text); }
+.dda-admin-side-panel code {
+  background: var(--bg);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  color: var(--grad-start);
+}
+.dda-module-keys { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; }
+.dda-module-keys code { background: var(--bg); padding: 0.15rem 0.5rem; border-radius: 4px; align-self: flex-start; }
+
+.dda-table-toolbar { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+.dda-table-toolbar select { padding: 0.25rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); }
