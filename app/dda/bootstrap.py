@@ -14,6 +14,8 @@ from .review_routes import router as review_router
 from .training_routes import router as training_router
 from .tree.routes import router as tree_router
 from .rbac.routes import router as rbac_router
+from .masters_routes import router as masters_router
+from .logs_routes import router as logs_router
 from .dda_auth import seed_dda_admin
 
 logger = logging.getLogger(__name__)
@@ -93,6 +95,10 @@ def init_dda_database():
             for stmt in (
                 "ALTER TABLE users ADD COLUMN role VARCHAR(32) DEFAULT 'analyst'",
                 "ALTER TABLE users ADD COLUMN role_id INTEGER DEFAULT NULL",
+                "ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64) DEFAULT NULL",
+                "ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN totp_confirmed_at DATETIME DEFAULT NULL",
+                "ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT NULL",
                 "ALTER TABLE detection_runs ADD COLUMN after_full_path VARCHAR(512) DEFAULT ''",
             ):
                 try:
@@ -100,6 +106,13 @@ def init_dda_database():
                     conn.commit()
                 except Exception:
                     conn.rollback()
+            try:
+                conn.execute(sa_text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)"
+                ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
             try:
                 conn.execute(sa_text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS ix_dda_region_reviews_run_region "
@@ -131,6 +144,11 @@ def init_dda_database():
             seed_rbac(db)
         except Exception as exc:
             logger.warning("RBAC seed skipped: %s", exc)
+        try:
+            from .seed import seed_delhi_hierarchy
+            seed_delhi_hierarchy(db)
+        except Exception as exc:
+            logger.warning("Zone/village seed skipped: %s", exc)
         from .tree.migration import run_tree_migration
         mig = run_tree_migration(db)
         logger.info("Tree migration: %s", mig)
@@ -178,4 +196,6 @@ def setup_dda(app: FastAPI) -> None:
     app.include_router(admin_router, prefix="/api/dda", tags=["dda-admin"])
     app.include_router(local_router, prefix="/api/dda", tags=["dda-local"])
     app.include_router(rbac_router, prefix="/api/dda", tags=["dda-rbac"])
-    logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local, rbac)")
+    app.include_router(masters_router, prefix="/api/dda", tags=["dda-masters"])
+    app.include_router(logs_router, prefix="/api/dda", tags=["dda-logs"])
+    logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local, rbac, masters, logs)")

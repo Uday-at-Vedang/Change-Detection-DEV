@@ -8,6 +8,11 @@
   const lastLoginEl = document.getElementById('profile-last-login');
   const fullNameInput = document.getElementById('profile-full-name');
   const emailFieldInput = document.getElementById('profile-email-field');
+  const phoneInput = document.getElementById('profile-phone');
+  const countrySelect = document.getElementById('profile-country-code');
+  if (typeof window.populateCountrySelect === 'function') {
+    window.populateCountrySelect(countrySelect, '+91');
+  }
 
   function showMsg(elId, msg, isError) {
     const el = document.getElementById(elId);
@@ -31,6 +36,13 @@
       lastLoginEl.textContent = me.last_login ? new Date(me.last_login).toLocaleString() : 'This session';
       fullNameInput.value = me.full_name || '';
       emailFieldInput.value = me.email || '';
+      if (phoneInput) {
+        const parts = typeof window.splitPhoneE164 === 'function'
+          ? window.splitPhoneE164(me.phone || '')
+          : { dial: '+91', local: (me.phone || '').replace(/\D/g, '') };
+        if (countrySelect) countrySelect.value = parts.dial;
+        phoneInput.value = parts.local;
+      }
     } catch (err) {
       showMsg('profile-error', err.message || 'Could not load your profile.', true);
     }
@@ -41,12 +53,14 @@
     e.preventDefault();
     hideMsg('profile-error');
     const full_name = fullNameInput.value.trim();
+    const phone = (phoneInput?.value || '').replace(/\D/g, '');
+    const country_code = countrySelect?.value || '+91';
     if (!full_name) {
       showMsg('profile-error', 'Full name is required.', true);
       return;
     }
     try {
-      await ddaApi('PUT', '/api/me', { body: JSON.stringify({ full_name }) });
+      await ddaApi('PUT', '/api/me', { body: JSON.stringify({ full_name, phone, country_code }) });
       nameEl.textContent = full_name;
       avatarEl.textContent = full_name.trim().charAt(0).toUpperCase();
       showMsg('profile-success', 'Profile updated.', false);

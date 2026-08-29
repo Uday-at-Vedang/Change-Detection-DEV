@@ -1,9 +1,10 @@
 import hashlib
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,7 +13,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import User, LoginHistory, PasswordResetToken
+from .models import User, LoginHistory, PasswordResetToken, LoginOtp
 
 logger = logging.getLogger(__name__)
 
@@ -201,19 +202,114 @@ def consume_password_reset_token(db: Session, raw_token: str) -> Optional[User]:
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
-    return db.query(User).filter(User.email == email).first()
+    """Case-insensitive email lookup with whitespace stripped.
+
+    Emails are supposed to be stored lowercase (see register()), but a) users
+    typing them in login forms may leave stray whitespace or capitalisation,
+    and b) older accounts predating the .lower() normalisation may still be
+    mixed-case. Using LOWER()/TRIM() on both sides avoids the case where the
+    same email is treated as "already exists" by one route and "not found" by
+    another.
+    """
+    if not email:
+        return None
+    from sqlalchemy import func
+    normalised = email.strip().lower()
+    return (
+        db.query(User)
+        .filter(func.lower(func.trim(User.email)) == normalised)
+        .first()
+    )
+
+
+def get_user_by_phone(db: Session, phone: str) -> Optional[User]:
+    if not phone:
+        return None
+    return db.query(User).filter(User.phone == phone).first()
 
 
 def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
 
 
-def get_user_from_token(token: str, db: Session) -> Optional[User]:
-    """Resolve user from JWT token."""
+def normalize_phone(raw: str, country_code: Optional[str] = None) -> Optional[str]:
+    """Return the number as E.164 ("+CCXXXXXXXX"), or None if invalid.
+
+    Accepts either a raw string that already starts with '+', or a local
+    number plus a separate country dial code. India-specific rules (mobile
+    prefix must be 6-9, exactly 10 digits) are applied when the country
+    dial code resolves to '+91'; every other country is checked only for
+    total length (7–15 digits per the E.164 spec).
+    """
+    raw = (raw or "").strip()
+    cc = (country_code or "").strip()
+    if raw.startswith("+"):
+        digits = re.sub(r"\D", "", raw)
+        e164_country = ""
+        if not cc:
+            for dial in ("91", "1", "44", "61", "971", "65", "880", "94", "977", "92"):
+                if digits.startswith(dial):
+                    e164_country = "+" + dial
+                    break
+        else:
+            e164_country = "+" + re.sub(r"\D", "", cc)
+            if not digits.startswith(e164_country[1:]):
+                return None
+        local = digits[len(e164_country) - 1:] if e164_country else digits
+    else:
+        if not cc:
+            cc = "+91"
+        e164_country = "+" + re.sub(r"\D", "", cc)
+        local = re.sub(r"\D", "", raw)
+        if local.startswith(e164_country[1:]) and len(local) > 10:
+            local = local[len(e164_country) - 1:]
+    if not e164_country.startswith("+") or len(e164_country) < 2:
+        return None
+    if not local.isdigit():
+        return None
+    total = e164_country[1:] + local
+    if not (7 <= len(total) <= 15):
+        return None
+    if e164_country == "+91" and (len(local) != 10 or local[0] not in "6789"):
+        return None
+    return e164_country + local
+
+
+def mask_phone(phone: str) -> str:
+    """Mask an E.164 number for display: '+91******3210'."""
+    p = (phone or "").strip()
+    if not p:
+        return "******"
+    if p.startswith("+"):
+        digits = re.sub(r"\D", "", p)
+        if len(digits) <= 4:
+            return "+" + digits
+        for dial in ("91", "1", "44", "61", "971", "65", "880", "94", "977", "92"):
+            if digits.startswith(dial) and len(digits) > len(dial) + 3:
+                local = digits[len(dial):]
+                return f"+{dial}{'*' * max(0, len(local) - 4)}{local[-4:]}"
+        return "+" + "*" * max(0, len(digits) - 4) + digits[-4:]
+    digits = re.sub(r"\D", "", p)
+    if len(digits) < 4:
+        return "******"
+    return f"******{digits[-4:]}"
+
+
+def get_user_from_token(token: str, db: Session, *, allow_pending_otp: bool = False) -> Optional[User]:
+    """Resolve user from JWT token.
+
+    Tokens issued after password-check, before SMS OTP, carry
+    purpose=otp_pending and must not grant a session by themselves.
+    """
     if not token:
         return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        purpose = payload.get("purpose") or "session"
+        if purpose == "otp_pending" and not allow_pending_otp:
+            return None
+        if purpose not in ("session", "otp_pending"):
+            return None
         user_id_str = payload.get("sub")
         if user_id_str is None:
             return None
@@ -225,6 +321,82 @@ def get_user_from_token(token: str, db: Session) -> Optional[User]:
     except JWTError:
         return None
     return get_user_by_id(db, user_id)
+
+
+LOGIN_OTP_EXPIRE_MINUTES = 10
+LOGIN_OTP_MAX_ATTEMPTS = 5
+LOGIN_OTP_RESEND_SECONDS = 45
+
+
+def _hash_otp(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def mask_email(email: str) -> str:
+    local, _, domain = (email or "").partition("@")
+    if not domain:
+        return "***"
+    shown = (local[:1] + "***") if len(local) <= 2 else (local[:2] + "***")
+    return f"{shown}@{domain}"
+
+
+def create_login_otp(db: Session, user: User) -> Tuple[LoginOtp, str]:
+    """Issue a fresh 6-digit email OTP, invalidating unused ones for this user."""
+    db.query(LoginOtp).filter(
+        LoginOtp.user_id == user.id,
+        LoginOtp.used_at.is_(None),
+    ).delete(synchronize_session=False)
+    raw = f"{secrets.randbelow(1_000_000):06d}"
+    row = LoginOtp(
+        user_id=user.id,
+        code_hash=_hash_otp(raw),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=LOGIN_OTP_EXPIRE_MINUTES),
+        attempts=0,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row, raw
+
+
+def latest_unused_otp(db: Session, user_id: int) -> Optional[LoginOtp]:
+    return (
+        db.query(LoginOtp)
+        .filter(LoginOtp.user_id == user_id, LoginOtp.used_at.is_(None))
+        .order_by(LoginOtp.id.desc())
+        .first()
+    )
+
+
+def verify_login_otp(db: Session, user: User, otp_id: int, code: str) -> str:
+    """Return '' if valid; otherwise a short error token for the caller to map."""
+    cleaned = (code or "").strip().replace(" ", "")
+    now = datetime.now(timezone.utc)
+    row = (
+        db.query(LoginOtp)
+        .filter(
+            LoginOtp.id == otp_id,
+            LoginOtp.user_id == user.id,
+            LoginOtp.used_at.is_(None),
+        )
+        .first()
+    )
+    if not row:
+        return "expired"
+    exp = row.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < now:
+        return "expired"
+    if (row.attempts or 0) >= LOGIN_OTP_MAX_ATTEMPTS:
+        return "locked"
+    if not cleaned.isdigit() or len(cleaned) != 6 or row.code_hash != _hash_otp(cleaned):
+        row.attempts = (row.attempts or 0) + 1
+        db.commit()
+        return "invalid"
+    row.used_at = now
+    db.commit()
+    return ""
 
 
 def get_or_create_guest_user(db: Session) -> User:

@@ -1,0 +1,129 @@
+{
+  "created_unix": 1785493993.8682344,
+  "note": "before7 has no GT pack; library TIFs for reports 54-59 not on disk",
+  "mean_f1": 0.2356,
+  "pairs": [
+    {
+      "tag": "report_55_style",
+      "pair_id": "dda_before1_after",
+      "elapsed_s": 16.36,
+      "change_pct": 11.926,
+      "gt_pct": 21.241,
+      "n_regions": 17,
+      "f1": 0.0821,
+      "precision": 0.1141,
+      "recall": 0.0641,
+      "registration": {
+        "method": "ecc_multiscale",
+        "inlier_ratio": 0.0,
+        "ncc": 0.2587524138611311,
+        "homography_used": false,
+        "ncc_pre": 0.06557990075418059
+      },
+      "threshold_debug": {
+        "pair_ncc": 0.16234351732432634,
+        "drone_fp_mode": true,
+        "drone_tta": "off",
+        "drone_overfire_clean": null,
+        "threshold_score": 0.446
+      },
+      "overlay": "data/delhi_cd/friday_drone_report_fix/rerun_overlays/dda_before1_after_overlay.png"
+    },
+    {
+      "tag": "report_54_style",
+      "pair_id": "dda_before3_after3",
+      "elapsed_s": 13.1,
+      "change_pct": 12.287,
+      "gt_pct": 3.322,
+      "n_regions": 16,
+      "f1": 0.3333,
+      "precision": 0.2117,
+      "recall": 0.7831,
+      "registration": {
+        "skipped": true,
+        "reason": "small_scene_noreg",
+        "ncc": 0.6112375387651672
+      },
+      "threshold_debug": {
+        "pair_ncc": 0.5567079484423822,
+        "drone_fp_mode": true,
+        "drone_tta": "off",
+        "drone_overfire_clean": "structural",
+        "threshold_score": 0.446
+      },
+      "overlay": "data/delhi_cd/friday_drone_report_fix/rerun_overlays/dda_before3_after3_overlay.png"
+    },
+    {
+      "tag": "report_56_style",
+      "pair_id": "dda_before4_after4",
+      "elapsed_s": 15.13,
+      "change_pct": 48.948,
+      "gt_pct": 19.324,
+      "n_regions": 25,
+      "f1": 0.2999,
+      "precision": 0.2092,
+      "recall": 0.5299,
+      "registration": {
+        "skipped": true,
+        "reason": "small_scene_noreg",
+        "ncc": 0.41333651509775543
+      },
+      "threshold_debug": {
+        "pair_ncc": 0.4128086480347503,
+        "drone_fp_mode": true,
+        "drone_tta": "off",
+        "drone_overfire_clean": null,
+        "threshold_score": 0.446
+      },
+      "overlay": "data/delhi_cd/friday_drone_report_fix/rerun_overlays/dda_before4_after4_overlay.png"
+    },
+    {
+      "tag": "report_57_style",
+      "pair_id": "dda_before5_after5",
+      "elapsed_s": 9.07,
+      "change_pct": 19.46,
+      "gt_pct": 22.325,
+      "n_regions": 16,
+      "f1": 0.3176,
+      "precision": 0.3409,
+      "recall": 0.2972,
+      "registration": {
+        "skipped": true,
+        "reason": "small_scene_noreg",
+        "ncc": 0.4607668996060422
+      },
+      "threshold_debug": {
+        "pair_ncc": 0.29772208405774536,
+        "drone_fp_mode": true,
+        "drone_tta": "off",
+        "drone_overfire_clean": null,
+        "threshold_score": 0.446
+      },
+      "overlay": "data/delhi_cd/friday_drone_report_fix/rerun_overlays/dda_before5_after5_overlay.png"
+    },
+    {
+      "tag": "report_58_style",
+      "pair_id": "dda_before6_after6",
+      "elapsed_s": 10.19,
+      "change_pct": 8.239,
+      "gt_pct": 4.706,
+      "n_regions": 21,
+      "f1": 0.1453,
+      "precision": 0.1141,
+      "recall": 0.1998,
+      "registration": {
+        "skipped": true,
+        "reason": "small_scene_noreg",
+        "ncc": 0.5094958161935418
+      },
+      "threshold_debug": {
+        "pair_ncc": 0.4792553163213488,
+        "drone_fp_mode": true,
+        "drone_tta": "off",
+        "drone_overfire_clean": null,
+        "threshold_score": 0.446
+      },
+      "overlay": "data/delhi_cd/friday_drone_report_fix/rerun_overlays/dda_before6_after6_overlay.png"
+    }
+  ]
+}

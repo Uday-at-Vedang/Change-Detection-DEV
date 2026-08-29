@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ...auth import get_password_hash, get_user_by_email
+from ...auth import get_password_hash, get_user_by_email, get_user_by_phone, normalize_phone
 from ...database import get_db
 from ...models import User
 from ..dda_auth import current_dda_user
@@ -44,8 +44,28 @@ def _menu_item_dict(item: MenuItem) -> dict:
 def _user_dict(u: User, role_name: str, role_id: Optional[int]) -> dict:
     return {
         "id": u.id, "email": u.email, "fullName": u.full_name,
+        "phone": u.phone or "",
         "role": role_name, "roleId": role_id,
     }
+
+
+def _optional_phone(
+    raw: str,
+    country_code: str = "+91",
+    user_id: Optional[int] = None,
+    db: Optional[Session] = None,
+) -> Optional[str]:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    phone = normalize_phone(raw, country_code)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Enter a valid mobile number for the selected country.")
+    if db is not None:
+        other = get_user_by_phone(db, phone)
+        if other and other.id != user_id:
+            raise HTTPException(status_code=409, detail="A user with this mobile number already exists.")
+    return phone
 
 
 # -------------------------------------------------------- Current user ----
@@ -381,12 +401,16 @@ def reorder_menu_items(
 class UserCreateBody(BaseModel):
     email: EmailStr
     fullName: str = ""
+    phone: str = ""
+    countryCode: str = "+91"
     password: str = Field(..., min_length=8)
     roleId: int
 
 
 class UserUpdateBody(BaseModel):
     fullName: str = ""
+    phone: str = ""
+    countryCode: str = "+91"
     roleId: int
     password: Optional[str] = Field(default=None, min_length=8)
 
@@ -409,11 +433,15 @@ def create_user(
 ):
     if get_user_by_email(db, str(body.email)):
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
+    phone = _optional_phone(body.phone, body.countryCode)
+    if phone and get_user_by_phone(db, phone):
+        raise HTTPException(status_code=409, detail="A user with this mobile number already exists.")
     role = db.query(Role).filter(Role.id == body.roleId).first()
     if not role:
         raise HTTPException(status_code=400, detail="Unknown role.")
     new_user = User(
         email=str(body.email), full_name=body.fullName,
+        phone=phone,
         hashed_password=get_password_hash(body.password),
         role_id=role.id, role=role.name,
     )
@@ -437,6 +465,7 @@ def update_user(
     if not role:
         raise HTTPException(status_code=400, detail="Unknown role.")
     target.full_name = body.fullName
+    target.phone = _optional_phone(body.phone, body.countryCode, user_id=target.id, db=db)
     target.role_id = role.id
     target.role = role.name
     if body.password:

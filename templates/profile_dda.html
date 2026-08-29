@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>My Profile — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=47" />
 </head>
 <body>
   <div class="app dda-app">
@@ -56,6 +56,13 @@
                     <input type="email" id="profile-email-field" disabled />
                   </div>
                 </div>
+                <div class="form-group">
+                  <label for="profile-phone">Mobile number</label>
+                  <div class="dda-phone-input">
+                    <select id="profile-country-code" class="dda-country-select" aria-label="Country code"></select>
+                    <input type="tel" id="profile-phone" autocomplete="tel-national" inputmode="numeric" maxlength="15" placeholder="Mobile number" required />
+                  </div>
+                </div>
                 <button type="submit" class="btn btn-primary">Save changes</button>
               </form>
             </div>
@@ -89,9 +96,10 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/shared.js?v=3"></script>
-  <script src="/static/js/dda/app.js?v=26"></script>
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/countries.js?v=1"></script>
+  <script src="/static/js/dda/app.js?v=28"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
-  <script src="/static/js/dda/profile.js?v=1"></script>
+  <script src="/static/js/dda/profile.js?v=5"></script>
 </body>
 </html>

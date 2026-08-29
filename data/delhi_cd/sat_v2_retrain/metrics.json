@@ -1,0 +1,318 @@
+{
+  "model_id": "deepang/adaptformer-LEVIR-CD",
+  "dummy": false,
+  "epochs": 20,
+  "epochs_ran": 8,
+  "lr": 5e-05,
+  "augment": true,
+  "stride": 64,
+  "loss": "ce",
+  "pos_weight": 10.636469906662356,
+  "pos_oversample": 4,
+  "exclude_empty": true,
+  "full_resize": true,
+  "threshold": 0.5,
+  "device": "cuda",
+  "split": {
+    "train": [
+      "delhi_0032",
+      "delhi_0028",
+      "delhi_0025",
+      "delhi_0021",
+      "delhi_0011",
+      "delhi_0019",
+      "delhi_0027",
+      "delhi_0023",
+      "delhi_0022",
+      "delhi_0017",
+      "delhi_0004",
+      "delhi_0031",
+      "delhi_0012",
+      "delhi_0026",
+      "dda_before5_after5_v2",
+      "dda_before6_after6_v2",
+      "delhi_0030",
+      "delhi_0020",
+      "hn_delhi_0002",
+      "hn_delhi_0006",
+      "hn_delhi_0013",
+      "hn_delhi_0014",
+      "hn_delhi_0015"
+    ],
+    "val": [
+      "delhi_0009",
+      "delhi_0029",
+      "delhi_0018",
+      "delhi_0003"
+    ],
+    "test": [
+      "delhi_0024",
+      "delhi_0001",
+      "delhi_0005",
+      "delhi_0016"
+    ],
+    "split": "70/15/15",
+    "seed": 0,
+    "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\delhi_cd",
+    "stratified": true,
+    "excluded_empty": true,
+    "min_change_frac": 0.001
+  },
+  "class_balance": {
+    "train": {
+      "split": "train",
+      "n_pairs": 23,
+      "change_frac_mean": 0.085937,
+      "change_frac_min": 0.0,
+      "change_frac_max": 0.480067,
+      "bg_to_change_ratio": 10.64
+    },
+    "val": {
+      "split": "val",
+      "n_pairs": 4,
+      "change_frac_mean": 0.049622,
+      "change_frac_min": 0.0235,
+      "change_frac_max": 0.082711,
+      "bg_to_change_ratio": 19.15
+    },
+    "test": {
+      "split": "test",
+      "n_pairs": 4,
+      "change_frac_mean": 0.073411,
+      "change_frac_min": 0.043467,
+      "change_frac_max": 0.109744,
+      "bg_to_change_ratio": 12.62
+    }
+  },
+  "train_pairs": 23,
+  "val_pairs": 4,
+  "test_pairs": 4,
+  "train_tiles": 160,
+  "best_val_f1": 0.6426,
+  "test_mean_f1": 0.5762,
+  "test_precision": 0.4947,
+  "test_recall": 0.7966,
+  "test_iou": 0.4067,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 5.0655,
+      "val_mean_f1": 0.6426,
+      "val_precision": 0.5507,
+      "val_recall": 0.7928,
+      "val_iou": 0.4828,
+      "threshold": 0.5,
+      "calibrate_f1": 0.662,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6620433497984544,
+        "precision": 0.5729710573872355,
+        "recall": 0.8055450081632725,
+        "obj": 0.6620433497984544
+      },
+      "val_mean_prob": 0.115282,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.803,
+      "val_mean_f1": 0.5305,
+      "val_precision": 0.3836,
+      "val_recall": 0.8838,
+      "val_iou": 0.3665,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5403,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5402791897919907,
+        "precision": 0.3921410189679399,
+        "recall": 0.892603073267062,
+        "obj": 0.5402791897919907
+      },
+      "val_mean_prob": 0.150852,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.5848,
+      "val_mean_f1": 0.5791,
+      "val_precision": 0.4646,
+      "val_recall": 0.8019,
+      "val_iou": 0.4193,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5943,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5942996781107276,
+        "precision": 0.4799549929123433,
+        "recall": 0.8124962402465041,
+        "obj": 0.5942996781107276
+      },
+      "val_mean_prob": 0.12739,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.4594,
+      "val_mean_f1": 0.5868,
+      "val_precision": 0.453,
+      "val_recall": 0.8519,
+      "val_iou": 0.4245,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5974,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5974328103577794,
+        "precision": 0.4632666091423475,
+        "recall": 0.8600308526104258,
+        "obj": 0.5974328103577794
+      },
+      "val_mean_prob": 0.134241,
+      "val_max_prob": 0.999998,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.6206,
+      "val_mean_f1": 0.5862,
+      "val_precision": 0.4496,
+      "val_recall": 0.8532,
+      "val_iou": 0.4227,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5974,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5974300948383096,
+        "precision": 0.4601189056931386,
+        "recall": 0.8615589489916102,
+        "obj": 0.5974300948383096
+      },
+      "val_mean_prob": 0.130485,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.5601,
+      "val_mean_f1": 0.611,
+      "val_precision": 0.5081,
+      "val_recall": 0.7864,
+      "val_iou": 0.4511,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6252,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6252156480279298,
+        "precision": 0.5232477554391817,
+        "recall": 0.7960599039662375,
+        "obj": 0.6252156480279298
+      },
+      "val_mean_prob": 0.12764,
+      "val_max_prob": 0.999988,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.418,
+      "val_mean_f1": 0.5456,
+      "val_precision": 0.4122,
+      "val_recall": 0.8417,
+      "val_iou": 0.385,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5613,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5613140595337323,
+        "precision": 0.4270031173884084,
+        "recall": 0.8524891945939244,
+        "obj": 0.5613140595337323
+      },
+      "val_mean_prob": 0.167095,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.4121,
+      "val_mean_f1": 0.5931,
+      "val_precision": 0.4886,
+      "val_recall": 0.7767,
+      "val_iou": 0.4333,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6088,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6088265258959736,
+        "precision": 0.5046622986968636,
+        "recall": 0.7885289788570704,
+        "obj": 0.6088265258959736
+      },
+      "val_mean_prob": 0.134159,
+      "val_max_prob": 0.999982,
+      "lr": 1.25e-05
+    }
+  ],
+  "preset": "wed",
+  "output_probe": {
+    "n": 2,
+    "pairs": [
+      {
+        "pair_id": "delhi_0032",
+        "logits_shape": [
+          1,
+          2,
+          256,
+          256
+        ],
+        "logits_min": -21574028.0,
+        "logits_max": 24072676.0,
+        "logits_mean": 1152.8272705078125,
+        "gt_pos_frac": 0.03533935546875,
+        "ch0_mean": 0.9629627466201782,
+        "ch1_mean": 0.03703727573156357,
+        "ch1_min": 0.0,
+        "ch1_max": 1.0,
+        "ch1_on_gt": 0.793320894241333,
+        "ch1_on_bg": 0.009331601671874523,
+        "ch0_on_gt": 0.206679105758667,
+        "change_channel": 1,
+        "prob_min": 0.0,
+        "prob_max": 1.0,
+        "prob_mean": 0.03703727573156357,
+        "prob_on_gt": 0.793320894241333,
+        "prob_on_bg": 0.009331601671874523,
+        "pred_pos_at_0.5": 0.036102294921875
+      },
+      {
+        "pair_id": "delhi_0028",
+        "logits_shape": [
+          1,
+          2,
+          256,
+          256
+        ],
+        "logits_min": -130.22042846679688,
+        "logits_max": 129.63499450683594,
+        "logits_mean": -1.4280414581298828,
+        "gt_pos_frac": 0.037017822265625,
+        "ch0_mean": 0.9673861861228943,
+        "ch1_mean": 0.03261372447013855,
+        "ch1_min": 0.0,
+        "ch1_max": 1.0,
+        "ch1_on_gt": 0.6247375011444092,
+        "ch1_on_bg": 0.009852000512182713,
+        "ch0_on_gt": 0.3752624988555908,
+        "change_channel": 1,
+        "prob_min": 0.0,
+        "prob_max": 1.0,
+        "prob_mean": 0.03261372447013855,
+        "prob_on_gt": 0.6247375011444092,
+        "prob_on_bg": 0.009852000512182713,
+        "pred_pos_at_0.5": 0.03070068359375
+      }
+    ]
+  }
+}

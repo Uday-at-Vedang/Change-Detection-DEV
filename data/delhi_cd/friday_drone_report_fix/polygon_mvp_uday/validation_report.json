@@ -1,0 +1,105 @@
+{
+  "checks": [
+    {
+      "name": "bbox_fallback_closed",
+      "pass": true,
+      "detail": "[[10, 20], [40, 20], [40, 60], [10, 60], [10, 20]]"
+    },
+    {
+      "name": "synthetic_circle_verts",
+      "pass": true,
+      "detail": "n=17 closed=True"
+    },
+    {
+      "name": "synthetic_L_verts",
+      "pass": true,
+      "detail": "n=7 closed=True"
+    },
+    {
+      "name": "empty_fallback_bbox",
+      "pass": true,
+      "detail": "[[5, 5], [15, 5], [15, 15], [5, 15], [5, 5]]"
+    },
+    {
+      "name": "jagged_capped_60",
+      "pass": true,
+      "detail": "unique=20 total=21"
+    },
+    {
+      "name": "deterministic_count",
+      "pass": true,
+      "detail": "1 vs 1"
+    },
+    {
+      "name": "fingerprint_stable",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "all_have_polygon",
+      "pass": true,
+      "detail": "n_regions=1"
+    },
+    {
+      "name": "no_holes_key",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "all_regions_capped",
+      "pass": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "viz_shape",
+      "pass": true,
+      "detail": "(256, 256, 3)"
+    },
+    {
+      "name": "viz_time_sane_ms",
+      "pass": true,
+      "detail": "4.3ms"
+    },
+    {
+      "name": "serialize_has_polygon",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "serialize_absent_when_missing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "polygonGeo_present",
+      "pass": true,
+      "detail": "n=1"
+    },
+    {
+      "name": "polygonGeo_keys",
+      "pass": true,
+      "detail": "{'lat': 28.082422, 'lng': 77.03125}"
+    },
+    {
+      "name": "real_regions_have_poly",
+      "pass": true,
+      "detail": "n=2"
+    },
+    {
+      "name": "real_viz_time_sane",
+      "pass": true,
+      "detail": "23.8ms analyze=222.2ms"
+    },
+    {
+      "name": "real_count_stable",
+      "pass": true,
+      "detail": "n=2"
+    }
+  ],
+  "ok": true,
+  "real_analyze_ms": 222.19,
+  "real_viz_ms": 23.77,
+  "real_region_count": 2,
+  "extract_ms_synthetic": 5.53,
+  "viz_ms_synthetic": 4.28
+}

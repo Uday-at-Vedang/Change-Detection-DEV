@@ -1,0 +1,64 @@
+{
+  "steps": [
+    {
+      "step": "raw",
+      "px": 161118,
+      "delta": null,
+      "pct": 9.555
+    },
+    {
+      "step": "strip_transient",
+      "px": 134627,
+      "delta": -26491,
+      "pct": 7.984
+    },
+    {
+      "step": "strip_shadow_only",
+      "px": 101150,
+      "delta": -33477,
+      "pct": 5.999
+    },
+    {
+      "step": "strip_shadow_fragments",
+      "px": 93159,
+      "delta": -7991,
+      "pct": 5.525
+    },
+    {
+      "step": "strip_parking",
+      "px": 93159,
+      "delta": 0,
+      "pct": 5.525
+    },
+    {
+      "step": "strip_weak_veg",
+      "px": 93159,
+      "delta": 0,
+      "pct": 5.525
+    },
+    {
+      "step": "recover_chromatic",
+      "px": 107593,
+      "delta": 14434,
+      "pct": 6.381
+    },
+    {
+      "step": "recover_dark_roof",
+      "px": 139912,
+      "delta": 32319,
+      "pct": 8.297
+    },
+    {
+      "step": "re_strip_shadow_only",
+      "px": 120934,
+      "delta": -18978,
+      "pct": 7.172
+    },
+    {
+      "step": "re_strip_shadow_fragments",
+      "px": 116235,
+      "delta": -4699,
+      "pct": 6.893
+    }
+  ]
+}

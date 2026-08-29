@@ -109,10 +109,13 @@ def seed_dda_admin(db: Session) -> None:
     from ..auth import get_password_hash, get_user_by_email
     user = get_user_by_email(db, email)
     if not user:
+        from ..auth import normalize_phone
+        admin_phone = normalize_phone(os.environ.get("DDA_ADMIN_PHONE", ""))
         user = User(
             email=email,
             hashed_password=get_password_hash(password),
             full_name=os.environ.get("DDA_ADMIN_NAME", "Vedangsoft Admin"),
+            phone=admin_phone,
         )
         db.add(user)
         db.commit()

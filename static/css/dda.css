@@ -1491,6 +1491,268 @@ time.dda-date {
 @media (max-width: 720px) {
   .dda-filter-field .dda-search,
   .dda-filter-field select,
-  .dda-date-input { min-width: 100%; }
+  .dda-date-input,
+  .dda-datewrap { min-width: 100%; }
   .dda-run-bar { position: static; }
 }
+
+/* Styled calendar date picker */
+.dda-datewrap {
+  position: relative;
+  min-width: 11.5rem;
+}
+.dda-date-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.dda-date-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+.dda-date-trigger:hover { border-color: var(--border-hover); }
+.dda-datewrap.is-open .dda-date-trigger {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.dda-date-placeholder { color: var(--text-dim); font-weight: 450; }
+.dda-date-clear {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+.dda-date-clear:hover { color: var(--danger); }
+.dda-cal {
+  display: none;
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 272px;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: 0 16px 40px rgba(26, 26, 46, 0.14);
+}
+.dda-datewrap.is-open .dda-cal { display: block; }
+.dda-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+}
+.dda-cal-title { font-weight: 650; font-size: 0.92rem; }
+.dda-cal-nav {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+.dda-cal-nav:hover { background: var(--bg-hover); }
+.dda-cal-dow, .dda-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+.dda-cal-dow {
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dda-cal-day {
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.dda-cal-day:hover:not(.is-empty) { background: var(--bg-hover); }
+.dda-cal-day.is-empty { cursor: default; }
+.dda-cal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--grad-start); }
+.dda-cal-day.is-selected {
+  background: var(--gradient);
+  color: #fff;
+  font-weight: 650;
+}
+.dda-cal-foot { display: flex; justify-content: flex-end; margin-top: 0.45rem; }
+.dda-cal-today {
+  border: none;
+  background: none;
+  color: var(--grad-start);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#dda-auto-run-at {
+  min-width: 8.5rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+/* Logs */
+.dda-logs-wrap { overflow: auto; max-height: min(70vh, 720px); }
+.dda-logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.dda-logs-table th, .dda-logs-table td {
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+}
+.dda-logs-table th { color: var(--text-muted); font-size: 0.75rem; position: sticky; top: 0; background: var(--bg-card); }
+.dda-log-logger { color: var(--text-muted); white-space: nowrap; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+.dda-log-msg { font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; }
+.dda-log-level {
+  display: inline-block;
+  min-width: 4.6rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.03em;
+}
+.dda-log-row.is-info .dda-log-level { background: rgba(46, 51, 197, 0.1); color: var(--grad-start); }
+.dda-log-row.is-warn .dda-log-level { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+.dda-log-row.is-error .dda-log-level { background: var(--danger-glow); color: var(--danger); }
+.dda-log-row.is-debug .dda-log-level { background: var(--bg-hover); color: var(--text-dim); }
+
+.dda-otp-input,
+.dda-totp-input {
+  letter-spacing: 0.28em;
+  font-size: 1.15rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.dda-totp-qr {
+  display: block;
+  width: 180px;
+  height: 180px;
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.dda-totp-secret code {
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+}
+.dda-totp-form { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.65rem; }
+
+/* --- Sign-in method tabs (Password / Mobile OTP) --------------------------- */
+.dda-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 1.25rem;
+}
+.dda-auth-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.55rem 0.75rem;
+  border-radius: calc(var(--radius-sm) - 3px);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+.dda-auth-tab:hover { color: var(--text); }
+.dda-auth-tab.is-active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* --- Phone-number input: country code + local number, one seamless field --- */
+.dda-phone-input {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  overflow: hidden;
+}
+.dda-phone-input:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(46, 51, 197, 0.18);
+}
+.dda-phone-input .dda-country-select,
+.dda-phone-input input[type="tel"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0.7rem 0.75rem;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+}
+.dda-phone-input .dda-country-select:focus,
+.dda-phone-input input[type="tel"]:focus {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+.dda-phone-input .dda-country-select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 92px;
+  max-width: 130px;
+  padding-right: 0.4rem;
+  border-right: 1px solid var(--border);
+  background-color: transparent;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.dda-phone-input input[type="tel"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  letter-spacing: 0.02em;
+}
+.dda-phone-input.is-invalid { border-color: var(--danger); }
+

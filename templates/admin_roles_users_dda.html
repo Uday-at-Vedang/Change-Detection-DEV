@@ -102,6 +102,13 @@
           <input type="text" id="user-full-name" />
         </div>
         <div class="form-group">
+          <label for="user-phone">Mobile number</label>
+          <div class="dda-phone-input">
+            <select id="user-country-code" class="dda-country-select" aria-label="Country code"></select>
+            <input type="tel" id="user-phone" inputmode="numeric" maxlength="15" placeholder="Mobile number" />
+          </div>
+        </div>
+        <div class="form-group">
           <label for="user-role-select">Role</label>
           <select id="user-role-select" required></select>
         </div>
@@ -115,8 +122,9 @@
   </div>
 
   <script src="/static/js/dda/shared.js?v=3"></script>
+  <script src="/static/js/dda/countries.js?v=1"></script>
   <script src="/static/js/dda/app.js?v=26"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
-  <script src="/static/js/dda/admin_roles.js?v=2"></script>
+  <script src="/static/js/dda/admin_roles.js?v=4"></script>
 </body>
 </html>

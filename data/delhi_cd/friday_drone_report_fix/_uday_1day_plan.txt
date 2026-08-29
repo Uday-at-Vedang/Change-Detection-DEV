@@ -1,0 +1,171 @@
+Polygon Feature - 1-Day Sprint Plan (MVP)
+
+All 8 days of Drone_Change_Detection_Task_Breakdown.docx compressed to ONE day  |  Uday (GPU) + Priyanka (CPU) in parallel  |  01 Aug 2026
+
+Scope rule for a 1-day build
+
+Ship the MINIMUM polygon pipeline end-to-end: engine extraction -> API serialization -> viewer overlay -> GeoJSON export, with bbox fallback everywhere. Everything cosmetic or defensive is cut (list at the end). If any step overruns its timebox, cut its remaining polish and move on - the end-to-end chain is the deliverable.
+
+Reminder: polygons improve report readability, not F1. Keep the accuracy loop (verified-pair labeling + retrain + frozen-test eval) running as agreed separately - this sprint must not consume more than the one day.
+
+First 15 minutes (both, together)
+
+Contract: Agree the region-dict contract: polygon = [[x,y], ...] image-px closed ring, max 60 vertices; absent key = no polygon (bbox fallback). NO polygon_holes in the 1-day MVP.
+
+Agree the merge point: Uday pushes extraction by midday; Priyanka stubs the field until then and swaps to real output after lunch.
+
+Uday (GPU) - one day
+
+Time
+
+Task (from original Phases 1-4)
+
+MVP scope / cuts
+
+09:00-12:00
+
+Polygon extraction in detection_engine.py (orig. Day 1)
+
+cv2.findContours (RETR_EXTERNAL only) + approxPolyDP per region mask; cap 60 vertices; fallback = bbox rectangle. CUT: hole extraction, connected-component refinement, per-class epsilon tuning.
+
+12:00-13:00
+
+Push + contract check with Priyanka
+
+Verify her serializer reads real extractor output; fix mismatches now.
+
+13:00-16:00
+
+Overlay rendering (orig. Day 3)
+
+cv2.fillPoly + drawContours into visualize_changes, existing severity colors, fixed 0.35 opacity. CUT: env-config opacity, bbox toggle, polygon labels.
+
+16:00-17:30
+
+Quick validation (orig. Days 5, 7-8 compressed)
+
+One real pair + one synthetic pair through the engine: confirm identical region count/F1 vs no-polygon run and sane render time. CUT: benchmarks, memory profiling, stress tests, optimization report.
+
+Priyanka (CPU) - one day
+
+Time
+
+Task (from original Phases 1-5)
+
+MVP scope / cuts
+
+09:00-12:00
+
+Serialization + WGS84 (orig. Day 1)
+
+polygon passthrough in _serialize_regions (detect_service.py) + per-vertex lat/lng projection (polygonGeo) in geo_regions.py mirroring region_lat_lng; develop against a stubbed polygon; backward compatible when key absent.
+
+12:00-13:00
+
+Swap stub -> Uday's real output
+
+Round-trip test: engine region -> regions_json -> API response with polygon + polygonGeo.
+
+13:00-15:30
+
+Viewer overlay (orig. Days 2-4)
+
+Render polygon as one SVG layer over the result image, reusing placeRegionHighlight scale math; severity fill at fixed opacity; click region row -> highlight polygon. CUT: opacity slider, hover effects, outline toggle, localStorage.
+
+15:30-17:00
+
+GeoJSON export (orig. Day 5)
+
+GET /api/dda/reports/{id}/export.geojson -> FeatureCollection from polygonGeo (bbox-corner fallback). CUT: styling properties, CRS options.
+
+17:00-17:30
+
+Smoke + 5-line docs (orig. Days 6-7 compressed)
+
+One end-to-end run in the app; confirm no-polygon runs unchanged; README section. CUT: browser-matrix testing, training-pack polygon rasterization (training uses painted gt_mask.png already).
+
+17:30 - Joint integration check (both, 30 min)
+
+Run one full detection in the app: polygons visible in overlay + viewer, GeoJSON downloads, bbox-only fallback still works.
+
+Commit + push both branches; note any cut item worth revisiting later (do not build it today).
+
+Cut entirely (from the 8-day plan - do not build)
+
+polygon_holes extraction and rendering
+
+Opacity slider, hover effects, outline toggle, localStorage persistence
+
+Environment configuration (opacity, bbox toggle)
+
+GPU benchmark day, memory profiling, stress tests, rendering benchmarks, optimization report
+
+Training-pack polygon rasterization
+
+Documentation phase beyond one README section each
+
+End-of-day success criteria
+
+#
+
+Criterion
+
+1
+
+Engine emits polygon (<=60 vertices, bbox fallback) with zero change to region count/F1.
+
+2
+
+API returns polygon + polygonGeo (WGS84); runs without polygons serialize exactly as before.
+
+3
+
+Result viewer shows filled polygons; overlay PNG shows filled polygons.
+
+4
+
+GeoJSON export endpoint returns a valid FeatureCollection.
+
+5
+
+Everything committed and pushed by end of day.
+
+---TABLE 0---
+
+Time | Task (from original Phases 1-4) | MVP scope / cuts
+
+09:00-12:00 | Polygon extraction in detection_engine.py (orig. Day 1) | cv2.findContours (RETR_EXTERNAL only) + approxPolyDP per region mask; cap 60 vertices; fallback = bbox rectangle. CUT: hole extraction, connected-component refinement, per-class epsilon tuning.
+
+12:00-13:00 | Push + contract check with Priyanka | Verify her serializer reads real extractor output; fix mismatches now.
+
+13:00-16:00 | Overlay rendering (orig. Day 3) | cv2.fillPoly + drawContours into visualize_changes, existing severity colors, fixed 0.35 opacity. CUT: env-config opacity, bbox toggle, polygon labels.
+
+16:00-17:30 | Quick validation (orig. Days 5, 7-8 compressed) | One real pair + one synthetic pair through the engine: confirm identical region count/F1 vs no-polygon run and sane render time. CUT: benchmarks, memory profiling, stress tests, optimization report.
+
+---TABLE 1---
+
+Time | Task (from original Phases 1-5) | MVP scope / cuts
+
+09:00-12:00 | Serialization + WGS84 (orig. Day 1) | polygon passthrough in _serialize_regions (detect_service.py) + per-vertex lat/lng projection (polygonGeo) in geo_regions.py mirroring region_lat_lng; develop against a stubbed polygon; backward compatible when key absent.
+
+12:00-13:00 | Swap stub -> Uday's real output | Round-trip test: engine region -> regions_json -> API response with polygon + polygonGeo.
+
+13:00-15:30 | Viewer overlay (orig. Days 2-4) | Render polygon as one SVG layer over the result image, reusing placeRegionHighlight scale math; severity fill at fixed opacity; click region row -> highlight polygon. CUT: opacity slider, hover effects, outline toggle, localStorage.
+
+15:30-17:00 | GeoJSON export (orig. Day 5) | GET /api/dda/reports/{id}/export.geojson -> FeatureCollection from polygonGeo (bbox-corner fallback). CUT: styling properties, CRS options.
+
+17:00-17:30 | Smoke + 5-line docs (orig. Days 6-7 compressed) | One end-to-end run in the app; confirm no-polygon runs unchanged; README section. CUT: browser-matrix testing, training-pack polygon rasterization (training uses painted gt_mask.png already).
+
+---TABLE 2---
+
+# | Criterion
+
+1 | Engine emits polygon (<=60 vertices, bbox fallback) with zero change to region count/F1.
+
+2 | API returns polygon + polygonGeo (WGS84); runs without polygons serialize exactly as before.
+
+3 | Result viewer shows filled polygons; overlay PNG shows filled polygons.
+
+4 | GeoJSON export endpoint returns a valid FeatureCollection.
+
+5 | Everything committed and pushed by end of day.

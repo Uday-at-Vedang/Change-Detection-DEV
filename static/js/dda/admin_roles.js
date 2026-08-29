@@ -189,7 +189,7 @@ async function loadUsers() {
 function applyUserFilter() {
   const q = (document.getElementById('user-filter')?.value || '').trim().toLowerCase();
   const rows = q
-    ? allUsers.filter((u) => u.email.toLowerCase().includes(q) || (u.fullName || '').toLowerCase().includes(q))
+    ? allUsers.filter((u) => u.email.toLowerCase().includes(q) || (u.fullName || '').toLowerCase().includes(q) || (u.phone || '').includes(q))
     : allUsers;
   renderUserTable(rows);
 }
@@ -215,13 +215,14 @@ function renderUserTable(rows) {
   el.innerHTML = `
     <table class="dda-reports-table">
       <thead>
-        <tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr>
+        <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${pageRows.map((u) => `
           <tr>
             <td>${escapeHtml(u.fullName || '—')}</td>
             <td>${escapeHtml(u.email)}</td>
+            <td>${escapeHtml(u.phone || '—')}</td>
             <td>${escapeHtml(u.role || '—')}</td>
             <td class="dda-report-actions-cell">
               <button type="button" class="btn btn-secondary btn-sm" data-edit-user="${u.id}">Edit</button>
@@ -249,11 +250,20 @@ function renderUserTable(rows) {
 function openUserModal(userId) {
   const modal = document.getElementById('user-modal');
   const title = document.getElementById('user-modal-title');
+  const countrySelect = document.getElementById('user-country-code');
+  if (typeof window.populateCountrySelect === 'function') {
+    window.populateCountrySelect(countrySelect, '+91');
+  }
   const user = allUsers.find((u) => u.id === userId);
   document.getElementById('user-id').value = user ? user.id : '';
   document.getElementById('user-email').value = user ? user.email : '';
   document.getElementById('user-email').disabled = !!user;
   document.getElementById('user-full-name').value = user ? user.fullName || '' : '';
+  const parts = typeof window.splitPhoneE164 === 'function'
+    ? window.splitPhoneE164(user ? user.phone || '' : '')
+    : { dial: '+91', local: (user && user.phone) || '' };
+  if (countrySelect) countrySelect.value = parts.dial;
+  document.getElementById('user-phone').value = parts.local;
   document.getElementById('user-role-select').value = user ? user.roleId : (allRoles[0]?.id || '');
   document.getElementById('user-password').value = '';
   document.getElementById('user-password').required = !user;
@@ -275,9 +285,13 @@ document.getElementById('user-form')?.addEventListener('submit', async (e) => {
   const id = document.getElementById('user-id').value;
   const password = document.getElementById('user-password').value;
   try {
+    const countryCode = document.getElementById('user-country-code')?.value || '+91';
+    const phone = document.getElementById('user-phone').value.replace(/\D/g, '');
     if (id) {
       const body = {
         fullName: document.getElementById('user-full-name').value.trim(),
+        phone,
+        countryCode,
         roleId: Number(document.getElementById('user-role-select').value),
       };
       if (password) body.password = password;
@@ -286,6 +300,8 @@ document.getElementById('user-form')?.addEventListener('submit', async (e) => {
       const body = {
         email: document.getElementById('user-email').value.trim(),
         fullName: document.getElementById('user-full-name').value.trim(),
+        phone,
+        countryCode,
         roleId: Number(document.getElementById('user-role-select').value),
         password,
       };

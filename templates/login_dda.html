@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign In — Vedangsoft Change Detection</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=32" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=22" />
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=47" />
   <style>
     .auth-page {
       min-height: 100vh;
@@ -14,42 +14,30 @@
       justify-content: center;
       padding: 1.5rem;
     }
-    .auth-card {
-      width: 100%;
-      max-width: 380px;
-    }
+    .auth-card { width: 100%; max-width: 400px; }
     .auth-brand {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      margin-bottom: 1.5rem;
-      color: var(--text);
-      font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      gap: 0.5rem; margin-bottom: 1.5rem;
+      color: var(--text); font-weight: 600;
     }
     .auth-toggle {
-      text-align: center;
-      margin-top: 1rem;
-      font-size: 0.85rem;
-      color: var(--text-muted);
+      text-align: center; margin-top: 1rem;
+      font-size: 0.85rem; color: var(--text-muted);
     }
     .auth-toggle a {
-      color: var(--accent);
-      cursor: pointer;
-      text-decoration: none;
-      font-weight: 500;
+      color: var(--accent); cursor: pointer;
+      text-decoration: none; font-weight: 500;
     }
     .auth-toggle a:hover { text-decoration: underline; }
     .auth-forgot-link { color: var(--accent); font-size: 0.82rem; text-decoration: none; }
     .auth-forgot-link:hover { text-decoration: underline; }
-    .register-only.hidden, .login-only.hidden, .field-error.hidden, .field-hint.hidden { display: none; }
+    .hidden { display: none !important; }
     .field-error { color: var(--danger); font-size: 0.78rem; margin-top: 0.35rem; }
     .field-hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 0.35rem; }
-    .form-group input.invalid { border-color: var(--danger); }
+    .form-group input.invalid,
+    .form-group select.invalid { border-color: var(--danger); }
     .auth-remember-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 1.25rem;
     }
   </style>
@@ -70,41 +58,68 @@
         <div id="dda-error" class="alert alert-error hidden"></div>
         <div id="dda-success" class="alert alert-success hidden"></div>
 
+        <div class="dda-auth-tabs" id="auth-tabs" role="tablist" aria-label="Sign-in method">
+          <button type="button" class="dda-auth-tab is-active" data-tab="password" role="tab" aria-selected="true">Password</button>
+          <button type="button" class="dda-auth-tab" data-tab="otp" role="tab" aria-selected="false">Email OTP</button>
+        </div>
+
         <form id="auth-form" novalidate>
-          <div class="form-group register-only hidden">
+          <div class="form-group" data-field="full_name">
             <label for="full_name">Full name</label>
             <input type="text" id="full_name" autocomplete="name" />
             <div class="field-error hidden" id="err-full_name"></div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" data-field="email">
             <label for="email">Email</label>
-            <input type="email" id="email" autocomplete="username" required />
+            <input type="email" id="email" autocomplete="username" />
             <div class="field-error hidden" id="err-email"></div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" data-field="password">
             <label for="password">Password</label>
-            <input type="password" id="password" autocomplete="current-password" required />
-            <div class="field-hint register-only hidden" id="hint-password">At least 8 characters</div>
+            <input type="password" id="password" autocomplete="current-password" />
+            <div class="field-hint hidden" id="hint-password">At least 8 characters</div>
             <div class="field-error hidden" id="err-password"></div>
           </div>
 
-          <div class="form-group register-only hidden">
+          <div class="form-group" data-field="confirm_password">
             <label for="confirm_password">Confirm password</label>
             <input type="password" id="confirm_password" autocomplete="new-password" />
             <div class="field-error hidden" id="err-confirm_password"></div>
           </div>
 
-          <div class="auth-remember-row login-only">
+          <div class="form-group" data-field="phone">
+            <label for="phone">Mobile number <span class="dim">(optional)</span></label>
+            <div class="dda-phone-input">
+              <select id="country_code" class="dda-country-select" aria-label="Country code"></select>
+              <input type="tel" id="phone" autocomplete="tel-national" inputmode="numeric" maxlength="15" placeholder="Mobile number" />
+            </div>
+            <div class="field-hint" id="hint-phone">Optional — you can add or change this later in your profile.</div>
+            <div class="field-error hidden" id="err-phone"></div>
+          </div>
+
+          <div class="auth-remember-row" data-field="remember">
             <label class="checkbox-group" style="margin-bottom: 0;">
               <input type="checkbox" id="remember_me" />
               Remember me
             </label>
-            <a href="/forgot-password" class="auth-forgot-link">Forgot password?</a>
+            <a href="/forgot-password" class="auth-forgot-link" data-field="forgot">Forgot password?</a>
           </div>
 
           <button type="submit" id="auth-submit" class="btn btn-primary btn-block">Sign in</button>
+        </form>
+
+        <form id="otp-form" class="hidden" novalidate>
+          <p class="sub dim" id="otp-help" style="margin-bottom:1rem">Enter the 6-digit code sent to your email.</p>
+          <div class="form-group">
+            <label for="otp_code">Email code</label>
+            <input type="text" id="otp_code" class="dda-otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" />
+            <div class="field-error hidden" id="err-otp_code"></div>
+          </div>
+          <button type="submit" id="otp-submit" class="btn btn-primary btn-block">Verify code</button>
+          <button type="button" id="otp-resend" class="btn btn-secondary btn-block" style="margin-top:0.5rem">Resend code</button>
+          <button type="button" id="otp-back" class="btn btn-secondary btn-block" style="margin-top:0.5rem">Back</button>
         </form>
 
         <div class="auth-toggle">
@@ -115,7 +130,8 @@
     </div>
   </div>
 
-  <script src="/static/js/dda/shared.js?v=3"></script>
-  <script src="/static/js/dda/login.js?v=3"></script>
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/countries.js?v=1"></script>
+  <script src="/static/js/dda/login.js?v=10"></script>
 </body>
 </html>

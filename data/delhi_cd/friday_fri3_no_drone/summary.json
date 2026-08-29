@@ -1,0 +1,21 @@
+{
+  "date": "2026-07-31",
+  "merged": "github-dev/New/Priyanka @ 241fbbf",
+  "recipe": "satellite-only train/val (no drone), frozen satellite test",
+  "split_dir": "data/delhi_cd_ablation_no_drone",
+  "split": {"train": 16, "val": 4, "test": 4, "frozen_test": true},
+  "run": "runs/finetune_fri3_no_drone/20260731_133735",
+  "export": "models/adaptformer_delhi/fri3_no_drone",
+  "best_val_f1": 0.6243,
+  "threshold": 0.5,
+  "test_mean_f1": 0.5894,
+  "test_precision": 0.488,
+  "test_recall": 0.821,
+  "comparable_baselines_same_frozen_test": {
+    "v3_frozen": 0.5867,
+    "wed_retrain": 0.605,
+    "fri2_retrain_with_drone": 0.4872,
+    "fri3_no_drone": 0.5894
+  },
+  "decision": "Promote wed_retrain (0.605 > fri3 0.589). Exclude drone packs from training (eval-only). Loader prefers wed_retrain; v3_frozen kept as rollback."
+}

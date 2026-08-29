@@ -266,7 +266,7 @@ class AutoDetectStartBody(BaseModel):
 def auto_detect_start(
     body: AutoDetectStartBody,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("detect", "create")),
 ):
     """Arm the automatic queue. Does not enqueue jobs immediately."""
     _require_dda()
@@ -278,7 +278,10 @@ def auto_detect_start(
 
 
 @router.post("/auto-detect/stop")
-def auto_detect_stop(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def auto_detect_stop(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_module_permission("detect", "create")),
+):
     """Stop the automatic queue and cancel queued auto jobs."""
     _require_dda()
     from .auto_detect import stop_schedule

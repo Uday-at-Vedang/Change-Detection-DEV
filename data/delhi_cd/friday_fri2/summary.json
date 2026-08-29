@@ -1,0 +1,24 @@
+{
+  "date": "2026-07-31",
+  "merged": "github-dev/New/Priyanka @ a8b5fc9 (fast-forward)",
+  "priyanka_changes": [
+    "9 drone packs training_use=true including dda_before6_after6",
+    "frozen_test_ids.json pins delhi_0024/0001/0005/0016",
+    "build_delhi_cd_splits.py --freeze-test-ids"
+  ],
+  "split": {"train": 24, "val": 5, "test": 4, "frozen_test": true},
+  "run": "runs/finetune_fri2/20260731_122912",
+  "export": "models/adaptformer_delhi/fri2_retrain",
+  "best_val_f1": 0.4358,
+  "threshold": 0.5,
+  "test_mean_f1": 0.4872,
+  "test_precision": 0.361,
+  "test_recall": 0.849,
+  "comparable_baselines_same_frozen_test": {
+    "v3_frozen": 0.5867,
+    "wed_retrain_no_tta": 0.605,
+    "wed_retrain_tta_full": 0.6263
+  },
+  "decision": "Do not promote. Drone-in-train recipe hurts clean-satellite held-out F1 vs wed_retrain/v3_frozen.",
+  "note": "Val includes low-NCC dda_1_2_scene; thr stuck at 0.5. Ablation without drone pairs still recommended if time."
+}
