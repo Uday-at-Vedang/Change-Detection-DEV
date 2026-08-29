@@ -3,7 +3,7 @@ import io
 import json
 import os
 import uuid
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +13,7 @@ try:
 except ImportError:
     pass
 
+from jose import JWTError, jwt
 from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -23,25 +24,35 @@ from sqlalchemy.orm import Session
 from PIL import Image, ImageOps
 
 from .auth import (
+    ALGORITHM,
     COOKIE_NAME,
     IS_SECURE_COOKIE,
+    LOGIN_OTP_EXPIRE_MINUTES,
+    LOGIN_OTP_RESEND_SECONDS,
+    SECRET_KEY,
     check_account_lockout,
     check_ip_throttle,
     consume_password_reset_token,
     create_access_token,
+    create_login_otp,
     create_password_reset_token,
     get_client_ip,
     get_password_hash,
     get_user_by_email,
+    get_user_by_phone,
     get_current_user,
     get_or_create_guest_user,
     get_user_agent,
     get_user_from_token,
+    latest_unused_otp,
+    mask_email,
+    normalize_phone,
     record_login_event,
+    verify_login_otp,
     verify_password,
 )
 from .database import Base, engine, get_db, DATA_DIR
-from .models import User, DetectionRun, LoginHistory, PasswordResetToken  # noqa: F401 — LoginHistory/PasswordResetToken registered on Base.metadata for create_all()
+from .models import User, DetectionRun, LoginHistory, PasswordResetToken, LoginOtp  # noqa: F401 — LoginHistory/PasswordResetToken/LoginOtp registered on Base.metadata for create_all()
 from . import dda as _dda_pkg  # noqa: F401 — register DDA tables
 from .dda.models import DdaZone, DdaVillage, ImageAsset, DetectionJob, RegionReview, AutoPairSchedule, AutoDetectSettings  # noqa: F401
 from .dda.tree.models import TreeNode, ImageLibrary, AuditLog  # noqa: F401
@@ -49,11 +60,16 @@ from .dda.rbac.models import Role, Module, RolePermission, MenuItem  # noqa: F40
 from .dda.rbac.permissions import get_user_role_row, resolve_user_menu, user_can
 from .dda.config import IS_DDA_MODE
 from .dda.bootstrap import init_dda_database, setup_dda
-from .notifier import send_notification, send_password_reset_email, send_test_email
+from .notifier import send_login_otp_email, send_notification, send_password_reset_email, send_test_email
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+try:
+    from .dda.applog import install_app_log_handler
+    install_app_log_handler()
+except Exception:
+    pass
 
 
 logger.info("Importing AI Change Detection app module")
@@ -166,6 +182,11 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: str
+    phone: str = ""
+    country_code: str = "+91"
+    # Phone is kept optional so accounts can still store a mobile in Profile
+    # for future SMS delivery, but registration does not require it. Login
+    # OTP is currently delivered by email (see send_login_otp_email).
     # No remember_me here — registration no longer auto-logs-in (see
     # register()), so there's no session at creation time for it to apply to.
 
@@ -189,6 +210,16 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
     remember_me: bool = False
+
+
+class OtpRequest(BaseModel):
+    email: EmailStr
+    remember_me: bool = False
+
+
+class OtpVerifyRequest(BaseModel):
+    otpToken: str
+    code: str
 
 
 class UserResponse(BaseModel):
@@ -240,6 +271,13 @@ def _auth_response(token: str, user: User, remember: bool = False):
 def register(data: UserCreate, db: Session = Depends(get_db)):
     email = data.email.strip().lower()
     try:
+        phone = None
+        if (data.phone or "").strip():
+            phone = normalize_phone(data.phone, data.country_code)
+            if not phone:
+                raise HTTPException(status_code=400, detail="Enter a valid mobile number for the selected country.")
+            if get_user_by_phone(db, phone):
+                raise HTTPException(status_code=400, detail="This mobile number is already registered.")
         if get_user_by_email(db, email):
             raise HTTPException(status_code=400, detail="Email already registered")
         hashed = get_password_hash(data.password)
@@ -247,6 +285,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
             email=email,
             hashed_password=hashed,
             full_name=data.full_name,
+            phone=phone,
         )
         db.add(user)
         db.commit()
@@ -300,13 +339,43 @@ def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
             user_id=user.id, ip_address=ip, user_agent=ua,
         )
         expires = REMEMBER_ME_EXPIRE if data.remember_me else SESSION_TOKEN_EXPIRE
-        token = create_access_token(data={"sub": str(user.id)}, expires_delta=expires)
+        token = create_access_token(data={"sub": str(user.id), "purpose": "session"}, expires_delta=expires)
         return _auth_response(token, user, remember=data.remember_me)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("Login failed")
         raise HTTPException(status_code=500, detail=f"Login failed: {type(e).__name__}")
+
+
+@app.post("/api/auth/login/request-otp")
+def request_login_otp(data: OtpRequest, request: Request, db: Session = Depends(get_db)):
+    ip = get_client_ip(request)
+    ua = get_user_agent(request)
+    raw_email = str(data.email or "")
+    email = raw_email.strip().lower()
+    logger.info("OTP request received (raw=%r norm=%r len=%d)", raw_email, email, len(raw_email))
+    # NOTE: unlike the password login path, a mistyped email at "request OTP"
+    # is not treated as a failed sign-in attempt for throttling purposes —
+    # the caller hasn't tried to authenticate anything yet. We use a separate
+    # otp_request_blocked / otp_request_failed event so honest typos don't
+    # get anyone IP-throttled.
+    user = get_user_by_email(db, email)
+    if not user:
+        record_login_event(
+            db, event_type="otp_request_failed", attempted_email=email,
+            failure_reason="unknown_email", ip_address=ip, user_agent=ua,
+        )
+        raise HTTPException(status_code=404, detail="No account is registered with this email.")
+    otp_row, raw_code = create_login_otp(db, user)
+    _deliver_login_otp(user.email, raw_code)
+    pending = _otp_pending_token(user, otp_row, data.remember_me)
+    return {
+        "otpToken": pending,
+        "emailMasked": mask_email(user.email),
+        "expiresMinutes": LOGIN_OTP_EXPIRE_MINUTES,
+        "resendSeconds": LOGIN_OTP_RESEND_SECONDS,
+    }
 
 
 @app.post("/api/auth/logout")
@@ -400,6 +469,7 @@ def me(user: Optional[User] = Depends(get_current_user), db: Session = Depends(g
     )
     return {
         "id": user.id, "email": user.email, "full_name": user.full_name,
+        "phone": user.phone or "",
         "role": role_row.name if role_row else (user.role or "analyst"),
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "last_login": last_login.created_at.isoformat() if last_login else None,
@@ -408,6 +478,8 @@ def me(user: Optional[User] = Depends(get_current_user), db: Session = Depends(g
 
 class UpdateProfileRequest(BaseModel):
     full_name: str
+    phone: str = ""
+    country_code: str = "+91"
 
 
 @app.put("/api/me")
@@ -417,9 +489,16 @@ def update_me(data: UpdateProfileRequest, user: Optional[User] = Depends(get_cur
     full_name = data.full_name.strip()
     if not full_name:
         raise HTTPException(status_code=400, detail="Full name is required")
+    phone = normalize_phone(data.phone, data.country_code)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Enter a valid mobile number for the selected country.")
+    other = get_user_by_phone(db, phone)
+    if other and other.id != user.id:
+        raise HTTPException(status_code=400, detail="This mobile number is already registered.")
     user.full_name = full_name
+    user.phone = phone
     db.commit()
-    return {"ok": True, "full_name": user.full_name}
+    return {"ok": True, "full_name": user.full_name, "phone": user.phone}
 
 
 class ChangePasswordRequest(BaseModel):
@@ -438,6 +517,113 @@ def change_password(data: ChangePasswordRequest, user: Optional[User] = Depends(
     user.hashed_password = get_password_hash(data.new_password)
     db.commit()
     return {"ok": True, "message": "Password changed."}
+
+
+class OtpResendRequest(BaseModel):
+    otpToken: str
+
+
+def _allow_login_otp_log() -> bool:
+    if os.environ.get("LOGIN_OTP_LOG", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return str(os.environ.get("SPACE_ID", "")).startswith("local")
+
+
+def _deliver_login_otp(email: str, raw_code: str) -> None:
+    """Email the 6-digit code. Local-dev logs it if the send fails so login isn't blocked."""
+    ok, err = send_login_otp_email(email, raw_code, LOGIN_OTP_EXPIRE_MINUTES)
+    if ok:
+        return
+    logger.warning("Login OTP email to %s not sent: %s", mask_email(email), err)
+    if _allow_login_otp_log():
+        logger.warning("Login OTP for %s (email not delivered): %s", mask_email(email), raw_code)
+        return
+    raise HTTPException(status_code=503, detail="Could not send the sign-in code. Try again in a moment.")
+
+
+def _otp_pending_token(user: User, otp_row: LoginOtp, remember: bool) -> str:
+    return create_access_token(
+        {
+            "sub": str(user.id),
+            "purpose": "otp_pending",
+            "otp": otp_row.id,
+            "remember": bool(remember),
+        },
+        expires_delta=timedelta(minutes=LOGIN_OTP_EXPIRE_MINUTES),
+    )
+
+
+def _pending_otp_payload(raw_token: str) -> dict:
+    try:
+        payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="This code expired. Sign in again.")
+    if payload.get("purpose") != "otp_pending":
+        raise HTTPException(status_code=401, detail="This code expired. Sign in again.")
+    return payload
+
+
+@app.post("/api/auth/login/verify-otp")
+def verify_login_otp_route(data: OtpVerifyRequest, request: Request, db: Session = Depends(get_db)):
+    ip = get_client_ip(request)
+    ua = get_user_agent(request)
+    user = get_user_from_token(data.otpToken, db, allow_pending_otp=True)
+    if not user:
+        raise HTTPException(status_code=401, detail="This code expired. Sign in again.")
+    payload = _pending_otp_payload(data.otpToken)
+    try:
+        otp_id = int(payload.get("otp"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="This code expired. Sign in again.")
+    result = verify_login_otp(db, user, otp_id, data.code)
+    if result:
+        record_login_event(
+            db, event_type="login_failed", attempted_email=user.email,
+            user_id=user.id, failure_reason="bad_otp",
+            ip_address=ip, user_agent=ua,
+        )
+        if result == "expired":
+            raise HTTPException(status_code=401, detail="This code expired. Sign in again.")
+        if result == "locked":
+            raise HTTPException(status_code=429, detail="Too many attempts. Sign in again.")
+        raise HTTPException(status_code=401, detail="Invalid sign-in code.")
+    remember = bool(payload.get("remember"))
+    record_login_event(
+        db, event_type="login_success", attempted_email=user.email,
+        user_id=user.id, ip_address=ip, user_agent=ua,
+    )
+    expires = REMEMBER_ME_EXPIRE if remember else SESSION_TOKEN_EXPIRE
+    token = create_access_token(data={"sub": str(user.id), "purpose": "session"}, expires_delta=expires)
+    return _auth_response(token, user, remember=remember)
+
+
+@app.post("/api/auth/login/resend-otp")
+def resend_login_otp(data: OtpResendRequest, request: Request, db: Session = Depends(get_db)):
+    user = get_user_from_token(data.otpToken, db, allow_pending_otp=True)
+    if not user:
+        raise HTTPException(status_code=401, detail="This code expired. Sign in again.")
+    payload = _pending_otp_payload(data.otpToken)
+    existing = latest_unused_otp(db, user.id)
+    if existing and existing.created_at:
+        created = existing.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        wait = LOGIN_OTP_RESEND_SECONDS - (datetime.now(timezone.utc) - created).total_seconds()
+        if wait > 0:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Wait {int(wait) + 1} seconds before requesting a new code.",
+            )
+    otp_row, raw_code = create_login_otp(db, user)
+    _deliver_login_otp(user.email, raw_code)
+    pending = _otp_pending_token(user, otp_row, bool(payload.get("remember")))
+    return {
+        "ok": True,
+        "otpToken": pending,
+        "emailMasked": mask_email(user.email),
+        "expiresMinutes": LOGIN_OTP_EXPIRE_MINUTES,
+        "resendSeconds": LOGIN_OTP_RESEND_SECONDS,
+    }
 
 
 # --- Detection route ---
@@ -944,6 +1130,15 @@ def index(request: Request, db: Session = Depends(get_db)):
     return FileResponse(index_file)
 
 
+def _dda_module_page_or_redirect(request: Request, db: Session, module_key: str):
+    user, redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return None, None, redirect
+    if not user_can(user, db, module_key, "view"):
+        return None, None, RedirectResponse("/")
+    return user, resolve_user_menu(user, db), None
+
+
 @app.get("/library", response_class=HTMLResponse)
 def dda_library_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
@@ -975,6 +1170,36 @@ def dda_reports_page(request: Request, db: Session = Depends(get_db)):
         return redirect
     menu_items = resolve_user_menu(user, db)
     return templates.TemplateResponse(request, "reports_dda.html", {"active_page": "reports", "menu_items": menu_items})
+
+
+@app.get("/logs", response_class=HTMLResponse)
+def dda_logs_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "logs")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "logs_dda.html", {"active_page": "logs", "menu_items": menu_items})
+
+
+@app.get("/masters/zones", response_class=HTMLResponse)
+def dda_masters_zones_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "masters")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "masters_zones_dda.html", {"active_page": "masters-zones", "menu_items": menu_items})
+
+
+@app.get("/masters/villages", response_class=HTMLResponse)
+def dda_masters_villages_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "masters")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "masters_villages_dda.html", {"active_page": "masters-villages", "menu_items": menu_items})
 
 
 @app.get("/admin/roles-users", response_class=HTMLResponse)

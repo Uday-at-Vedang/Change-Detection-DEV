@@ -260,9 +260,12 @@ function showTreeMenu(x, y, nodeId) {
   const menu = document.getElementById('dda-tree-menu');
   if (!menu) return;
   treeMenuNodeId = nodeId;
-  const admin = isAdmin();
-  menu.querySelectorAll('[data-admin-only]').forEach((el) => {
-    el.classList.toggle('hidden', !admin);
+  menu.querySelectorAll('[data-requires-permission]').forEach((el) => {
+    const [mod, action] = (el.getAttribute('data-requires-permission') || ':').split(':');
+    const allowed = (typeof hasPermission === 'function' && window.ddaPermissions)
+      ? hasPermission(window.ddaPermissions, mod, action)
+      : isAdmin();
+    el.classList.toggle('hidden', !allowed);
   });
   menu.classList.remove('hidden');
   const pad = 8;

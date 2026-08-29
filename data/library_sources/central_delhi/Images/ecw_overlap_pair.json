@@ -1,0 +1,20 @@
+{
+  "before_src": "c:\\Users\\udayb\\Downloads\\0-24_ori _26-02-25.ecw",
+  "after_src": "c:\\Users\\udayb\\Downloads\\0-23_ori_01-03-25.ecw",
+  "extent_utm43n": [
+    709747.161,
+    3183304.6284999996,
+    709785.126,
+    3183424.6284999996
+  ],
+  "gsd_m": 0.03,
+  "size_px": [
+    738,
+    4000
+  ],
+  "ncc_full": 0.6432,
+  "ncc_valid_pixels": 0.6432,
+  "registration_gate": 0.55,
+  "fit_for_detection": true,
+  "note": "Neighboring tiles cropped to shared ground. Dates are 3 days apart so expect little real construction change; pair is for alignment/pipeline tests."
+}

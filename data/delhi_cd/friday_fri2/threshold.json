@@ -1,0 +1,8 @@
+{
+  "threshold": 0.5,
+  "val_f1": 0.4358,
+  "val_precision": 0.3453,
+  "val_recall": 0.6413,
+  "val_iou": 0.298,
+  "epoch": 3
+}

@@ -10,6 +10,10 @@ library_sources/**/*.tif
 library_sources/**/*.tiff
 library_sources/**/*.TIF
 library_sources/**/*.TIFF
+data/library_sources/**/*.tif
+data/library_sources/**/*.tiff
+data/library_sources/**/*.TIF
+data/library_sources/**/*.TIFF
 !library_sources/**/.gitkeep
 .env
 *.egg-info/

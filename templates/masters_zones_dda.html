@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zone / District — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=45" />
+</head>
+<body data-masters="zones">
+  <div class="app dda-app dda-app-full">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section class="dda-panel active">
+        <div class="dda-hero">
+          <h1>Zone / District</h1>
+          <p class="sub">Master list of zones and districts used to organize imagery and reports.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Zones</h3>
+            <div class="dda-reports-toolbar">
+              <input type="search" id="masters-filter" class="dda-search" placeholder="Search zones…" />
+              <button type="button" class="btn btn-primary btn-sm" id="btn-masters-new" data-requires-permission="masters:create">+ Add zone</button>
+            </div>
+          </div>
+          <div id="masters-table-wrap"><p class="dim">Loading…</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="masters-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card" style="max-width:480px">
+      <div class="card-header">
+        <h3 id="masters-modal-title">Add zone</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="masters-modal-close">Close</button>
+      </div>
+      <form id="masters-form">
+        <input type="hidden" id="masters-id" />
+        <div class="form-group">
+          <label for="masters-name">Name</label>
+          <input type="text" id="masters-name" required maxlength="128" />
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/app.js?v=28"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/masters.js?v=1"></script>
+</body>
+</html>

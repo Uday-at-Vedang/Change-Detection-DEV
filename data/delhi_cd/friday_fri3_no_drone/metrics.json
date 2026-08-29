@@ -1,0 +1,551 @@
+{
+  "model_id": "deepang/adaptformer-LEVIR-CD",
+  "dummy": false,
+  "epochs": 20,
+  "epochs_ran": 20,
+  "lr": 5e-05,
+  "augment": true,
+  "stride": 64,
+  "loss": "ce",
+  "pos_weight": 8.76622108282976,
+  "pos_oversample": 4,
+  "exclude_empty": true,
+  "full_resize": true,
+  "threshold": 0.5,
+  "device": "cuda",
+  "split": {
+    "train": [
+      "delhi_0032",
+      "delhi_0028",
+      "delhi_0025",
+      "delhi_0021",
+      "delhi_0011",
+      "delhi_0019",
+      "delhi_0027",
+      "delhi_0023",
+      "delhi_0022",
+      "delhi_0017",
+      "delhi_0004",
+      "delhi_0031",
+      "delhi_0012",
+      "delhi_0026",
+      "delhi_0030",
+      "delhi_0020"
+    ],
+    "val": [
+      "delhi_0009",
+      "delhi_0029",
+      "delhi_0018",
+      "delhi_0003"
+    ],
+    "test": [
+      "delhi_0024",
+      "delhi_0001",
+      "delhi_0005",
+      "delhi_0016"
+    ],
+    "split": "70/15/15",
+    "seed": 0,
+    "source": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\delhi_cd_ablation_no_drone",
+    "stratified": true,
+    "excluded_empty": true,
+    "min_change_frac": 0.001
+  },
+  "class_balance": {
+    "train": {
+      "split": "train",
+      "n_pairs": 16,
+      "change_frac_mean": 0.102394,
+      "change_frac_min": 0.035178,
+      "change_frac_max": 0.480067,
+      "bg_to_change_ratio": 8.77
+    },
+    "val": {
+      "split": "val",
+      "n_pairs": 4,
+      "change_frac_mean": 0.049622,
+      "change_frac_min": 0.0235,
+      "change_frac_max": 0.082711,
+      "bg_to_change_ratio": 19.15
+    },
+    "test": {
+      "split": "test",
+      "n_pairs": 4,
+      "change_frac_mean": 0.073411,
+      "change_frac_min": 0.043467,
+      "change_frac_max": 0.109744,
+      "bg_to_change_ratio": 12.62
+    }
+  },
+  "train_pairs": 16,
+  "val_pairs": 4,
+  "test_pairs": 4,
+  "train_tiles": 160,
+  "best_val_f1": 0.6243,
+  "test_mean_f1": 0.5894,
+  "test_precision": 0.4878,
+  "test_recall": 0.8207,
+  "test_iou": 0.4204,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 3.9157,
+      "val_mean_f1": 0.598,
+      "val_precision": 0.456,
+      "val_recall": 0.882,
+      "val_iou": 0.432,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6123,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6123013665032706,
+        "precision": 0.4697317065557832,
+        "recall": 0.8935914106829049,
+        "obj": 0.6123013665032706
+      },
+      "val_mean_prob": 0.116249,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.6495,
+      "val_mean_f1": 0.5856,
+      "val_precision": 0.4429,
+      "val_recall": 0.8805,
+      "val_iou": 0.4203,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5977,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5977018568790893,
+        "precision": 0.45413502859716487,
+        "recall": 0.890144388009603,
+        "obj": 0.5977018568790893
+      },
+      "val_mean_prob": 0.118388,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.6563,
+      "val_mean_f1": 0.586,
+      "val_precision": 0.4513,
+      "val_recall": 0.8547,
+      "val_iou": 0.4241,
+      "threshold": 0.5,
+      "calibrate_f1": 0.601,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6010323997725909,
+        "precision": 0.4652441048808451,
+        "recall": 0.8651682948794049,
+        "obj": 0.6010323997725909
+      },
+      "val_mean_prob": 0.111523,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.4152,
+      "val_mean_f1": 0.574,
+      "val_precision": 0.4392,
+      "val_recall": 0.8374,
+      "val_iou": 0.41,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5837,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5836718526645597,
+        "precision": 0.44789290082562017,
+        "recall": 0.846140069338321,
+        "obj": 0.5836718526645597
+      },
+      "val_mean_prob": 0.11133,
+      "val_max_prob": 1.0,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.4152,
+      "val_mean_f1": 0.6008,
+      "val_precision": 0.4681,
+      "val_recall": 0.8465,
+      "val_iou": 0.4369,
+      "threshold": 0.5,
+      "calibrate_f1": 0.614,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6139595303993399,
+        "precision": 0.4805510787401257,
+        "recall": 0.8568222304629337,
+        "obj": 0.6139595303993399
+      },
+      "val_mean_prob": 0.105452,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.3254,
+      "val_mean_f1": 0.5799,
+      "val_precision": 0.4485,
+      "val_recall": 0.8279,
+      "val_iou": 0.4174,
+      "threshold": 0.5,
+      "calibrate_f1": 0.591,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5910460653471064,
+        "precision": 0.459285625008857,
+        "recall": 0.8356717370593356,
+        "obj": 0.5910460653471064
+      },
+      "val_mean_prob": 0.111284,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.3906,
+      "val_mean_f1": 0.5983,
+      "val_precision": 0.468,
+      "val_recall": 0.8419,
+      "val_iou": 0.437,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6085,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6084609380445485,
+        "precision": 0.4770438116206044,
+        "recall": 0.8511326523683993,
+        "obj": 0.6084609380445485
+      },
+      "val_mean_prob": 0.10909,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.3651,
+      "val_mean_f1": 0.6166,
+      "val_precision": 0.4957,
+      "val_recall": 0.8237,
+      "val_iou": 0.4548,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6318,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6317533916690122,
+        "precision": 0.5099715735120113,
+        "recall": 0.8370803114520496,
+        "obj": 0.6317533916690122
+      },
+      "val_mean_prob": 0.09923,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.443,
+      "val_mean_f1": 0.5955,
+      "val_precision": 0.4665,
+      "val_recall": 0.8397,
+      "val_iou": 0.4343,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6096,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6095776286772299,
+        "precision": 0.4795556869091128,
+        "recall": 0.8509253132200486,
+        "obj": 0.6095776286772299
+      },
+      "val_mean_prob": 0.105392,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.3454,
+      "val_mean_f1": 0.6098,
+      "val_precision": 0.4815,
+      "val_recall": 0.8474,
+      "val_iou": 0.4498,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6232,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6231670528942976,
+        "precision": 0.4940182313948023,
+        "recall": 0.8580617519133291,
+        "obj": 0.6231670528942976
+      },
+      "val_mean_prob": 0.11383,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.2035,
+      "val_mean_f1": 0.621,
+      "val_precision": 0.514,
+      "val_recall": 0.7905,
+      "val_iou": 0.4621,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6364,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6364056000818342,
+        "precision": 0.5284671511094936,
+        "recall": 0.8052570919133921,
+        "obj": 0.6364056000818342
+      },
+      "val_mean_prob": 0.088122,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.3721,
+      "val_mean_f1": 0.5771,
+      "val_precision": 0.4394,
+      "val_recall": 0.8512,
+      "val_iou": 0.4137,
+      "threshold": 0.5,
+      "calibrate_f1": 0.5872,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.5871783531613513,
+        "precision": 0.44783745106473544,
+        "recall": 0.8624078302643707,
+        "obj": 0.5871783531613513
+      },
+      "val_mean_prob": 0.112749,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 13,
+      "train_loss": 0.2959,
+      "val_mean_f1": 0.6198,
+      "val_precision": 0.5115,
+      "val_recall": 0.7996,
+      "val_iou": 0.4643,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6352,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6352295699170125,
+        "precision": 0.5260902247159163,
+        "recall": 0.8125165543737358,
+        "obj": 0.6352295699170125
+      },
+      "val_mean_prob": 0.088636,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 14,
+      "train_loss": 0.392,
+      "val_mean_f1": 0.6243,
+      "val_precision": 0.5223,
+      "val_recall": 0.7825,
+      "val_iou": 0.4685,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6397,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6396544272888276,
+        "precision": 0.5363605720356793,
+        "recall": 0.7980395826278551,
+        "obj": 0.6396544272888276
+      },
+      "val_mean_prob": 0.087941,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.2838,
+      "val_mean_f1": 0.62,
+      "val_precision": 0.5226,
+      "val_recall": 0.7702,
+      "val_iou": 0.4659,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6361,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.636147363180104,
+        "precision": 0.5384711121327177,
+        "recall": 0.7840464032317787,
+        "obj": 0.636147363180104
+      },
+      "val_mean_prob": 0.088941,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 16,
+      "train_loss": 0.2752,
+      "val_mean_f1": 0.5961,
+      "val_precision": 0.4749,
+      "val_recall": 0.81,
+      "val_iou": 0.4371,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6088,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6088214073492744,
+        "precision": 0.4868166583227544,
+        "recall": 0.820169903665464,
+        "obj": 0.6088214073492744
+      },
+      "val_mean_prob": 0.098134,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 17,
+      "train_loss": 0.1179,
+      "val_mean_f1": 0.6058,
+      "val_precision": 0.4953,
+      "val_recall": 0.784,
+      "val_iou": 0.4479,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6175,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6175279512205868,
+        "precision": 0.5056785947193724,
+        "recall": 0.7965238088855694,
+        "obj": 0.6175279512205868
+      },
+      "val_mean_prob": 0.091621,
+      "val_max_prob": 1.0,
+      "lr": 2.5e-05
+    },
+    {
+      "epoch": 18,
+      "train_loss": 0.3521,
+      "val_mean_f1": 0.6147,
+      "val_precision": 0.5051,
+      "val_recall": 0.7925,
+      "val_iou": 0.4589,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6281,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6280605545719443,
+        "precision": 0.5170650422220758,
+        "recall": 0.8061198455326866,
+        "obj": 0.6280605545719443
+      },
+      "val_mean_prob": 0.094784,
+      "val_max_prob": 1.0,
+      "lr": 1.25e-05
+    },
+    {
+      "epoch": 19,
+      "train_loss": 0.2297,
+      "val_mean_f1": 0.5986,
+      "val_precision": 0.5017,
+      "val_recall": 0.7472,
+      "val_iou": 0.448,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6151,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6151403216708844,
+        "precision": 0.5179722990601922,
+        "recall": 0.7614618491155036,
+        "obj": 0.6151403216708844
+      },
+      "val_mean_prob": 0.08326,
+      "val_max_prob": 1.0,
+      "lr": 1.25e-05
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.3442,
+      "val_mean_f1": 0.6164,
+      "val_precision": 0.5445,
+      "val_recall": 0.7187,
+      "val_iou": 0.4683,
+      "threshold": 0.5,
+      "calibrate_f1": 0.6388,
+      "calibrate_selected": {
+        "thr": 0.5,
+        "f1": 0.6387840877348806,
+        "precision": 0.5685978281491828,
+        "recall": 0.736086168310794,
+        "obj": 0.6387840877348806
+      },
+      "val_mean_prob": 0.074392,
+      "val_max_prob": 1.0,
+      "lr": 1.25e-05
+    }
+  ],
+  "preset": "wed",
+  "output_probe": {
+    "n": 2,
+    "pairs": [
+      {
+        "pair_id": "delhi_0032",
+        "logits_shape": [
+          1,
+          2,
+          256,
+          256
+        ],
+        "logits_min": -21574028.0,
+        "logits_max": 24072676.0,
+        "logits_mean": 1152.8272705078125,
+        "gt_pos_frac": 0.03533935546875,
+        "ch0_mean": 0.9629627466201782,
+        "ch1_mean": 0.03703727573156357,
+        "ch1_min": 0.0,
+        "ch1_max": 1.0,
+        "ch1_on_gt": 0.793320894241333,
+        "ch1_on_bg": 0.009331601671874523,
+        "ch0_on_gt": 0.206679105758667,
+        "change_channel": 1,
+        "prob_min": 0.0,
+        "prob_max": 1.0,
+        "prob_mean": 0.03703727573156357,
+        "prob_on_gt": 0.793320894241333,
+        "prob_on_bg": 0.009331601671874523,
+        "pred_pos_at_0.5": 0.036102294921875
+      },
+      {
+        "pair_id": "delhi_0028",
+        "logits_shape": [
+          1,
+          2,
+          256,
+          256
+        ],
+        "logits_min": -130.22042846679688,
+        "logits_max": 129.63499450683594,
+        "logits_mean": -1.4280414581298828,
+        "gt_pos_frac": 0.037017822265625,
+        "ch0_mean": 0.9673861861228943,
+        "ch1_mean": 0.03261372447013855,
+        "ch1_min": 0.0,
+        "ch1_max": 1.0,
+        "ch1_on_gt": 0.6247375011444092,
+        "ch1_on_bg": 0.009852000512182713,
+        "ch0_on_gt": 0.3752624988555908,
+        "change_channel": 1,
+        "prob_min": 0.0,
+        "prob_max": 1.0,
+        "prob_mean": 0.03261372447013855,
+        "prob_on_gt": 0.6247375011444092,
+        "prob_on_bg": 0.009852000512182713,
+        "pred_pos_at_0.5": 0.03070068359375
+      }
+    ]
+  }
+}

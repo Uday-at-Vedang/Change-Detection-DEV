@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-01",
+  "merged": "github-dev/New/Priyanka @ 0c6d178",
+  "priyanka_changes": [
+    "Removed low-NCC drone packs",
+    "Added dda_before5_after5_v2 (NCC 0.74) and dda_before6_after6_v2 (NCC 0.75) to train",
+    "Frozen test unchanged"
+  ],
+  "split": {"train_pairs_labeled": 18, "train_with_hardneg": 23, "val": 4, "test": 4},
+  "run": "runs/finetune_sat_v2/20260801_115433",
+  "export": "models/adaptformer_delhi/sat_v2_retrain",
+  "best_val_f1": 0.6426,
+  "threshold": 0.5,
+  "test_mean_f1": 0.5762,
+  "test_precision": 0.495,
+  "test_recall": 0.797,
+  "comparable_baselines_same_frozen_test": {
+    "v3_frozen": 0.5867,
+    "wed_retrain": 0.605,
+    "fri3_no_drone": 0.5894,
+    "fri2_retrain_bad_drone": 0.4872,
+    "sat_v2_retrain": 0.5762
+  },
+  "decision": "Do not promote. New aligned v2 pairs did not beat wed_retrain on frozen satellite test."
+}

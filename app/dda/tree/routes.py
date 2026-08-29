@@ -92,11 +92,10 @@ def api_create_node(
 def api_ensure_node(
     body: NodeCreateBody,
     db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
+    user: User = Depends(require_module_permission("library", "create")),
 ):
     """Create a folder if missing, otherwise return the existing sibling."""
     _require_dda()
-    require_min_role(user, db, "admin")
     node, created = get_or_create_node(
         db,
         parent_id=body.parent_id,

@@ -243,8 +243,14 @@ function fillAutoScheduleForm(data) {
   }
   const start = document.getElementById('btn-auto-schedule-start');
   const stop = document.getElementById('btn-auto-schedule-stop');
-  if (start) start.textContent = data.running ? 'Update schedule' : 'Start schedule';
-  if (stop) stop.disabled = !data.running;
+  const canStart = typeof hasPermission === 'function' && window.ddaPermissions
+    ? hasPermission(window.ddaPermissions, 'detect', 'create')
+    : false;
+  if (start) {
+    start.textContent = data.running ? 'Update schedule' : 'Start schedule';
+    if (!canStart) start.disabled = true;
+  }
+  if (stop) stop.disabled = !data.running || !canStart;
 }
 
 function updateAutoScheduleLine() {

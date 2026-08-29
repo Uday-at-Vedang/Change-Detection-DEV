@@ -1,0 +1,90 @@
+[
+  {
+    "id": 1,
+    "area": 42646,
+    "center": {
+      "x": 186,
+      "y": 369
+    },
+    "bbox": {
+      "x": 95,
+      "y": 235,
+      "w": 186,
+      "h": 271
+    },
+    "objectType": "Vegetation Change",
+    "confidence": 0.5695,
+    "severity": "major",
+    "subType": "Deforestation/Tree Removal",
+    "subTypeConfidence": 0.44999999999999996,
+    "estimatedStories": null,
+    "estimatedHeightM": null,
+    "constructionStage": null,
+    "polygon": [
+      [
+        110,
+        235
+      ],
+      [
+        95,
+        485
+      ],
+      [
+        260,
+        505
+      ],
+      [
+        280,
+        255
+      ],
+      [
+        110,
+        235
+      ]
+    ]
+  },
+  {
+    "id": 2,
+    "area": 19622,
+    "center": {
+      "x": 423,
+      "y": 254
+    },
+    "bbox": {
+      "x": 350,
+      "y": 175,
+      "w": 151,
+      "h": 161
+    },
+    "objectType": "New Construction/Building",
+    "confidence": 0.939,
+    "severity": "major",
+    "subType": "Renovation/Modification",
+    "subTypeConfidence": 0.30000000000000004,
+    "estimatedStories": 8,
+    "estimatedHeightM": 24.0,
+    "constructionStage": "Under Construction",
+    "polygon": [
+      [
+        365,
+        175
+      ],
+      [
+        350,
+        320
+      ],
+      [
+        478,
+        335
+      ],
+      [
+        500,
+        190
+      ],
+      [
+        365,
+        175
+      ]
+    ]
+  }
+]

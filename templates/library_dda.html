@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Image Library — Vedangsoft Change Detection</title>
+  <title>Master Library — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=44" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=45" />
 </head>
 <body>
   <div class="app dda-app">
@@ -19,10 +19,10 @@
       <div class="dda-layout">
         <aside class="dda-sidebar card">
           <div class="card-header">
-            <h3>Masters library</h3>
+            <h3>Master Library</h3>
             <div class="dda-sidebar-actions">
               <button type="button" class="btn btn-secondary btn-sm hidden" id="btn-manage-library" data-requires-permission="library:edit">Folders master</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" data-requires-permission="library:edit">Refresh</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-lib" data-requires-permission="library:view">Refresh</button>
             </div>
           </div>
           <div id="lib-folder-path" class="dda-folder-path dim"></div>
@@ -187,23 +187,20 @@
   </div>
 
   <div id="dda-tree-menu" class="dda-tree-menu hidden" role="menu">
-    <button type="button" role="menuitem" data-tree-act="upload">Upload images here</button>
-    <button type="button" role="menuitem" data-tree-act="add" data-admin-only="1">Add subfolder</button>
-    <button type="button" role="menuitem" data-tree-act="rename" data-admin-only="1">Rename</button>
-    <button type="button" role="menuitem" data-tree-act="delete" data-admin-only="1">Remove</button>
-    <button type="button" role="menuitem" data-tree-act="manage" data-admin-only="1">Open Folders master</button>
+    <button type="button" role="menuitem" data-tree-act="upload" data-requires-permission="library:create">Upload images here</button>
+    <button type="button" role="menuitem" data-tree-act="add" data-requires-permission="library:create">Add subfolder</button>
+    <button type="button" role="menuitem" data-tree-act="rename" data-requires-permission="library:edit">Rename</button>
+    <button type="button" role="menuitem" data-tree-act="delete" data-requires-permission="library:delete">Remove</button>
+    <button type="button" role="menuitem" data-tree-act="manage" data-requires-permission="library:edit">Open Folders master</button>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/static/js/dda/shared.js?v=3"></script>
-  <script src="/static/js/dda/app.js?v=27"></script>
-  <script src="/static/js/dda/tree.js?v=4"></script>
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/app.js?v=28"></script>
+  <script src="/static/js/dda/tree.js?v=5"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=17"></script>
-  <script src="/static/js/dda/pairs.js?v=7"></script>
-  <script src="/static/js/dda/result.js?v=22"></script>
-  <script src="/static/js/dda/compare.js?v=24"></script>
-  <script src="/static/js/dda/reports.js?v=10"></script>
+  <script src="/static/js/dda/library.js?v=18"></script>
+  <script src="/static/js/dda/pairs.js?v=8"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>
 </html>

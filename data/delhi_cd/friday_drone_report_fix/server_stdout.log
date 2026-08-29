@@ -1,0 +1,40 @@
+SECRET_KEY env var not set — using insecure fallback. Set SECRET_KEY to a random string in production!
+INFO:app.main:Importing AI Change Detection app module
+INFO:app.main:Running database initialization
+INFO:app.main:Database initialization complete
+INFO:app.dda.bootstrap:Tree migration: {'seed': {'seeded': False, 'nodes': 163}, 'migrate': {'moved': 0, 'indexed': 0}}
+C:\Users\udayb\AppData\Local\Programs\Python\Python312\Lib\site-packages\rasterio\__init__.py:368: NotGeoreferencedWarning: Dataset has no geotransform, gcps, or rpcs. The identity matrix will be returned.
+  dataset = DatasetReader(path, driver=driver, sharing=sharing, **kwargs)
+INFO:rasterio._env:GDAL signalled an error: err_no=1, msg='GRID 54_2025.tif: TIFFFetchDirectory:C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\GRID 54_2025.tif: Can not read TIFF directory count'
+INFO:rasterio._env:GDAL signalled an error: err_no=1, msg='GRID 54_2025.tif: TIFFReadDirectory:Failed to read directory at offset 6382066192'
+WARNING:app.dda.geotiff_io:rasterio read failed (GRID 54_2025.tif: TIFFReadDirectory:Failed to read directory at offset 6382066192), falling back to Pillow
+C:\Users\udayb\AppData\Local\Programs\Python\Python312\Lib\site-packages\PIL\TiffImagePlugin.py:900: UserWarning: Corrupt EXIF data.  Expecting to read 8 bytes but only got 0. 
+  warnings.warn(str(msg))
+WARNING:app.dda.geotiff_io:Pillow inspect failed for GRID 54_2025.tif: cannot identify image file 'C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\GRID 54_2025.tif'
+WARNING:app.dda.tree.sync_service:Skipping image with invalid dimensions (0x0): central_delhi/Images/GRID 54_2025.tif
+INFO:rasterio._env:GDAL signalled an error: err_no=1, msg='GRID 54_2026.tif: TIFFFetchDirectory:C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\GRID 54_2026.tif: Can not read TIFF directory count'
+INFO:rasterio._env:GDAL signalled an error: err_no=1, msg='GRID 54_2026.tif: TIFFReadDirectory:Failed to read directory at offset 5461254560'
+WARNING:app.dda.geotiff_io:rasterio read failed (GRID 54_2026.tif: TIFFReadDirectory:Failed to read directory at offset 5461254560), falling back to Pillow
+WARNING:app.dda.geotiff_io:Pillow inspect failed for GRID 54_2026.tif: cannot identify image file 'C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\GRID 54_2026.tif'
+WARNING:app.dda.tree.sync_service:Skipping image with invalid dimensions (0x0): central_delhi/Images/GRID 54_2026.tif
+INFO:app.dda.tree.sync_service:Filesystem sync complete: {'nodesCreated': 0, 'imagesIndexed': 0, 'imagesUpdated': 0, 'imagesSkipped': 2, 'orphansFlagged': 0, 'foldersSkipped': 0}
+INFO:app.dda.bootstrap:Filesystem sync at startup: {'nodesCreated': 0, 'imagesIndexed': 0, 'imagesUpdated': 0, 'imagesSkipped': 2, 'orphansFlagged': 0, 'foldersSkipped': 0}
+INFO:app.dda.bootstrap:DDA tree library ready (hosted=False): 25 images, storage=C:\Users\udayb\cursor\change_detection_webapp\data\library_sources
+INFO:app.dda.bootstrap:APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local)
+INFO:     Started server process [22320]
+INFO:     Waiting for application startup.
+INFO:app.main:FastAPI startup event completed
+C:\Users\udayb\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\utils\_pytree.py:185: FutureWarning: optree is installed but the version is too old to support PyTorch Dynamo in C++ pytree. C++ pytree support is disabled. Please consider upgrading optree using `python3 -m pip install --upgrade 'optree>=0.13.0'`.
+  warnings.warn(
+INFO:app.model_inference:Loading AdaptFormer from C:\Users\udayb\cursor\change_detection_webapp\models\adaptformer_delhi\sat_v2_retrain ...
+Starting Satellite Change Detection...
+Open in your browser:  http://127.0.0.1:8000
+Press Ctrl+C to stop.
+
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|##########| 408/408 [00:00<00:00, 5928.32it/s]
+INFO:app.model_inference:AdaptFormer loaded on cuda from C:\Users\udayb\cursor\change_detection_webapp\models\adaptformer_delhi\sat_v2_retrain
+INFO:app.model_inference:AdaptFormer preload complete
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000): only one usage of each socket address (protocol/network address/port) is normally permitted
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.

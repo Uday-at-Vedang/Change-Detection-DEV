@@ -15,13 +15,56 @@ from .models import ImageLibrary, TreeNode
 from .path_service import ensure_node_directory, storage_root
 from .path_slugs import RESERVED
 
-from .path_slugs import RESERVED
-
 logger = logging.getLogger(__name__)
 
 _NODE_TYPES = ("Zone", "Area", "Year", "Folder")
 _SKIP_DIRS = frozenset({".git", ".thumbs", "__pycache__", "cache", "thumbs"})
 _RESERVED_DIR_NAMES = RESERVED
+_SKIP_CACHE: Optional[dict] = None
+
+
+def _skip_cache_path() -> Path:
+    return storage_root().parent / "image_inspect_skip.json"
+
+
+def _inspect_skip_set() -> dict:
+    global _SKIP_CACHE
+    if _SKIP_CACHE is not None:
+        return _SKIP_CACHE
+    path = _skip_cache_path()
+    try:
+        import json
+        _SKIP_CACHE = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        if not isinstance(_SKIP_CACHE, dict):
+            _SKIP_CACHE = {}
+    except Exception:
+        _SKIP_CACHE = {}
+    return _SKIP_CACHE
+
+
+def _persist_inspect_skip() -> None:
+    if _SKIP_CACHE is None:
+        return
+    try:
+        import json
+        path = _skip_cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(_SKIP_CACHE, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not persist inspect skip list: %s", exc)
+
+
+def _remember_inspect_skip(rel_file: str, size: int) -> None:
+    skip = _inspect_skip_set()
+    skip[rel_file] = {"size": int(size)}
+    _persist_inspect_skip()
+
+
+def _forget_inspect_skip(rel_file: str) -> None:
+    skip = _inspect_skip_set()
+    if rel_file in skip:
+        skip.pop(rel_file, None)
+        _persist_inspect_skip()
 
 
 def _infer_node_type(depth: int) -> str:
@@ -129,10 +172,22 @@ def _index_image_file(
     """
     existing = db.query(ImageLibrary).filter(ImageLibrary.file_path == rel_file).first()
     stat = file_path.stat()
+    skip = _inspect_skip_set()
+    skip_meta = skip.get(rel_file)
+    if skip_meta is not None and int(skip_meta.get("size") or 0) == stat.st_size:
+        stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
+        return False
+    if existing and existing.file_size_bytes == stat.st_size and (existing.width or 0) > 0:
+        if existing.node_id != node.id:
+            existing.node_id = node.id
+            db.commit()
+            stats["imagesUpdated"] += 1
+        return False
     try:
         meta = inspect_image(file_path)
     except Exception as exc:
         logger.warning("Skipping unreadable image %s: %s", rel_file, exc)
+        _remember_inspect_skip(rel_file, stat.st_size)
         stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
         return False
     if meta.width <= 0 or meta.height <= 0:
@@ -140,8 +195,11 @@ def _index_image_file(
             "Skipping image with invalid dimensions (%sx%s): %s",
             meta.width, meta.height, rel_file,
         )
+        _remember_inspect_skip(rel_file, stat.st_size)
         stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
         return False
+
+    _forget_inspect_skip(rel_file)
 
     if existing:
         changed = (

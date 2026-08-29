@@ -30,6 +30,9 @@ async function rescanLibrary() {
 
 async function initDda() {
   hideDdaError();
+  const needsLibrary = !!document.getElementById('lib-grid');
+  const needsDetect = !!document.getElementById('tab-detect');
+  if (!needsLibrary && !needsDetect) return;
   try {
     try {
       const me = await ddaApi('GET', '/api/dda/me');
@@ -72,8 +75,8 @@ async function initDda() {
       resHint.textContent = `Detection runs at up to ${localCfg.detectionMaxSide}px per side.`;
     }
 
-    if (typeof loadTree === 'function') await loadTree();
-    await loadLibraryImages();
+    if (needsLibrary && typeof loadTree === 'function') await loadTree();
+    if (needsLibrary) await loadLibraryImages();
   } catch (err) {
     showDdaError(err.message || 'Failed to load library');
   }
@@ -143,7 +146,6 @@ async function loadLibraryImages() {
     libGridItems = items;
     libGridPage = 0;
     renderLibGrid();
-    if (typeof loadCompareLibraryGrid === 'function') loadCompareLibraryGrid();
     if (typeof loadAreaPairs === 'function') {
       loadAreaPairs({ nodeId: selectedNode.id || null });
     }

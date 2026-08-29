@@ -123,20 +123,25 @@ def build_email_body(
     return html
 
 
-def _send_via_api(recipient: str, subject: str, html_body: str):
-    """Send email via manager's API (POST multipart/form-data)."""
+def _send_via_api(recipient: str, subject: str, html_body: str, *, attach_html: bool = True):
+    """Send email via manager's API (POST multipart/form-data).
+
+    The vendor API validates that ``FileName``/``AttachmentBase64`` are always
+    present, even when the caller only wants the HTML body to render inline —
+    so we always include them (using the HTML body itself as the attachment).
+    """
     if not EMAIL_API_URL or not EMAIL_API_URL.strip():
         return False, "EMAIL_API_URL is not set."
     url = EMAIL_API_URL.strip()
     try:
         import requests
-        # Attach the same HTML report as a file so the API can deliver it.
-        attachment_b64 = base64.b64encode(html_body.encode("utf-8")).decode("ascii")
+        attachment_source = html_body if attach_html else "<html><body></body></html>"
+        attachment_b64 = base64.b64encode(attachment_source.encode("utf-8")).decode("ascii")
         files = {
             "ToEmail": (None, recipient),
             "Subject": (None, subject),
             "Body": (None, html_body),
-            "FileName": (None, "ChangeDetection.html"),
+            "FileName": (None, "ChangeDetection.html" if attach_html else "signin.html"),
             "AttachmentBase64": (None, attachment_b64),
         }
         resp = requests.post(
@@ -202,13 +207,13 @@ def _send_via_smtp(recipient: str, subject: str, html_body: str):
         return False, f"{type(exc).__name__}: {exc}"
 
 
-def _send_html_email(recipient: str, subject: str, html_body: str):
+def _send_html_email(recipient: str, subject: str, html_body: str, *, attach_html: bool = True):
     """Send email: use manager's API if EMAIL_API_URL is set, else SMTP."""
     if not _valid_email(recipient):
         return False, "Enter a valid recipient email address."
 
     if EMAIL_API_URL and EMAIL_API_URL.strip():
-        return _send_via_api(recipient, subject, html_body)
+        return _send_via_api(recipient, subject, html_body, attach_html=attach_html)
     return _send_via_smtp(recipient, subject, html_body)
 
 
@@ -249,6 +254,120 @@ def send_password_reset_email(recipient: str, reset_link: str, expire_minutes: i
     </html>
     """
     return _send_html_email(recipient, "Reset your Vedangsoft Change Detection password", html_body)
+
+
+def send_login_otp_email(recipient: str, code: str, expire_minutes: int = 10):
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #222;">
+        <h2>Your sign-in code</h2>
+        <p>Use this one-time password to finish signing in to Vedangsoft Change Detection:</p>
+        <p style="font-size:28px; letter-spacing:8px; font-weight:700;">{code}</p>
+        <p>This code expires in {expire_minutes} minutes. If you did not try to sign in, you can ignore this email.</p>
+      </body>
+    </html>
+    """
+    return _send_html_email(
+        recipient,
+        f"{code} is your Vedangsoft sign-in code",
+        html_body,
+        attach_html=False,
+    )
+
+
+def _sms_api_url() -> str:
+    explicit = os.environ.get("SMS_API_URL", "").strip()
+    if explicit:
+        return explicit
+    email_url = (EMAIL_API_URL or "").strip()
+    if "/api/email/send" in email_url:
+        return email_url.replace("/api/email/send", "/api/sms/send")
+    return ""
+
+
+def _send_via_sms_api(phone_e164: str, message: str):
+    url = _sms_api_url()
+    if not url:
+        return False, "SMS_API_URL is not set."
+    digits = re.sub(r"\D", "", phone_e164 or "")
+    if not digits:
+        return False, "Missing mobile number."
+    try:
+        import requests
+        files = {
+            "ToMobile": (None, digits),
+            "Mobile": (None, digits),
+            "Message": (None, message),
+            "Body": (None, message),
+        }
+        resp = requests.post(
+            url,
+            files=files,
+            timeout=30,
+            headers={"Accept": "*/*"},
+        )
+        if 200 <= resp.status_code < 300:
+            logger.info("SMS API: sent to %s", "*" * max(0, len(digits) - 4) + digits[-4:])
+            return True, None
+        msg = f"API returned {resp.status_code}"
+        try:
+            body = resp.text or resp.reason
+            if body:
+                msg = f"{msg}: {body[:200]}"
+        except Exception:
+            pass
+        logger.warning("SMS API failed: %s", msg)
+        return False, msg
+    except Exception as exc:
+        logger.exception("SMS API request failed: %s", exc)
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _send_via_fast2sms(phone_e164: str, code: str):
+    key = os.environ.get("SMS_API_KEY", "").strip()
+    if not key:
+        return False, "SMS_API_KEY is not set."
+    digits = re.sub(r"\D", "", phone_e164 or "")
+    if digits.startswith("91") and len(digits) == 12:
+        national = digits[2:]
+    else:
+        national = digits
+    if len(national) != 10:
+        return False, "Fast2SMS only supports 10-digit Indian numbers."
+    try:
+        import requests
+        resp = requests.get(
+            "https://www.fast2sms.com/dev/bulkV2",
+            params={
+                "authorization": key,
+                "route": "otp",
+                "variables_values": code,
+                "numbers": national,
+                "flash": "0",
+            },
+            timeout=30,
+        )
+        if 200 <= resp.status_code < 300:
+            logger.info("Fast2SMS: sent OTP to ****%s", national[-4:])
+            return True, None
+        return False, f"Fast2SMS returned {resp.status_code}: {(resp.text or '')[:200]}"
+    except Exception as exc:
+        logger.exception("Fast2SMS request failed: %s", exc)
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def send_login_otp_sms(phone_e164: str, code: str, expire_minutes: int = 10):
+    """Send a 6-digit login OTP. `phone_e164` is expected as '+CCNNNNNNNNNN'."""
+    if not phone_e164 or not phone_e164.startswith("+"):
+        return False, "Enter a valid mobile number."
+    message = (
+        f"{code} is your Vedangsoft Change Detection sign-in OTP. "
+        f"Valid for {expire_minutes} minutes. Do not share this code."
+    )
+    provider = os.environ.get("SMS_PROVIDER", "").strip().lower()
+    if provider == "fast2sms":
+        return _send_via_fast2sms(phone_e164, code)
+    return _send_via_sms_api(phone_e164, message)
 
 
 def send_test_email(recipient: str):

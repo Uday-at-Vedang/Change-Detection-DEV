@@ -1,0 +1,207 @@
+TECHNICAL MEMORANDUM
+
+Change-Detection Accuracy — Root-Cause Analysis & Recommended Path
+
+Field
+
+Detail
+
+Project
+
+DDA Change Detection (AdaptFormer) — repo Change-Detection-DEV, branch New/Priyanka
+
+Prepared for
+
+Vedangsoft — internal engineering & DDA delivery
+
+Subject
+
+Why fine-tune F1 has plateaued, and the prioritized plan to move it
+
+Scope of review
+
+Two problem statements + source code: model_inference.py, detection_engine.py, dda/pair_align.py, detection_config.py, scripts/finetune_adaptformer.py, and on-disk training runs
+
+1.  Executive summary
+
+The accuracy plateau is real, but it is not a single problem and the team's own two write-ups slightly mis-rank the causes. The dominant blocker on drone imagery is alignment / local parallax, which no in-app warp can fix — it requires orthomosaic reprocessing. A second, structural limit is the resolution and domain gap between the satellite-trained backbone and the drone imagery operators actually run. Both of these real limits are being amplified and partly masked by three fixable engineering issues: a runtime config that silently overrode the intended operating point, a hard cap in the training script that prevents new pairs from meaningfully entering training, and a held-out benchmark too small to resolve the ~0.02 F1 differences you are trying to detect.
+
+Put plainly: more “clean” pairs, added the way they are added today, cannot move the metric you are watching — not because the data is worthless, but because the current pipeline caps how much of it is used and the benchmark cannot see the change. Fix measurement and the training-side caps first (cheap, days), pursue orthomosaics second (the true ceiling-raiser), and treat large-scale data collection as the third step, not the first.
+
+2.  Where things actually stand
+
+Frozen-test results on the fixed 4-pair satellite benchmark (delhi_0024, delhi_0001, delhi_0005, delhi_0016):
+
+Checkpoint
+
+Test F1
+
+Note
+
+v3_frozen
+
+0.587
+
+Tuesday baseline, thr ≈ 0.2
+
+wed_retrain
+
+0.605 (≈0.626 TTA=full)
+
+Best so far; thr = 0.446 — current promotion target
+
+fri3_no_drone
+
+0.589
+
+Satellite-only ablation
+
+fri2_retrain (+bad drone)
+
+0.487
+
+Clear regression — correctly not promoted
+
+sat_v2_retrain (+aligned v2 drone)
+
+0.576
+
+Verified-NCC drone pairs; still below wed_retrain
+
+Read the deltas with care. The spread between the top candidates (0.576 – 0.605) is roughly 0.03 F1 across a 4-image test set scored as a mean of per-image F1. On that benchmark a single image is 25% of the score, so a 0.02–0.03 difference sits inside the measurement noise. Freezing the test set (frozen_test_ids.json) was the correct instinct — it removed the split-reshuffle problem that made day-to-day numbers incomparable. The residual issue is simply that four pairs cannot resolve the small gains fine-tuning produces. This is why “it did not beat the previous best” keeps recurring: the model may be changing, but the ruler is too coarse to show it.
+
+3.  Root causes, re-ranked by real impact
+
+A.  Alignment / local parallax on drone imagery (dominant blocker)
+
+This matches problem-statement §3.2 and is confirmed in code. The in-app registration in detection_engine.register_images() runs phase-correlation → SIFT/ORB homography → multi-scale ECC. That is a strong global alignment stack, but it applies a single warp to the whole frame. It cannot correct local parallax caused by different drone viewpoints over 3-D structure. The measured evidence is decisive:
+
+Pair
+
+NCC
+
+GT change%
+
+Reported / predicted change%
+
+before3
+
+0.61
+
+3.3%
+
+report 18.9% / pred ~12–15%
+
+before6
+
+0.51
+
+4.7%
+
+report 11.2% / pred ~8%
+
+before4
+
+0.41
+
+19.3%
+
+report 8.0% or pred ~49% (unstable)
+
+before1
+
+0.07
+
+21.2%
+
+F1 ~0.07–0.08
+
+Implication: below roughly NCC 0.6, pixel-level change detection is measuring registration error, not ground change. Post-processing (strip_shadow, strip_transient, roof-recover) cannot rescue a mid/low-NCC pair. The pack metadata already flags orthomosaics_needed: true — that flag is the honest answer. Orthomosaic reprocessing from the raw photo sets is the only real fix, and it lives upstream of this repo.
+
+B.  Resolution & domain gap (the structural ceiling)
+
+The backbone is deepang/adaptformer-LEVIR-CD, pretrained on ~0.5 m/pixel satellite imagery with sharp building edges. The Delhi manifest records GSD around 10 m/pixel for much of the data — a ~20× scale mismatch. At 10 m a small building is a handful of pixels, so the edge-level features the pretrained encoder relies on barely exist in the input. Separately, the best weights were tuned on aligned Sentinel-style satellite pairs while ops reports (DDA 54–59) are largely drone GeoTIFFs, so the model transfers weakly and fires on illumination, vehicles, water tanks and soft ground texture as if they were construction (§3.1). This gap caps achievable F1 independently of dataset size.
+
+C.  Measurement floor (fixable, and blocking your ability to judge everything else)
+
+Two compounding factors: the frozen test is only 4 pairs, and evaluation averages per-image F1, which maximizes the variance of that small n. The right refinements are cheap: (1) score pixel-pooled precision/recall/F1 — pool true/false positives across all test pixels rather than averaging per-image F1; (2) as the labeled pool grows, expand the frozen satellite test beyond 4 pairs (the note in frozen_test_ids.json already anticipates this under “change_if”); (3) for training decisions, report mean ± std across leave-one-out folds so a candidate’s gain is shown against its own uncertainty.
+
+D.  Training-side blockers you can fix in code this week
+
+Hard 160-tile cap. In finetune_adaptformer.py (≈ line 296) the training set is capped: max_tiles = 160. With pos_oversample 4 and change-centered crops, the existing ~16–22 pairs already saturate that budget, so newly added pairs are sub-sampled into the same 160-tile budget — the model sees essentially the same data and F1 cannot move. This is a concrete, mechanical reason the “add two verified pairs” experiment could not have shown improvement, and it is not mentioned in either write-up.
+
+No registration on training pairs. The strong register_images() stack is applied at inference but not in the fine-tune data path — GT tiles are loaded and resized straight to 256. If a training pair was even a couple of pixels off when its mask was painted, the label sits on shifted ground and the model trains on that noise. Global NCC ≥ 0.73 gating will not catch a consistent small shift.
+
+Bad-drone-label contamination — already handled well. Forcing 9 un-orthorectified drone packs into training collapsed val precision (~0.69 → ~0.35) and dropped frozen-test F1 to 0.487. The decision to hold those eval-only and not promote fri2 was correct and should stay policy.
+
+E.  Runtime / config mismatch (silent, high-leverage)
+
+Per §3.4, while the code preferred wed_retrain, the live .env pinned ADAPTFORMER_WEIGHTS=v3_frozen, ADAPTFORMER_THRESHOLD=0.5, DETECTION_TTA=off, and DETECTION_SKIP_REGISTRATION_GEOTIFF=true. The code confirms the impact: in model_inference.py the env threshold is checked before the calibrated sidecar (lines ~104/128), so an env value overrides the frozen operating point; and detection_engine.py (~line 3882) skips registration entirely for GeoTIFF pairs when that flag is set. Net effect: many library PDFs ran at thr 0.5 with no TTA and no registration — not the intended operating point at all. A large share of the “bad report” evidence is partly a config artifact, not model capability.
+
+4.  Recommended path, prioritized
+
+P0 — This week (config + code + measurement; low cost, unblocks judgement)
+
+Align runtime to the intended operating point. Set the live .env to the promoted checkpoint’s calibrated threshold (let the sidecar win — do not pin ADAPTFORMER_THRESHOLD), enable the intended TTA, and stop skipping GeoTIFF registration unless a pair is known orthomosaic-grade. Re-run the DDA 54–59 reports and re-measure before drawing any further model conclusions.
+
+Lift and parametrize the tile cap. Make max_tiles a CLI argument and raise it well above 160 so added pairs actually enter training; re-run the wed / v2 comparison so the extra data has a chance to register.
+
+Register training pairs before tiling. Route each fine-tune pair through register_images() (or at least ECC) and verify masks on the registered pair, so labels sit on aligned ground.
+
+Upgrade evaluation. Add pixel-pooled P/R/F1 and leave-one-out mean ± std; expand the frozen satellite test as the pool grows. Until this lands, treat all “beat / didn’t beat best” claims as provisional.
+
+P1 — The real ceiling-raiser (weeks; upstream of this repo)
+
+Stand up an orthomosaic pipeline for drone data. Reprocess raw flight photo sets into north-up orthomosaics on a common grid (Metashape, Pix4D, or open-source OpenDroneMap) before they enter detection or labeling. This is the one intervention §3.2 and §3.6 both point to — the grid search over threshold/registration/cleanup maxed near ~0.24 mean F1 precisely because alignment, not a missing knob, is the bottleneck.
+
+P2 — Data strategy (ongoing)
+
+Keep low-/mid-NCC drone strictly eval-only until orthorectified; only orthomosaic-grade pairs (NCC ≳ 0.8) should train.
+
+Grow the labeled satellite pool; that is the distribution the promotion benchmark actually rewards today.
+
+Consider a resolution-matched pretrain or lighter encoder freezing to narrow the domain gap in §3.1/B — but only after P0, since the tile cap currently hides any such gain.
+
+P3 — Product & scope decisions (needs a stakeholder call)
+
+Run separate operating points for satellite vs drone; a single threshold cannot serve a 0.5 m and a 10 m regime well.
+
+Decide, explicitly, whether building-scale change is in scope for 10 m imagery. If it is, the input must be sub-metre (or orthomosaic drone); if not, retarget the deliverable to the coarser land-cover change 10 m can genuinely resolve, and set operator expectations accordingly.
+
+5.  Decisions this memo asks stakeholders to make
+
+Decision
+
+Why it matters
+
+Fund a photogrammetry / orthomosaic step for drone data
+
+It is the only real fix for the dominant drone blocker; without it, drone F1 is capped regardless of model work
+
+Confirm target object scale vs available GSD
+
+Determines whether current 10 m imagery can ever meet the accuracy target, or whether higher-res sourcing is required
+
+Keep the promote-on-frozen-test policy, with an expanded test set
+
+Protects production v3_frozen from noisy regressions while making small real gains visible
+
+Treat drone packs as eval-only until orthorectified
+
+Proven: contaminated training collapses precision
+
+Appendix — Code references used in this analysis
+
+app/model_inference.py  — weight resolution prefers v3_frozen; env threshold overrides sidecar (~104/128); TTA & multiscale fusion
+
+app/detection_engine.py  — register_images(): phase-corr → SIFT/ORB → ECC (global warp); GeoTIFF registration skip (~3882)
+
+app/dda/pair_align.py  — geo-reproject to common grid + global-NCC gate; identical-input guard; no local de-parallax
+
+app/detection_config.py  — fusion mode, TTA, thresholds, DETECTION_SKIP_REGISTRATION_GEOTIFF
+
+scripts/finetune_adaptformer.py  — presets (v2/v3/wed), losses, pos-oversample; max_tiles = 160 cap (~296); no registration in train path
+
+On-disk runs: models/adaptformer_delhi/{v3_frozen,wed_retrain}/metrics.json; data/delhi_cd/{split.json,frozen_test_ids.json}
+
+.

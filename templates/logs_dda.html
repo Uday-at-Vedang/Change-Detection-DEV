@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logs — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=45" />
+</head>
+<body>
+  <div class="app dda-app dda-app-full">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section class="dda-panel active">
+        <div class="dda-hero">
+          <h1>Application logs</h1>
+          <p class="sub">Live view of recent server events. Filter, download, or clear the buffer.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Logs</h3>
+            <div class="dda-reports-toolbar">
+              <span id="logs-meta" class="dim dda-filter-meta"></span>
+              <label class="dda-check"><input type="checkbox" id="logs-live" checked /> Live</label>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-logs-refresh">Refresh</button>
+              <a class="btn btn-secondary btn-sm" id="btn-logs-download" href="/api/dda/logs/download">Download</a>
+              <button type="button" class="btn btn-danger btn-sm" id="btn-logs-clear" data-requires-permission="logs:delete">Clear</button>
+            </div>
+          </div>
+          <div class="dda-filter-bar">
+            <label class="dda-filter-field">Search
+              <input type="search" id="logs-q" class="dda-search" placeholder="Message or logger…" />
+            </label>
+            <label class="dda-filter-field">Level
+              <select id="logs-level">
+                <option value="">All</option>
+                <option value="DEBUG">Debug+</option>
+                <option value="INFO">Info+</option>
+                <option value="WARNING">Warning+</option>
+                <option value="ERROR">Error+</option>
+              </select>
+            </label>
+            <label class="dda-filter-field">Logger
+              <input type="search" id="logs-logger" class="dda-search" placeholder="e.g. app.dda" />
+            </label>
+          </div>
+          <div id="logs-table-wrap" class="dda-logs-wrap"><p class="dim">Loading logs…</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/app.js?v=28"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/logs.js?v=1"></script>
+</body>
+</html>

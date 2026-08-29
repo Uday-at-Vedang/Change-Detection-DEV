@@ -1,0 +1,12 @@
+{
+  "pair_id": "dda_before3_after3",
+  "before": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\before3.tif",
+  "after": "C:\\Users\\udayb\\cursor\\change_detection_webapp\\data\\library_sources\\central_delhi\\Images\\after3.tif",
+  "preview_shape": [
+    1126,
+    1643
+  ],
+  "roi": null,
+  "seed_changed_px": 0,
+  "created_unix": 1785753153.5837862
+}

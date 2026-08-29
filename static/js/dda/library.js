@@ -364,8 +364,11 @@ async function uploadLibraryFiles(files, { nodeId, preserveFolders = true } = {}
   if (!list.length) throw new Error('No GeoTIFF, PNG, or JPEG files to upload.');
   const dest = nodeId || document.getElementById('upload-node')?.value;
   const needsFolders = preserveFolders && list.some((f) => relativeUploadPath(f).includes('/'));
-  if (needsFolders && window.ddaState?.userRole !== 'admin') {
-    throw new Error('Creating subfolders from a dropped folder requires an admin account. Ask an admin, or upload files into an existing folder.');
+  const canCreateFolders = typeof hasPermission === 'function'
+    ? hasPermission(window.ddaPermissions, 'library', 'create')
+    : window.ddaState?.userRole === 'admin';
+  if (needsFolders && !canCreateFolders) {
+    throw new Error('Creating subfolders from a dropped folder requires permission to create library folders. Upload files into an existing folder, or ask an admin.');
   }
   if (!dest && !needsFolders) throw new Error('Select a destination folder.');
   uploadLibraryFiles._busy = true;

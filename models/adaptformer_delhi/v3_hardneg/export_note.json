@@ -1,0 +1,8 @@
+{
+  "source_run": "runs/finetune_hardneg/20260721_112416",
+  "best_val_f1": 0.6751,
+  "test_mean_f1": 0.548,
+  "threshold": 0.2,
+  "vs_v3_frozen_test_f1": 0.5954,
+  "note": "Hard-neg fine-tune; test F1 dipped vs v3_frozen. Keep thr=0.2. Promote only if veg FP drops on DDA review."
+}

@@ -1,7 +1,6 @@
 // Generic helpers shared by the main SPA (app.js) and standalone pages
-// (login_dda.html). Deliberately has NO page-load side effects — safe to
-// include on any page. Page-specific initialization (e.g. app.js's
-// initDda()) must NOT live here.
+// (login_dda.html). Date-picker enhancement is the only DOM init here and
+// is a no-op when no .dda-date-input fields exist.
 const API = '';
 
 function escapeHtml(text) {
@@ -172,3 +171,162 @@ function renderPaginationControls(container, page, totalPages, onChange) {
   next.addEventListener('click', () => onChange(page + 1));
   container.appendChild(next);
 }
+
+const _DATE_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const _DATE_MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _DATE_DOW = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+
+function _parseIsoDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (d.getFullYear() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return null;
+  return d;
+}
+
+function _fmtIsoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function _fmtPrettyDate(iso) {
+  const d = _parseIsoDate(iso);
+  if (!d) return '';
+  return `${d.getDate()} ${_DATE_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function _closeAllDatePickers(except) {
+  document.querySelectorAll('.dda-datewrap.is-open').forEach((wrap) => {
+    if (wrap !== except) wrap.classList.remove('is-open');
+  });
+}
+
+function enhanceDateInput(input) {
+  if (!input || input.dataset.dateEnhanced === '1') return;
+  if (input.closest('.dda-datewrap')) return;
+  input.dataset.dateEnhanced = '1';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'dda-datewrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  input.classList.add('dda-date-native');
+  input.setAttribute('autocomplete', 'off');
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'dda-date-trigger';
+  trigger.setAttribute('aria-haspopup', 'dialog');
+  wrap.appendChild(trigger);
+
+  const pop = document.createElement('div');
+  pop.className = 'dda-cal';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', 'Choose date');
+  wrap.appendChild(pop);
+
+  let view = _parseIsoDate(input.value) || new Date();
+  view = new Date(view.getFullYear(), view.getMonth(), 1);
+
+  function syncTrigger() {
+    const pretty = _fmtPrettyDate(input.value);
+    trigger.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/></svg>
+      <span class="${pretty ? '' : 'dda-date-placeholder'}">${pretty || (input.getAttribute('placeholder') || 'Select date')}</span>
+      ${input.value ? '<span class="dda-date-clear" title="Clear" aria-label="Clear date">×</span>' : ''}`;
+  }
+
+  function renderCal() {
+    const selected = _parseIsoDate(input.value);
+    const today = new Date();
+    const year = view.getFullYear();
+    const month = view.getMonth();
+    const first = new Date(year, month, 1);
+    const startDow = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < startDow; i++) cells += '<span class="dda-cal-day is-empty"></span>';
+    for (let day = 1; day <= daysInMonth; day++) {
+      const iso = _fmtIsoDate(new Date(year, month, day));
+      const isSel = selected && selected.getFullYear() === year && selected.getMonth() === month && selected.getDate() === day;
+      const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
+      cells += `<button type="button" class="dda-cal-day${isSel ? ' is-selected' : ''}${isToday ? ' is-today' : ''}" data-date="${iso}">${day}</button>`;
+    }
+    pop.innerHTML = `
+      <div class="dda-cal-head">
+        <button type="button" class="dda-cal-nav" data-cal-nav="-1" aria-label="Previous month">‹</button>
+        <span class="dda-cal-title">${_DATE_MONTHS[month]} ${year}</span>
+        <button type="button" class="dda-cal-nav" data-cal-nav="1" aria-label="Next month">›</button>
+      </div>
+      <div class="dda-cal-dow">${_DATE_DOW.map((d) => `<span>${d}</span>`).join('')}</div>
+      <div class="dda-cal-grid">${cells}</div>
+      <div class="dda-cal-foot">
+        <button type="button" class="dda-cal-today" data-cal-today>Today</button>
+      </div>`;
+  }
+
+  function openCal() {
+    const cur = _parseIsoDate(input.value);
+    view = new Date((cur || new Date()).getFullYear(), (cur || new Date()).getMonth(), 1);
+    renderCal();
+    _closeAllDatePickers(wrap);
+    wrap.classList.add('is-open');
+  }
+
+  function setValue(iso) {
+    input.value = iso || '';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    syncTrigger();
+    wrap.classList.remove('is-open');
+  }
+
+  trigger.addEventListener('click', (e) => {
+    if (e.target.closest('.dda-date-clear')) {
+      e.preventDefault();
+      e.stopPropagation();
+      setValue('');
+      return;
+    }
+    if (wrap.classList.contains('is-open')) wrap.classList.remove('is-open');
+    else openCal();
+  });
+
+  pop.addEventListener('click', (e) => {
+    const nav = e.target.closest('[data-cal-nav]');
+    if (nav) {
+      view = new Date(view.getFullYear(), view.getMonth() + Number(nav.dataset.calNav), 1);
+      renderCal();
+      return;
+    }
+    if (e.target.closest('[data-cal-today]')) {
+      setValue(_fmtIsoDate(new Date()));
+      return;
+    }
+    const day = e.target.closest('[data-date]');
+    if (day) setValue(day.dataset.date);
+  });
+
+  input.addEventListener('change', syncTrigger);
+  syncTrigger();
+}
+
+function initDatePickers(root = document) {
+  root.querySelectorAll('input.dda-date-input[type="date"]').forEach(enhanceDateInput);
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dda-datewrap')) _closeAllDatePickers();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') _closeAllDatePickers();
+});
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => initDatePickers());
+} else {
+  initDatePickers();
+}
+window.initDatePickers = initDatePickers;
+window.enhanceDateInput = enhanceDateInput;

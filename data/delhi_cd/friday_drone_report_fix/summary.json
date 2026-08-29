@@ -1,0 +1,43 @@
+{
+  "date": "2026-07-31",
+  "task": "Fix poor DDA detection on drone report pairs (reports 54-59)",
+  "baseline": {
+    "file": "data/delhi_cd/friday_drone_report_fix/baseline.json",
+    "env": "v3_frozen thr=0.5 TTA=off SKIP_REG=true",
+    "mean_f1": 0.2231,
+    "mean_precision": 0.1851,
+    "mean_recall": 0.3752
+  },
+  "final": {
+    "file": "data/delhi_cd/friday_drone_report_fix/final_v7.json",
+    "env": "wed_retrain thr=0.446 TTA=full(auto-off on small drone) SKIP_REG=auto",
+    "mean_f1": 0.2356,
+    "mean_precision": 0.198,
+    "mean_recall": 0.375,
+    "delta_f1": 0.0125
+  },
+  "per_pair_final": {
+    "dda_before1_after": {"f1": 0.082, "pred_pct": 11.93, "gt_pct": 21.24, "ncc": 0.07},
+    "dda_before3_after3": {"f1": 0.333, "pred_pct": 12.29, "gt_pct": 3.32, "ncc": 0.61},
+    "dda_before4_after4": {"f1": 0.300, "pred_pct": 48.95, "gt_pct": 19.32, "ncc": 0.41},
+    "dda_before5_after5": {"f1": 0.318, "pred_pct": 19.46, "gt_pct": 22.32, "ncc": 0.46},
+    "dda_before6_after6": {"f1": 0.145, "pred_pct": 8.24, "gt_pct": 4.71, "ncc": 0.51}
+  },
+  "report_vs_gt_note": {
+    "before3_report_was": 18.89,
+    "before3_now_pred": 12.29,
+    "before6_report_was": 11.18,
+    "before6_now_pred": 8.24
+  },
+  "changes_shipped": [
+    ".env → wed_retrain @ 0.446, TTA=full, SKIP_REG=auto",
+    "NCC-gated GeoTIFF registration (skip if NCC≥0.85 or small-scene NCC≥0.25)",
+    "Small-scene TTA forced off (helps drone GT)",
+    "Mild overfire structural refine when NCC≥0.50 and change%>12%",
+    "strip_diffuse_clutter_from_mask + aggressive shadow option"
+  ],
+  "success_bar": "mean F1 +0.15 or ≥0.45 — NOT met (ceiling ~0.24 without orthomosaics)",
+  "blocker": "Un-orthorectified drone pairs (NCC 0.07–0.61). SIFT/ECC cannot fix local parallax. Retrain on drone packs forbidden (fri2 ablation).",
+  "overlays": "data/delhi_cd/friday_drone_report_fix/rerun_overlays/",
+  "before7": "no GT pack / library TIF not on disk"
+}
