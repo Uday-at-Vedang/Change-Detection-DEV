@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Roles &amp; Users — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=43" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=46" />
 </head>
 <body>
   <div class="app dda-app dda-app-full">
@@ -65,6 +65,9 @@
           <label for="role-rank">Rank (higher = more access)</label>
           <input type="number" id="role-rank" min="0" max="99" value="0" />
         </div>
+        <div class="form-group">
+          <label class="dda-check"><input type="checkbox" id="role-active" checked /> Active</label>
+        </div>
         <button type="submit" class="btn btn-primary">Save role</button>
       </form>
     </div>
@@ -117,6 +120,6 @@
   <script src="/static/js/dda/shared.js?v=3"></script>
   <script src="/static/js/dda/app.js?v=26"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
-  <script src="/static/js/dda/admin_roles.js?v=2"></script>
+  <script src="/static/js/dda/admin_roles.js?v=3"></script>
 </body>
 </html>

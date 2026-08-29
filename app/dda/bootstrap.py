@@ -6,6 +6,7 @@ from sqlalchemy import text as sa_text
 from ..database import engine
 from .config import IS_DDA_MODE, ensure_library_dirs, get_storage_root, is_hf_hosted
 from .admin_routes import router as admin_router
+from .dashboard_routes import router as dashboard_router
 from .jobs_routes import router as jobs_router
 from .library_routes import router as library_router
 from .local_routes import router as local_router
@@ -94,6 +95,7 @@ def init_dda_database():
                 "ALTER TABLE users ADD COLUMN role VARCHAR(32) DEFAULT 'analyst'",
                 "ALTER TABLE users ADD COLUMN role_id INTEGER DEFAULT NULL",
                 "ALTER TABLE detection_runs ADD COLUMN after_full_path VARCHAR(512) DEFAULT ''",
+                "ALTER TABLE dda_roles ADD COLUMN is_active BOOLEAN DEFAULT 1",
             ):
                 try:
                     conn.execute(sa_text(stmt))
@@ -178,4 +180,5 @@ def setup_dda(app: FastAPI) -> None:
     app.include_router(admin_router, prefix="/api/dda", tags=["dda-admin"])
     app.include_router(local_router, prefix="/api/dda", tags=["dda-local"])
     app.include_router(rbac_router, prefix="/api/dda", tags=["dda-rbac"])
-    logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local, rbac)")
+    app.include_router(dashboard_router, prefix="/api/dda", tags=["dda-dashboard"])
+    logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local, rbac, dashboard)")

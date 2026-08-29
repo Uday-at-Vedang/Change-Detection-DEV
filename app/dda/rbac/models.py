@@ -23,6 +23,10 @@ class Role(Base):
     # so the built-in permission gates in dda_auth.py always have a role to
     # resolve against.
     is_system = Column(Boolean, default=False)
+    # Roles are never deleted (see rbac/routes.py) — deactivate instead.
+    # Informational only today, same as Module.status — not yet enforced in
+    # dda_auth.py/permissions.py.
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
 
 

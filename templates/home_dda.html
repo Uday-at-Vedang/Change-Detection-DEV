@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Home — Vedangsoft Change Detection</title>
+  <title>Dashboard — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=44" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=45" />
 </head>
 <body>
   <div class="app dda-app">
@@ -16,48 +16,118 @@
 
       <section id="tab-home" class="dda-panel active" role="tabpanel">
         <div class="dda-hero">
-          <h1 id="dda-home-greeting">Welcome</h1>
-          <p class="sub">Manage the image library, run change detection between two dates, and review reports.</p>
-        </div>
-
-        <div class="dda-home-cards">
-          <a class="card dda-home-card" href="/library">
-            <span class="dda-home-card-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-            </span>
-            <h3>Image Library</h3>
-            <p class="sub dim">Browse the masters library, upload imagery (including whole folders), and organize zones and areas.</p>
-          </a>
-          <a class="card dda-home-card" href="/detect">
-            <span class="dda-home-card-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="11" height="11" rx="2"/><path d="M9 14v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-3"/></svg>
-            </span>
-            <h3>Change Detection</h3>
-            <p class="sub dim">Compare two dates of the same area and run automatic or manual detection.</p>
-          </a>
-          <a class="card dda-home-card" href="/reports">
-            <span class="dda-home-card-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6M9 9h2"/></svg>
-            </span>
-            <h3>Reports</h3>
-            <p class="sub dim">Review completed detections, export data, and download PDF reports.</p>
-          </a>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h3>Recent activity</h3>
-            <a class="btn btn-secondary btn-sm" href="/reports">View all reports</a>
+          <div class="dda-hero-row">
+            <div>
+              <h1 id="dda-home-greeting">Welcome</h1>
+              <p class="sub">System-wide overview of every change detection run, region, and report.</p>
+            </div>
+            <div class="dda-dash-hero-actions">
+              <span id="dda-dash-updated" class="dim dda-dash-updated"></span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-refresh">Refresh</button>
+            </div>
           </div>
-          <div id="dda-home-recent"><p class="dim">Loading recent activity…</p></div>
+        </div>
+
+        <div id="dda-dash-empty" class="card hidden">
+          <div class="card-header"><h3>No detections yet</h3></div>
+          <p class="sub dim">Run your first comparison to start populating the dashboard with detection statistics, region/village breakdowns, and reports.</p>
+          <a class="btn btn-primary" href="/detect">Run Change Detection</a>
+        </div>
+
+        <div id="dda-dash-content">
+          <!-- Change Detection Overview -->
+          <div class="card">
+            <div class="card-header"><h3>Change Detection Overview</h3></div>
+            <p class="sub dim">Click any stat to view detection reports.</p>
+            <div class="dda-dash-kpi-grid" id="dda-dash-kpis">
+              <p class="dim">Loading overview…</p>
+            </div>
+          </div>
+
+          <!-- Latest Result -->
+          <div class="card">
+            <div class="card-header"><h3>Latest Detection Result</h3></div>
+            <div id="dda-dash-latest"><p class="dim">Loading latest result…</p></div>
+          </div>
+
+          <!-- Detections by Role -->
+          <div class="card">
+            <div class="card-header"><h3>Detections by Role</h3></div>
+            <p class="sub dim">Detection activity grouped by the role of the user who ran it.</p>
+            <div id="dda-dash-roles"><p class="dim">Loading role breakdown…</p></div>
+          </div>
+
+          <!-- Region & Village-wise Analysis -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Region-wise Analysis</h3>
+              <span class="dim dda-filter-meta">Click a region to filter villages below</span>
+            </div>
+            <div id="dda-dash-regions"><p class="dim">Loading regions…</p></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Village-wise Analysis</h3>
+              <div class="dda-reports-toolbar">
+                <span id="dda-dash-village-filter-label" class="dim dda-filter-meta hidden"></span>
+                <button type="button" class="btn btn-ghost btn-sm hidden" id="btn-dash-village-clear">Show all regions</button>
+              </div>
+            </div>
+            <p class="sub dim">Click a village to view its detection history and compare runs.</p>
+            <div id="dda-dash-villages"><p class="dim">Loading villages…</p></div>
+          </div>
+
+          <!-- Change Comparison -->
+          <div class="card" id="dda-dash-location-card">
+            <div class="card-header"><h3>Change Comparison</h3></div>
+            <div id="dda-dash-location"><p class="dim">Select a village above to compare its latest and previous detection results.</p></div>
+          </div>
+
+          <!-- Charts -->
+          <div class="card">
+            <div class="card-header"><h3>Charts &amp; Graphs</h3></div>
+            <div class="dda-dash-chart-grid">
+              <div class="dda-dash-chart-box">
+                <h4>Detections by Region</h4>
+                <canvas id="dda-chart-regions" height="220"></canvas>
+              </div>
+              <div class="dda-dash-chart-box">
+                <h4>Detections by Role</h4>
+                <canvas id="dda-chart-roles" height="220"></canvas>
+              </div>
+              <div class="dda-dash-chart-box">
+                <h4>Detections by Village / Location</h4>
+                <canvas id="dda-chart-villages" height="220"></canvas>
+              </div>
+              <div class="dda-dash-chart-box">
+                <h4>Detection Trend (last 6 months)</h4>
+                <canvas id="dda-chart-trend" height="220"></canvas>
+              </div>
+              <div class="dda-dash-chart-box">
+                <h4>Detected vs Unclassified Changes</h4>
+                <canvas id="dda-chart-status" height="220"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reports on Dashboard -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Recent Reports</h3>
+              <a class="btn btn-secondary btn-sm" href="/reports">View all reports</a>
+            </div>
+            <div id="dda-dash-reports"><p class="dim">Loading recent reports…</p></div>
+          </div>
         </div>
       </section>
     </div>
   </div>
 
+  <script src="https://unpkg.com/chart.js@4/dist/chart.umd.js" crossorigin=""></script>
   <script src="/static/js/dda/shared.js?v=3"></script>
   <script src="/static/js/dda/app.js?v=27"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
-  <script src="/static/js/dda/home.js?v=2"></script>
+  <script src="/static/js/dda/home.js?v=5"></script>
 </body>
 </html>

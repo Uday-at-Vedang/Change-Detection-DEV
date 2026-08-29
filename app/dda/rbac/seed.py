@@ -23,7 +23,7 @@ DEFAULT_ROLES = [
 
 # (key, name, description)
 DEFAULT_MODULES = [
-    ("home", "Home", "Dashboard landing page"),
+    ("home", "Dashboard", "System dashboard — detection overview, regions, reports"),
     ("library", "Image Library", "Browse and upload satellite / drone imagery"),
     ("detect", "Change Detection", "Compare imagery and run detections"),
     ("reports", "Reports", "Detection history, exports, and PDF reports"),
@@ -36,7 +36,7 @@ DEFAULT_MODULES = [
 # module (url "#", never navigated to directly) so it's always structurally
 # present; the navbar only shows the group once it has a visible child.
 DEFAULT_MENU_ITEMS = [
-    ("Home", "/", "home", 0, None),
+    ("Dashboard", "/", "home", 0, None),
     ("Image Library", "/library", "library", 1, None),
     ("Change Detection", "/detect", "detect", 2, None),
     ("Reports", "/reports", "reports", 3, None),
@@ -106,6 +106,10 @@ def seed_rbac(db: Session) -> None:
             )
             db.add(existing_item)
             db.flush()
+        elif existing_item.label == "Home" and label == "Dashboard":
+            # One-time rename for databases seeded before Home became the
+            # full dashboard (mirrors the Admin -> Roles & Users fixup below).
+            existing_item.label = label
         items_by_label[label] = existing_item
 
     for label, url, module_key, sort_order, parent_label in DEFAULT_MENU_ITEMS:

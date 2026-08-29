@@ -30,15 +30,17 @@ function renderRoleList() {
     return;
   }
   el.innerHTML = allRoles.map((r) => `
-    <div class="dda-role-card" data-role-id="${r.id}">
+    <div class="dda-role-card${r.isActive === false ? ' is-inactive' : ''}" data-role-id="${r.id}">
       <div class="dda-role-card-info">
-        <div class="dda-role-card-name">${escapeHtml(r.name)}${r.isSystem ? '<span class="dda-badge-system">Built-in</span>' : ''}</div>
+        <div class="dda-role-card-name">
+          ${escapeHtml(r.name)}${r.isSystem ? '<span class="dda-badge-system">Built-in</span>' : ''}
+          <span class="dda-status-badge ${r.isActive === false ? 'is-inactive' : 'is-active'}">${r.isActive === false ? 'Inactive' : 'Active'}</span>
+        </div>
         <div class="dda-role-card-desc">${escapeHtml(r.description || '')}</div>
       </div>
       <div class="dda-role-card-actions">
         <button type="button" class="btn btn-secondary btn-sm" data-perm-role="${r.id}">Permission Matrix</button>
         <button type="button" class="btn btn-secondary btn-sm" data-edit-role="${r.id}">Edit</button>
-        <button type="button" class="btn btn-danger btn-sm" data-del-role="${r.id}"${r.isSystem ? ' disabled title="Built-in roles cannot be deleted"' : ''}>Del</button>
       </div>
     </div>`).join('');
 
@@ -47,9 +49,6 @@ function renderRoleList() {
   });
   el.querySelectorAll('[data-edit-role]').forEach((btn) => {
     btn.addEventListener('click', () => openRoleModal(Number(btn.dataset.editRole)));
-  });
-  el.querySelectorAll('[data-del-role]').forEach((btn) => {
-    btn.addEventListener('click', () => deleteRole(Number(btn.dataset.delRole)));
   });
 }
 
@@ -61,6 +60,7 @@ function openRoleModal(roleId) {
   document.getElementById('role-name').value = role ? role.name : '';
   document.getElementById('role-description').value = role ? role.description || '' : '';
   document.getElementById('role-rank').value = role ? role.rank : 0;
+  document.getElementById('role-active').checked = role ? role.isActive !== false : true;
   title.textContent = role ? 'Edit Role' : 'New Role';
   modal.classList.remove('hidden');
 }
@@ -79,6 +79,7 @@ document.getElementById('role-form')?.addEventListener('submit', async (e) => {
     name: document.getElementById('role-name').value.trim(),
     description: document.getElementById('role-description').value.trim(),
     rank: Number(document.getElementById('role-rank').value) || 0,
+    isActive: document.getElementById('role-active').checked,
   };
   try {
     if (id) {
@@ -93,17 +94,6 @@ document.getElementById('role-form')?.addEventListener('submit', async (e) => {
     showDdaError(err.message);
   }
 });
-
-async function deleteRole(roleId) {
-  if (!confirm('Delete this role? Users assigned to it must be reassigned first.')) return;
-  try {
-    await ddaApi('DELETE', `/api/dda/rbac/roles/${roleId}`);
-    showDdaSuccess('Role deleted.');
-    await loadRoles();
-  } catch (err) {
-    showDdaError(err.message);
-  }
-}
 
 // ---------------------------------------------------- Permission matrix ---
 

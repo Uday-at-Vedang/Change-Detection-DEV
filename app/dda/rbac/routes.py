@@ -23,6 +23,7 @@ def _role_dict(role: Role) -> dict:
     return {
         "id": role.id, "name": role.name, "description": role.description,
         "rank": role.rank, "isSystem": role.is_system,
+        "isActive": role.is_active if role.is_active is not None else True,
     }
 
 
@@ -74,6 +75,7 @@ class RoleBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     description: str = ""
     rank: int = 0
+    isActive: bool = True
 
 
 @router.get("/rbac/roles")
@@ -94,7 +96,7 @@ def create_role(
     name = body.name.strip().lower()
     if db.query(Role).filter(Role.name == name).first():
         raise HTTPException(status_code=409, detail="A role with this name already exists.")
-    role = Role(name=name, description=body.description, rank=body.rank, is_system=False)
+    role = Role(name=name, description=body.description, rank=body.rank, is_system=False, is_active=body.isActive)
     db.add(role)
     db.commit()
     db.refresh(role)
@@ -113,29 +115,11 @@ def update_role(
         raise HTTPException(status_code=404, detail="Role not found.")
     role.description = body.description
     role.rank = body.rank
+    role.is_active = body.isActive
     if not role.is_system:
         role.name = body.name.strip().lower()
     db.commit()
     return _role_dict(role)
-
-
-@router.delete("/rbac/roles/{role_id}")
-def delete_role(
-    role_id: int,
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_module_permission("admin", "delete")),
-):
-    role = db.query(Role).filter(Role.id == role_id).first()
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found.")
-    if role.is_system:
-        raise HTTPException(status_code=400, detail="Built-in roles cannot be deleted.")
-    if db.query(User).filter(User.role_id == role_id).first():
-        raise HTTPException(status_code=400, detail="Cannot delete a role that is still assigned to users.")
-    db.query(RolePermission).filter(RolePermission.role_id == role_id).delete()
-    db.delete(role)
-    db.commit()
-    return {"ok": True}
 
 
 # ------------------------------------------------- Role permission matrix --

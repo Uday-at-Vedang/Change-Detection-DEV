@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models import DetectionRun
@@ -125,3 +126,22 @@ def review_summary(regions: List[dict]) -> Dict[str, int]:
         st = r.get("reviewStatus") or "pending"
         summary[st] = summary.get(st, 0) + 1
     return summary
+
+
+def bulk_classification_counts(db: Session) -> Dict[int, Dict[str, int]]:
+    """Per-run counts of non-pending RegionReview statuses, across every run.
+
+    One grouped query instead of loading regions_json per run — a region with
+    no RegionReview row is implicitly "pending" (see merge_reviews above), so
+    callers derive unclassified as ``regions_count - sum(these counts)``.
+    """
+    rows = (
+        db.query(RegionReview.run_id, RegionReview.status, func.count(RegionReview.id))
+        .filter(RegionReview.status != "pending")
+        .group_by(RegionReview.run_id, RegionReview.status)
+        .all()
+    )
+    out: Dict[int, Dict[str, int]] = {}
+    for run_id, status, cnt in rows:
+        out.setdefault(run_id, {})[status] = cnt
+    return out
