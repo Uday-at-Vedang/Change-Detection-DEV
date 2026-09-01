@@ -1500,6 +1500,7 @@ time.dda-date {
 .dda-datewrap {
   position: relative;
   min-width: 11.5rem;
+  overflow: visible;
 }
 .dda-date-native {
   position: absolute;
@@ -1541,11 +1542,9 @@ time.dda-date {
 .dda-date-clear:hover { color: var(--danger); }
 .dda-cal {
   display: none;
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + 6px);
-  left: 0;
-  width: 272px;
+  position: fixed;
+  z-index: 400;
+  width: 280px;
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1557,9 +1556,29 @@ time.dda-date {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.35rem;
   margin-bottom: 0.55rem;
 }
 .dda-cal-title { font-weight: 650; font-size: 0.92rem; }
+.dda-cal-period {
+  display: flex;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
+}
+.dda-cal-month, .dda-cal-year {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
 .dda-cal-nav {
   width: 32px;
   height: 32px;

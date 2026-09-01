@@ -271,13 +271,21 @@ function setupRoiDraw() {
 }
 
 function populateSelects(items) {
+  const sorted = [...(items || [])].sort((a, b) => {
+    const da = a.captureDate ? String(a.captureDate).slice(0, 10) : '';
+    const db = b.captureDate ? String(b.captureDate).slice(0, 10) : '';
+    if (da && db && da !== db) return da.localeCompare(db);
+    if (da && !db) return -1;
+    if (!da && db) return 1;
+    return String(a.filename || a.path || '').localeCompare(String(b.filename || b.path || ''));
+  });
   ['select-t1', 'select-t2'].forEach((id) => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const current = sel.value;
     const label = id === 'select-t1' ? '— Choose old image —' : '— Choose new image —';
     sel.innerHTML = `<option value="">${label}</option>` +
-      items.map((img) => {
+      sorted.map((img) => {
         const date = img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : '';
         return `<option value="${encodePath(img.path)}">${escapeHtml(date + (img.breadcrumb || img.nodePath || img.filename))}</option>`;
       }).join('');

@@ -399,28 +399,12 @@ function renderDdaRegionPage() {
   if (typeof applyPermissionGating === 'function') applyPermissionGating(window.ddaPermissions || {}, tbody);
 
   if (!pag) return;
-  pag.innerHTML = '';
-  if (totalPages <= 1) return;
-
-  const prev = document.createElement('button');
-  prev.textContent = '‹';
-  prev.disabled = ddaRegionPage === 0;
-  prev.addEventListener('click', () => { ddaRegionPage--; renderDdaRegionPage(); });
-  pag.appendChild(prev);
-
-  for (let i = 0; i < totalPages; i++) {
-    const btn = document.createElement('button');
-    btn.textContent = i + 1;
-    if (i === ddaRegionPage) btn.classList.add('active');
-    btn.addEventListener('click', () => { ddaRegionPage = i; renderDdaRegionPage(); });
-    pag.appendChild(btn);
+  if (typeof renderPaginationControls === 'function') {
+    renderPaginationControls(pag, ddaRegionPage, totalPages, (p) => {
+      ddaRegionPage = p;
+      renderDdaRegionPage();
+    });
   }
-
-  const next = document.createElement('button');
-  next.textContent = '›';
-  next.disabled = ddaRegionPage >= totalPages - 1;
-  next.addEventListener('click', () => { ddaRegionPage++; renderDdaRegionPage(); });
-  pag.appendChild(next);
 }
 
 function setupDdaReviewButtons(tbody, regions) {

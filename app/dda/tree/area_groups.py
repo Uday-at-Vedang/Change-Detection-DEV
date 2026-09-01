@@ -96,13 +96,34 @@ def _year_from_path(img: dict) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def sort_datetime(img: dict) -> datetime:
-    raw = img.get("captureDate")
-    if raw:
-        try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            pass
+def parse_datetime(raw) -> Optional[datetime]:
+    """Parse capture/upload timestamps from ORM, MySQL, or ISO strings."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw.replace(tzinfo=None) if raw.tzinfo else raw
+    text = str(raw).strip()
+    if not text:
+        return None
+    text = text.replace("Z", "+00:00")
+    # MySQL DATETIME string is "YYYY-MM-DD HH:MM:SS" (no T).
+    if "T" not in text and re.match(r"^\d{4}-\d{2}-\d{2} ", text):
+        text = text.replace(" ", "T", 1)
+    # TIFF DateTime tags are "YYYY:MM:DD HH:MM:SS".
+    if re.match(r"^\d{4}:\d{2}:\d{2}", text):
+        text = text.replace(":", "-", 2).replace(" ", "T", 1)
+    try:
+        dt = datetime.fromisoformat(text)
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+    except ValueError:
+        return None
+
+
+def infer_capture_datetime(img: dict) -> Optional[datetime]:
+    """Best capture time from DB value, then filename / folder year."""
+    parsed = parse_datetime(img.get("captureDate"))
+    if parsed:
+        return parsed
     text = f"{img.get('filename') or ''} {img.get('path') or ''}"
     m = ISO_DATE_RE.search(text)
     if m:
@@ -113,13 +134,11 @@ def sort_datetime(img: dict) -> datetime:
     year = _year_from_path(img)
     if year:
         return datetime(year, 1, 1)
-    uploaded = img.get("uploadedOn")
-    if uploaded:
-        try:
-            return datetime.fromisoformat(str(uploaded).replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            pass
-    return datetime.min
+    return parse_datetime(img.get("uploadedOn"))
+
+
+def sort_datetime(img: dict) -> datetime:
+    return infer_capture_datetime(img) or datetime.min
 
 
 def _name_rank(filename: str) -> int:
@@ -159,25 +178,59 @@ class _UnionFind:
             self.parent[rb] = ra
 
 
+_HARD_KEY_PREFIXES = ("seq:", "grid:", "sheet:")
+
+
+def _hard_keys(keys: set[str]) -> set[str]:
+    return {k for k in keys if k.startswith(_HARD_KEY_PREFIXES)}
+
+
+def distinct_places(keys_a: set[str], keys_b: set[str]) -> bool:
+    """True when both images are already identified as different sites.
+
+    Bounds overlap is then ignored so a large ORI cannot swallow neighbouring
+    pairs (union-find is transitive). Images with no hard key can still join
+    via overlap or a shared folder.
+    """
+    ha, hb = _hard_keys(keys_a), _hard_keys(keys_b)
+    return bool(ha and hb and ha.isdisjoint(hb))
+
+
 def _group_label(images: list[dict], keys: set[str]) -> str:
+    base = ""
     for key in sorted(keys):
         if key.startswith("grid:"):
-            return f"Grid {key.split(':', 1)[1]}"
+            base = f"Grid {key.split(':', 1)[1]}"
+            break
         if key.startswith("sheet:"):
-            return key.split(":", 1)[1].upper()
+            base = key.split(":", 1)[1].upper()
+            break
         if key.startswith("seq:"):
-            return f"Pair {key.split(':', 1)[1]}"
+            base = f"Pair {key.split(':', 1)[1]}"
+            break
         if key == "stem:test":
-            return "TEST pair"
-    paths = [img.get("nodePath") or "" for img in images]
-    if paths and all(paths):
-        common = paths[0]
-        for p in paths[1:]:
-            while common and not p.startswith(common):
-                common = common.rsplit("/", 1)[0] if "/" in common else ""
-        if common:
-            return common
-    return images[0].get("filename") or "Same area"
+            base = "TEST pair"
+            break
+    if not base:
+        paths = [img.get("nodePath") or "" for img in images]
+        if paths and all(paths):
+            common = paths[0]
+            for p in paths[1:]:
+                while common and not p.startswith(common):
+                    common = common.rsplit("/", 1)[0] if "/" in common else ""
+            base = common
+    if not base:
+        base = images[0].get("filename") or "Same area"
+    names = [(img.get("filename") or img.get("path") or "").strip() for img in images]
+    names = [n for n in names if n]
+    if len(images) == 2 and names:
+        detail = f"{names[0]} -> {names[-1]}"
+        if base in names or base == (images[0].get("nodePath") or ""):
+            return detail
+        return f"{base}: {detail}"
+    if len(images) > 2:
+        return f"{base} · {len(images)} images"
+    return base
 
 
 def _match_reason(images: list[dict]) -> str:
@@ -198,6 +251,8 @@ def build_area_groups(images: list[dict]) -> dict:
         for j in range(i + 1, n):
             if keys[i] and keys[j] and (keys[i] & keys[j]):
                 uf.union(i, j)
+                continue
+            if distinct_places(keys[i], keys[j]):
                 continue
             if bounds_same_area(items[i].get("bounds"), items[j].get("bounds")):
                 uf.union(i, j)

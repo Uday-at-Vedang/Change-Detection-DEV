@@ -14,6 +14,7 @@ from .audit_service import log_action
 from .models import ImageLibrary, TreeNode
 from .path_service import ensure_node_directory, storage_root
 from .path_slugs import RESERVED
+from .query_compat import active_node_clause
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def _find_node_by_physical_path(db: Session, physical_path: str) -> Optional[Tre
         return None
     return (
         db.query(TreeNode)
-        .filter(TreeNode.physical_path == rel, TreeNode.is_active == True)  # noqa: E712
+        .filter(TreeNode.physical_path == rel, active_node_clause(TreeNode.is_active))
         .first()
     )
 
@@ -115,7 +116,7 @@ def ensure_node_from_disk(db: Session, physical_path: str, *, created_by: str = 
         .filter(
             TreeNode.parent_id == parent_id,
             TreeNode.slug == folder_slug,
-            TreeNode.is_active == True,  # noqa: E712
+            active_node_clause(TreeNode.is_active),
         )
         .first()
     )
@@ -151,6 +152,17 @@ def ensure_node_from_disk(db: Session, physical_path: str, *, created_by: str = 
     return node
 
 
+def _infer_capture_date(file_path: Path, node: TreeNode):
+    from .area_groups import infer_capture_datetime
+    return infer_capture_datetime({
+        "filename": file_path.name,
+        "path": str(file_path.as_posix()),
+        "nodePath": node.node_path or "",
+        "captureDate": None,
+        "uploadedOn": None,
+    })
+
+
 def _image_type_for(file_path: Path) -> str:
     ext = file_path.suffix.lower()
     if ext in (".tif", ".tiff"):
@@ -171,14 +183,30 @@ def _index_image_file(
     ``stats['imagesSkipped']`` so one bad file cannot fail the whole rescan.
     """
     existing = db.query(ImageLibrary).filter(ImageLibrary.file_path == rel_file).first()
+    path_fixed = False
+    if not existing:
+        alt = rel_file.replace("/", "\\")
+        if alt != rel_file:
+            existing = db.query(ImageLibrary).filter(ImageLibrary.file_path == alt).first()
+            if existing:
+                existing.file_path = rel_file
+                path_fixed = True
     stat = file_path.stat()
     skip = _inspect_skip_set()
     skip_meta = skip.get(rel_file)
     if skip_meta is not None and int(skip_meta.get("size") or 0) == stat.st_size:
+        if path_fixed:
+            db.commit()
         stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
         return False
     if existing and existing.file_size_bytes == stat.st_size and (existing.width or 0) > 0:
-        if existing.node_id != node.id:
+        changed = path_fixed or existing.node_id != node.id
+        if existing.capture_date is None:
+            inferred = _infer_capture_date(file_path, node)
+            if inferred:
+                existing.capture_date = inferred
+                changed = True
+        if changed:
             existing.node_id = node.id
             db.commit()
             stats["imagesUpdated"] += 1
@@ -216,8 +244,18 @@ def _index_image_file(
             existing.has_georef = meta.has_georef
             existing.bounds_json = bounds_to_json(meta.bounds_wgs84) or existing.bounds_json
             existing.format = meta.format
+            if existing.capture_date is None:
+                inferred = _infer_capture_date(file_path, node)
+                if inferred:
+                    existing.capture_date = inferred
             db.commit()
             stats["imagesUpdated"] += 1
+        elif existing.capture_date is None:
+            inferred = _infer_capture_date(file_path, node)
+            if inferred:
+                existing.capture_date = inferred
+                db.commit()
+                stats["imagesUpdated"] += 1
         return False
 
     img = ImageLibrary(
@@ -225,6 +263,7 @@ def _index_image_file(
         image_name=file_path.name,
         image_type=_image_type_for(file_path),
         file_path=rel_file,
+        capture_date=_infer_capture_date(file_path, node),
         uploaded_by="filesystem-sync",
         file_size_bytes=stat.st_size,
         thumb_cache_key=hashlib.sha256(rel_file.encode()).hexdigest()[:32],
