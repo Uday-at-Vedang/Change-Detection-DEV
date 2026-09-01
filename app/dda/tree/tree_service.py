@@ -11,17 +11,18 @@ from .audit_service import log_action
 from .models import ImageLibrary, TreeNode
 from .path_service import delete_directory, ensure_node_directory, move_directory
 from .path_slugs import unique_slug
+from .query_compat import active_node_clause
 
 logger = logging.getLogger(__name__)
 
 
 def _sibling_slugs(db: Session, parent_id: Optional[int]) -> set:
-    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, TreeNode.is_active == True)  # noqa: E712
+    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, active_node_clause(TreeNode.is_active))  # noqa: E712
     return {n.slug for n in q.all() if n.slug}
 
 
 def _sibling_names(db: Session, parent_id: Optional[int], exclude_id: Optional[int] = None) -> set:
-    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, TreeNode.is_active == True)  # noqa: E712
+    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, active_node_clause(TreeNode.is_active))  # noqa: E712
     if exclude_id:
         q = q.filter(TreeNode.id != exclude_id)
     return {n.node_name.strip().lower() for n in q.all()}
@@ -46,7 +47,7 @@ def _node_to_dict(node: TreeNode, *, image_count: int = 0, children: Optional[li
 def build_tree(db: Session, parent_id: Optional[int] = None) -> List[dict]:
     nodes = (
         db.query(TreeNode)
-        .filter(TreeNode.parent_id == parent_id, TreeNode.is_active == True)  # noqa: E712
+        .filter(TreeNode.parent_id == parent_id, active_node_clause(TreeNode.is_active))  # noqa: E712
         .order_by(TreeNode.node_name)
         .all()
     )
@@ -60,7 +61,7 @@ def build_tree(db: Session, parent_id: Optional[int] = None) -> List[dict]:
 
 
 def get_node_or_404(db: Session, node_id: int) -> TreeNode:
-    node = db.query(TreeNode).filter(TreeNode.id == node_id, TreeNode.is_active == True).first()  # noqa: E712
+    node = db.query(TreeNode).filter(TreeNode.id == node_id, active_node_clause(TreeNode.is_active)).first()  # noqa: E712
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     return node
@@ -118,7 +119,7 @@ def find_child_node(db: Session, parent_id: Optional[int], node_name: str) -> Op
     want = (node_name or "").strip().lower()
     if not want:
         return None
-    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, TreeNode.is_active == True)  # noqa: E712
+    q = db.query(TreeNode).filter(TreeNode.parent_id == parent_id, active_node_clause(TreeNode.is_active))  # noqa: E712
     for node in q.all():
         if (node.node_name or "").strip().lower() == want:
             return node
@@ -199,7 +200,7 @@ def rename_node(
 
 
 def _update_descendant_paths(db: Session, parent: TreeNode) -> None:
-    children = db.query(TreeNode).filter(TreeNode.parent_id == parent.id, TreeNode.is_active == True).all()  # noqa: E712
+    children = db.query(TreeNode).filter(TreeNode.parent_id == parent.id, active_node_clause(TreeNode.is_active)).all()  # noqa: E712
     for child in children:
         child.node_path = f"{parent.node_path}/{child.node_name}"
         child.physical_path = f"{parent.physical_path}/{child.slug}".strip("/")
@@ -257,7 +258,7 @@ def move_node(
 
 def _descendant_ids(db: Session, node_id: int) -> List[int]:
     ids = [node_id]
-    children = db.query(TreeNode.id).filter(TreeNode.parent_id == node_id, TreeNode.is_active == True).all()  # noqa: E712
+    children = db.query(TreeNode.id).filter(TreeNode.parent_id == node_id, active_node_clause(TreeNode.is_active)).all()  # noqa: E712
     for (cid,) in children:
         ids.extend(_descendant_ids(db, cid))
     return ids

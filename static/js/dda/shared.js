@@ -140,36 +140,89 @@ function formatDateIst(iso, { withTime = true } = {}) {
 window.formatDateIst = formatDateIst;
 window.reportDayKey = reportDayKey;
 
-/** Shared prev/numbered/next pagination control — same markup/behavior as
- * the region-review table's pagination (result.js), reused by any list/grid
- * that needs paging instead of an internal scrollbar. */
+/** Shared compact pagination: ‹ 1 … 12 13 14 … 581 › plus optional jump. */
+function _paginationWindow(page, totalPages, radius) {
+  const r = radius == null ? 2 : radius;
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i);
+  }
+  const want = new Set([0, totalPages - 1]);
+  for (let i = page - r; i <= page + r; i++) {
+    if (i >= 0 && i < totalPages) want.add(i);
+  }
+  const sorted = [...want].sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((idx, i) => {
+    if (i && idx - sorted[i - 1] > 1) out.push('ellipsis');
+    out.push(idx);
+  });
+  return out;
+}
+
 function renderPaginationControls(container, page, totalPages, onChange) {
   if (!container) return;
   container.innerHTML = '';
   if (totalPages <= 1) return;
 
-  const prev = document.createElement('button');
-  prev.type = 'button';
-  prev.textContent = '‹';
-  prev.disabled = page === 0;
-  prev.addEventListener('click', () => onChange(page - 1));
-  container.appendChild(prev);
-
-  for (let i = 0; i < totalPages; i++) {
+  const addBtn = (label, target, opts) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = String(i + 1);
-    if (i === page) btn.classList.add('active');
-    btn.addEventListener('click', () => onChange(i));
+    btn.textContent = label;
+    if (opts?.active) btn.classList.add('active');
+    if (opts?.disabled) btn.disabled = true;
+    if (opts?.aria) btn.setAttribute('aria-label', opts.aria);
+    if (!opts?.disabled && target != null) {
+      btn.addEventListener('click', () => onChange(target));
+    }
     container.appendChild(btn);
-  }
+    return btn;
+  };
 
-  const next = document.createElement('button');
-  next.type = 'button';
-  next.textContent = '›';
-  next.disabled = page >= totalPages - 1;
-  next.addEventListener('click', () => onChange(page + 1));
-  container.appendChild(next);
+  addBtn('‹', page - 1, { disabled: page === 0, aria: 'Previous page' });
+  _paginationWindow(page, totalPages).forEach((item) => {
+    if (item === 'ellipsis') {
+      const span = document.createElement('span');
+      span.className = 'page-ellipsis';
+      span.textContent = '…';
+      span.setAttribute('aria-hidden', 'true');
+      container.appendChild(span);
+      return;
+    }
+    addBtn(String(item + 1), item, { active: item === page });
+  });
+  addBtn('›', page + 1, { disabled: page >= totalPages - 1, aria: 'Next page' });
+
+  const info = document.createElement('span');
+  info.className = 'page-info';
+  info.textContent = `Page ${page + 1} of ${totalPages}`;
+  container.appendChild(info);
+
+  if (totalPages > 7) {
+    const jump = document.createElement('label');
+    jump.className = 'page-jump';
+    jump.textContent = 'Go to';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.max = String(totalPages);
+    input.value = String(page + 1);
+    input.setAttribute('aria-label', 'Go to page');
+    const go = () => {
+      const n = parseInt(input.value, 10);
+      if (!Number.isFinite(n)) return;
+      const next = Math.max(1, Math.min(totalPages, n)) - 1;
+      if (next !== page) onChange(next);
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        go();
+      }
+    });
+    input.addEventListener('change', go);
+    jump.appendChild(input);
+    container.appendChild(jump);
+  }
 }
 
 const _DATE_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -238,6 +291,22 @@ function enhanceDateInput(input) {
       ${input.value ? '<span class="dda-date-clear" title="Clear" aria-label="Clear date">×</span>' : ''}`;
   }
 
+  function positionCal() {
+    const r = trigger.getBoundingClientRect();
+    const width = 280;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    let top = r.bottom + 6;
+    pop.style.position = 'fixed';
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+    pop.style.width = `${width}px`;
+    const pr = pop.getBoundingClientRect();
+    if (pr.bottom > window.innerHeight - 8) {
+      top = Math.max(8, r.top - pr.height - 6);
+      pop.style.top = `${top}px`;
+    }
+  }
+
   function renderCal() {
     const selected = _parseIsoDate(input.value);
     const today = new Date();
@@ -254,10 +323,22 @@ function enhanceDateInput(input) {
       const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
       cells += `<button type="button" class="dda-cal-day${isSel ? ' is-selected' : ''}${isToday ? ' is-today' : ''}" data-date="${iso}">${day}</button>`;
     }
+    const yearStart = Math.min(1990, today.getFullYear() - 40);
+    const yearEnd = today.getFullYear() + 2;
+    let years = '';
+    for (let y = yearEnd; y >= yearStart; y--) {
+      years += `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`;
+    }
+    const months = _DATE_MONTHS.map((name, i) =>
+      `<option value="${i}"${i === month ? ' selected' : ''}>${name}</option>`
+    ).join('');
     pop.innerHTML = `
       <div class="dda-cal-head">
         <button type="button" class="dda-cal-nav" data-cal-nav="-1" aria-label="Previous month">‹</button>
-        <span class="dda-cal-title">${_DATE_MONTHS[month]} ${year}</span>
+        <div class="dda-cal-period">
+          <select class="dda-cal-month" data-cal-month aria-label="Month">${months}</select>
+          <select class="dda-cal-year" data-cal-year aria-label="Year">${years}</select>
+        </div>
         <button type="button" class="dda-cal-nav" data-cal-nav="1" aria-label="Next month">›</button>
       </div>
       <div class="dda-cal-dow">${_DATE_DOW.map((d) => `<span>${d}</span>`).join('')}</div>
@@ -265,14 +346,15 @@ function enhanceDateInput(input) {
       <div class="dda-cal-foot">
         <button type="button" class="dda-cal-today" data-cal-today>Today</button>
       </div>`;
+    positionCal();
   }
 
   function openCal() {
     const cur = _parseIsoDate(input.value);
     view = new Date((cur || new Date()).getFullYear(), (cur || new Date()).getMonth(), 1);
-    renderCal();
     _closeAllDatePickers(wrap);
     wrap.classList.add('is-open');
+    renderCal();
   }
 
   function setValue(iso) {
@@ -283,10 +365,15 @@ function enhanceDateInput(input) {
     wrap.classList.remove('is-open');
   }
 
+  function shiftMonth(delta) {
+    view = new Date(view.getFullYear(), view.getMonth() + delta, 1);
+    renderCal();
+  }
+
   trigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (e.target.closest('.dda-date-clear')) {
-      e.preventDefault();
-      e.stopPropagation();
       setValue('');
       return;
     }
@@ -294,11 +381,16 @@ function enhanceDateInput(input) {
     else openCal();
   });
 
+  wrap.addEventListener('pointerdown', (e) => e.stopPropagation());
+  wrap.addEventListener('click', (e) => e.stopPropagation());
+
+  pop.addEventListener('pointerdown', (e) => e.stopPropagation());
   pop.addEventListener('click', (e) => {
+    e.stopPropagation();
     const nav = e.target.closest('[data-cal-nav]');
     if (nav) {
-      view = new Date(view.getFullYear(), view.getMonth() + Number(nav.dataset.calNav), 1);
-      renderCal();
+      e.preventDefault();
+      shiftMonth(Number(nav.dataset.calNav));
       return;
     }
     if (e.target.closest('[data-cal-today]')) {
@@ -307,6 +399,14 @@ function enhanceDateInput(input) {
     }
     const day = e.target.closest('[data-date]');
     if (day) setValue(day.dataset.date);
+  });
+  pop.addEventListener('change', (e) => {
+    const monthSel = pop.querySelector('[data-cal-month]');
+    const yearSel = pop.querySelector('[data-cal-year]');
+    if (e.target === monthSel || e.target === yearSel) {
+      view = new Date(Number(yearSel.value), Number(monthSel.value), 1);
+      renderCal();
+    }
   });
 
   input.addEventListener('change', syncTrigger);
@@ -317,11 +417,22 @@ function initDatePickers(root = document) {
   root.querySelectorAll('input.dda-date-input[type="date"]').forEach(enhanceDateInput);
 }
 
-document.addEventListener('click', (e) => {
+document.addEventListener('pointerdown', (e) => {
   if (!e.target.closest('.dda-datewrap')) _closeAllDatePickers();
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') _closeAllDatePickers();
+});
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.dda-datewrap.is-open .dda-cal').forEach((pop) => {
+    const wrap = pop.closest('.dda-datewrap');
+    const trigger = wrap?.querySelector('.dda-date-trigger');
+    if (!trigger) return;
+    const r = trigger.getBoundingClientRect();
+    const width = 280;
+    pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`;
+    pop.style.top = `${r.bottom + 6}px`;
+  });
 });
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => initDatePickers());

@@ -10,6 +10,7 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import HTTPException, UploadFile
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..config import ALLOWED_EXTENSIONS, LOCAL_THUMB_CACHE, max_upload_bytes_for_extension
@@ -18,6 +19,7 @@ from ..upload_io import stream_upload_to_file
 from .audit_service import log_action
 from .models import ImageLibrary, TreeNode
 from .path_service import images_dir, resolve_file, storage_root
+from .query_compat import active_node_clause
 from .tree_service import get_node_or_404
 
 logger = logging.getLogger(__name__)
@@ -72,8 +74,23 @@ def _delete_related_sidecars(path: Path) -> None:
             logger.warning("Could not delete sidecar %s: %s", sidecar, exc)
 
 
+def _as_iso(value) -> Optional[str]:
+    """Serialize SQLite/MySQL datetimes the same way (always include a T)."""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    text = str(value).strip()
+    if not text:
+        return None
+    if "T" not in text and len(text) >= 11 and text[10] == " ":
+        return text.replace(" ", "T", 1)
+    return text
+
+
 def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
-    encoded = quote(img.file_path, safe="/")
+    rel = (img.file_path or "").replace("\\", "/")
+    encoded = quote(rel, safe="/")
     bounds = None
     if img.bounds_json:
         try:
@@ -83,20 +100,20 @@ def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
     return {
         "id": img.id,
         "nodeId": img.node_id,
-        "path": img.file_path,
+        "path": rel,
         "filename": img.image_name,
         "imageName": img.image_name,
         "imageType": img.image_type,
         "nodePath": node.node_path if node else "",
         "breadcrumb": f"{node.node_path}/{img.image_name}" if node else img.image_name,
         "fileSizeBytes": img.file_size_bytes,
-        "captureDate": img.capture_date.isoformat() if img.capture_date else None,
+        "captureDate": _as_iso(img.capture_date),
         "uploadedBy": img.uploaded_by,
-        "uploadedOn": img.uploaded_on.isoformat() if img.uploaded_on else None,
+        "uploadedOn": _as_iso(img.uploaded_on),
         "thumbUrl": f"/api/dda/local/thumb?path={encoded}",
         "previewUrl": f"/api/dda/local/preview?path={encoded}",
         "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
-        "hasGeoref": img.has_georef,
+        "hasGeoref": bool(img.has_georef),
         "bounds": bounds,
         "width": img.width,
         "height": img.height,
@@ -205,20 +222,46 @@ def get_image_by_file_path(db: Session, relative_path: str) -> Optional[ImageLib
     rel = (relative_path or "").replace("\\", "/").strip().lstrip("/")
     if not rel:
         return None
-    return db.query(ImageLibrary).filter(ImageLibrary.file_path == rel).first()
+    row = db.query(ImageLibrary).filter(ImageLibrary.file_path == rel).first()
+    if row:
+        return row
+    alt = rel.replace("/", "\\")
+    if alt != rel:
+        return db.query(ImageLibrary).filter(ImageLibrary.file_path == alt).first()
+    return None
+
+
+def _node_and_descendants_clause(node: TreeNode):
+    """Images on this folder or any child folder (year / type subfolders)."""
+    prefix = (node.node_path or "").rstrip("/")
+    clauses = [ImageLibrary.node_id == node.id]
+    if prefix:
+        clauses.append(TreeNode.node_path == prefix)
+        clauses.append(TreeNode.node_path.like(prefix + "/%"))
+    return or_(*clauses)
 
 
 def list_all_images(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None) -> List[dict]:
-    q = db.query(ImageLibrary, TreeNode).join(TreeNode, ImageLibrary.node_id == TreeNode.id).filter(TreeNode.is_active == True)  # noqa: E712
+    q = (
+        db.query(ImageLibrary, TreeNode)
+        .outerjoin(TreeNode, ImageLibrary.node_id == TreeNode.id)
+        .filter(or_(TreeNode.id.is_(None), active_node_clause(TreeNode.is_active)))
+    )
     if node_id:
-        q = q.filter(ImageLibrary.node_id == node_id)
+        node = db.query(TreeNode).filter(TreeNode.id == node_id).first()
+        if node:
+            q = q.filter(_node_and_descendants_clause(node))
+        else:
+            q = q.filter(ImageLibrary.node_id == node_id)
     if query:
         like = f"%{query.strip().lower()}%"
-        q = q.filter(
-            (ImageLibrary.image_name.ilike(like)) | (TreeNode.node_path.ilike(like))
-        )
-    q = q.order_by(ImageLibrary.uploaded_on.desc())
-    return [image_to_dict(img, node) for img, node in q.all()]
+        q = q.filter(or_(
+            func.lower(ImageLibrary.image_name).like(like),
+            func.lower(func.coalesce(TreeNode.node_path, "")).like(like),
+        ))
+    rows = q.all()
+    rows.sort(key=lambda pair: pair[0].uploaded_on or datetime.min, reverse=True)
+    return [image_to_dict(img, node) for img, node in rows]
 
 
 def get_or_build_thumb(relative_path: str, max_side: int = 256) -> Path:

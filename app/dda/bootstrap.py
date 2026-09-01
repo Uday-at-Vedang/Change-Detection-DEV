@@ -91,6 +91,7 @@ def init_dda_database():
         return
     ensure_library_dirs()
     get_storage_root().mkdir(parents=True, exist_ok=True)
+    logger.info("DDA database dialect=%s", engine.dialect.name)
     try:
         with engine.connect() as conn:
             for stmt in (
