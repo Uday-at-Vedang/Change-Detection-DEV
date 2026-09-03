@@ -158,6 +158,16 @@ async def upload_image(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Allowed extensions: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
 
+    existing = (
+        db.query(ImageLibrary)
+        .filter(ImageLibrary.node_id == node.id, ImageLibrary.image_name == original)
+        .first()
+    )
+    if existing is not None:
+        logger.info("Skipped duplicate upload %s -> node %s (already exists as image id %s)",
+                    original, node.id, existing.id)
+        return existing
+
     dest_dir = images_dir(node.physical_path)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / original
