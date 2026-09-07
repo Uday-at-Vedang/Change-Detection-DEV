@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit Log — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=46" />
+</head>
+<body>
+  <div class="app dda-app dda-app-full">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section class="dda-panel active">
+        <div class="dda-hero">
+          <h1>📋 Audit Log</h1>
+          <p class="sub" id="audit-log-subtitle">User activity audit trail</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Activity</h3>
+            <div class="dda-reports-toolbar">
+              <span id="audit-log-meta" class="dim dda-filter-meta"></span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-audit-refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="dda-filter-bar">
+            <label class="dda-filter-field">Action
+              <select id="audit-filter-action"><option value="">— All Actions —</option></select>
+            </label>
+            <label class="dda-filter-field">Module
+              <select id="audit-filter-module"><option value="">— All Modules —</option></select>
+            </label>
+            <label class="dda-filter-field">Role
+              <select id="audit-filter-role"><option value="">— All Roles —</option></select>
+            </label>
+            <label class="dda-filter-field">From
+              <input type="date" id="audit-filter-from" class="dda-date-input" />
+            </label>
+            <label class="dda-filter-field">To
+              <input type="date" id="audit-filter-to" class="dda-date-input" />
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-audit-filter">Filter</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-audit-reset">Reset</button>
+          </div>
+          <div id="audit-log-table-wrap" class="dda-logs-wrap"><p class="dim">Loading audit log…</p></div>
+          <div class="pagination" id="audit-log-pagination"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/app.js?v=28"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/audit_log.js?v=2"></script>
+</body>
+</html>

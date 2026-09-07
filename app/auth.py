@@ -113,6 +113,20 @@ def check_account_lockout(db: Session, email: str) -> bool:
     return count >= LOGIN_ACCOUNT_MAX_FAILURES
 
 
+def _login_event_role(db: Session, user_id: Optional[int]) -> str:
+    """Best-effort role lookup for the audit trail — mirrors the fallback in
+    app/dda/dda_auth.py::get_user_role, but avoids importing that module here
+    (it imports back from this one)."""
+    if not user_id:
+        return ""
+    try:
+        from sqlalchemy import text as sa_text
+        row = db.execute(sa_text("SELECT role FROM users WHERE id = :uid"), {"uid": user_id}).fetchone()
+        return str(row[0]) if row and row[0] else ""
+    except Exception:
+        return ""
+
+
 def record_login_event(
     db: Session,
     *,
@@ -132,6 +146,17 @@ def record_login_event(
         user_agent=user_agent,
     )
     db.add(entry)
+    try:
+        from .dda.tree.audit_service import log_action
+        log_action(
+            db, event_type,
+            action_by=attempted_email,
+            role=_login_event_role(db, user_id),
+            module="auth",
+            new_value={"failure_reason": failure_reason, "ip_address": ip_address} if failure_reason else None,
+        )
+    except Exception:
+        pass
     db.commit()
 
 

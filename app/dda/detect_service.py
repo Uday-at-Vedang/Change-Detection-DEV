@@ -419,6 +419,19 @@ def run_detection_and_save(
     db.commit()
     db.refresh(run)
 
+    try:
+        from .dda_auth import get_user_role
+        from .tree.audit_service import log_action
+        log_action(
+            db, "run_detection", action_by=getattr(user, "email", "") or "",
+            role=get_user_role(db, user), module="detect",
+            new_value={"run_id": run.id, "method": method, "zone": zone, "village": village,
+                       "change_percentage": change_pct},
+        )
+        db.commit()
+    except Exception:
+        logger.exception("Failed to write audit log for detection run %s", run.id)
+
     _report(90, "Preparing report")
     overlay_b64 = base64.b64encode(overlay_path.read_bytes()).decode("utf-8")
     notification_sent = False

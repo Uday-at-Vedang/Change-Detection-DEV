@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exception Log — Vedangsoft Change Detection</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=47" />
+</head>
+<body>
+  <div class="app dda-app dda-app-full">
+    {% include "partials/navbar_dda.html" %}
+
+    <div class="dda-main-col">
+      {% include "partials/alerts_dda.html" %}
+
+      <section class="dda-panel active">
+        <div class="dda-hero dda-hero-row">
+          <div>
+            <h1 id="log-page-title">💥 Exception Log</h1>
+            <p class="sub" id="exception-log-subtitle">System errors captured by the global exception handler</p>
+          </div>
+          <div class="dda-mode-toggle" id="log-tab-switch" role="radiogroup" aria-label="Log view">
+            <button type="button" class="dda-mode-btn is-active" data-tab="exceptions" role="radio" aria-checked="true">Exceptions</button>
+            <button type="button" class="dda-mode-btn" data-tab="applogs" role="radio" aria-checked="false">Application Logs</button>
+          </div>
+        </div>
+
+        <!-- ===================== Exceptions tab ===================== -->
+        <div id="exceptions-tab">
+          <div class="dda-stat-cards">
+            <div class="dda-stat-card is-danger">
+              <div class="dda-stat-icon">💥</div>
+              <div class="dda-stat-value" id="exception-stat-500">0</div>
+              <div class="dda-stat-label">500 Errors (this page)</div>
+            </div>
+            <div class="dda-stat-card is-warn">
+              <div class="dda-stat-icon">⚠️</div>
+              <div class="dda-stat-value" id="exception-stat-other">0</div>
+              <div class="dda-stat-label">Other Errors (this page)</div>
+            </div>
+            <div class="dda-stat-card">
+              <div class="dda-stat-icon">📋</div>
+              <div class="dda-stat-value" id="exception-stat-total">0</div>
+              <div class="dda-stat-label">Total Filtered Records</div>
+            </div>
+            <div class="dda-stat-card is-danger">
+              <div class="dda-stat-icon">🔥</div>
+              <div class="dda-stat-value" id="exception-stat-unhandled">0</div>
+              <div class="dda-stat-label">Unhandled (this page)</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Errors</h3>
+              <div class="dda-reports-toolbar">
+                <span id="exception-log-meta" class="dim dda-filter-meta"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-exception-refresh">Refresh</button>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-exception-clear-old" data-requires-permission="exception_log:delete">🗑 Clear Old (&gt;30 days)</button>
+              </div>
+            </div>
+            <div class="dda-filter-bar">
+              <label class="dda-filter-field">Exception Type
+                <select id="exception-filter-type"><option value="">— All Types —</option></select>
+              </label>
+              <label class="dda-filter-field">Status Code
+                <select id="exception-filter-status"><option value="">— All —</option></select>
+              </label>
+              <label class="dda-filter-field">From
+                <input type="date" id="exception-filter-from" class="dda-date-input" />
+              </label>
+              <label class="dda-filter-field">To
+                <input type="date" id="exception-filter-to" class="dda-date-input" />
+              </label>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-exception-filter">Filter</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-exception-reset">Reset</button>
+            </div>
+            <div id="exception-log-table-wrap" class="dda-logs-wrap"><p class="dim">Loading exception log…</p></div>
+            <div class="pagination" id="exception-log-pagination"></div>
+          </div>
+        </div>
+
+        <!-- ================== Application Logs tab =================== -->
+        <div id="applogs-tab" hidden>
+          <div class="card">
+            <div class="card-header">
+              <h3>Application logs</h3>
+              <div class="dda-reports-toolbar">
+                <span id="logs-meta" class="dim dda-filter-meta"></span>
+                <label class="dda-check"><input type="checkbox" id="logs-live" checked /> Live</label>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-logs-refresh">Refresh</button>
+                <a class="btn btn-secondary btn-sm" id="btn-logs-download" href="/api/dda/logs/download">Download</a>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-logs-clear" data-requires-permission="logs:delete">Clear</button>
+              </div>
+            </div>
+            <div class="dda-filter-bar">
+              <label class="dda-filter-field">Search
+                <input type="search" id="logs-q" class="dda-search" placeholder="Message or logger…" />
+              </label>
+              <label class="dda-filter-field">Level
+                <select id="logs-level">
+                  <option value="">All</option>
+                  <option value="DEBUG">Debug+</option>
+                  <option value="INFO">Info+</option>
+                  <option value="WARNING">Warning+</option>
+                  <option value="ERROR">Error+</option>
+                </select>
+              </label>
+              <label class="dda-filter-field">Logger
+                <input type="search" id="logs-logger" class="dda-search" placeholder="e.g. app.dda" />
+              </label>
+            </div>
+            <div id="logs-table-wrap" class="dda-logs-wrap"><p class="dim">Loading logs…</p></div>
+            <div class="pagination" id="logs-pagination"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Details modal -->
+  <div id="exception-detail-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+    <div class="dda-modal-panel card" style="max-width:720px">
+      <div class="card-header">
+        <h3>Exception details</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-exception-detail-close">Close</button>
+      </div>
+      <pre id="exception-detail-content" class="dda-log-msg"></pre>
+    </div>
+  </div>
+
+  <script src="/static/js/dda/shared.js?v=4"></script>
+  <script src="/static/js/dda/app.js?v=28"></script>
+  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/exception_log.js?v=2"></script>
+</body>
+</html>

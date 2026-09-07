@@ -131,6 +131,17 @@ def download_report_pdf(run_id: int, db: Session = Depends(get_db), user: User =
     except Exception as exc:
         logger.exception("PDF generation failed for run %s", run_id)
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc
+    try:
+        from .dda_auth import get_user_role
+        from .tree.audit_service import log_action
+        log_action(
+            db, "generate_report_pdf", action_by=getattr(user, "email", "") or "",
+            role=get_user_role(db, user), module="reports",
+            new_value={"run_id": run_id, "filename": filename},
+        )
+        db.commit()
+    except Exception:
+        logger.exception("Failed to write audit log for report %s", run_id)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

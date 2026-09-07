@@ -17,6 +17,8 @@ from .tree.routes import router as tree_router
 from .rbac.routes import router as rbac_router
 from .masters_routes import router as masters_router
 from .logs_routes import router as logs_router
+from .audit_routes import router as audit_router
+from .exception_routes import router as exception_router
 from .dda_auth import seed_dda_admin
 
 logger = logging.getLogger(__name__)
@@ -103,6 +105,8 @@ def init_dda_database():
                 "ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT NULL",
                 "ALTER TABLE detection_runs ADD COLUMN after_full_path VARCHAR(512) DEFAULT ''",
                 "ALTER TABLE dda_roles ADD COLUMN is_active BOOLEAN DEFAULT 1",
+                "ALTER TABLE dda_audit_logs ADD COLUMN role VARCHAR(64) DEFAULT ''",
+                "ALTER TABLE dda_audit_logs ADD COLUMN module VARCHAR(64) DEFAULT ''",
             ):
                 try:
                     conn.execute(sa_text(stmt))
@@ -129,12 +133,13 @@ def init_dda_database():
         logger.warning("DDA schema migration skipped: %s", exc)
 
     from ..database import Base, SessionLocal
-    from .tree.models import AuditLog, ImageLibrary, TreeNode  # noqa: F401
+    from .tree.models import AuditLog, ExceptionLog, ImageLibrary, TreeNode  # noqa: F401
     try:
         Base.metadata.create_all(bind=engine, tables=[
             TreeNode.__table__,
             ImageLibrary.__table__,
             AuditLog.__table__,
+            ExceptionLog.__table__,
         ])
     except Exception as exc:
         logger.warning("Tree table create skipped: %s", exc)
@@ -202,4 +207,6 @@ def setup_dda(app: FastAPI) -> None:
     app.include_router(dashboard_router, prefix="/api/dda", tags=["dda-dashboard"])
     app.include_router(masters_router, prefix="/api/dda", tags=["dda-masters"])
     app.include_router(logs_router, prefix="/api/dda", tags=["dda-logs"])
+    app.include_router(audit_router, prefix="/api/dda", tags=["dda-audit"])
+    app.include_router(exception_router, prefix="/api/dda", tags=["dda-exceptions"])
     logger.info("APP_MODE=dda — DDA routes enabled (tree, library, jobs, reports, review, training, admin, local, rbac, dashboard, masters, logs)")

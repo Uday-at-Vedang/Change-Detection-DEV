@@ -19,6 +19,20 @@ from .permissions import require_module_permission, user_can
 router = APIRouter()
 
 
+def _log_admin_action(db: Session, action: str, user: User, new_value: Optional[dict] = None) -> None:
+    try:
+        from ..dda_auth import get_user_role
+        from ..tree.audit_service import log_action
+        log_action(
+            db, action, action_by=getattr(user, "email", "") or "",
+            role=get_user_role(db, user), module="admin", new_value=new_value,
+        )
+        db.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to write audit log for admin action %s", action)
+
+
 def _role_dict(role: Role) -> dict:
     return {
         "id": role.id, "name": role.name, "description": role.description,
@@ -120,6 +134,7 @@ def create_role(
     db.add(role)
     db.commit()
     db.refresh(role)
+    _log_admin_action(db, "create_role", _user, {"role_id": role.id, "name": role.name})
     return _role_dict(role)
 
 
@@ -139,6 +154,7 @@ def update_role(
     if not role.is_system:
         role.name = body.name.strip().lower()
     db.commit()
+    _log_admin_action(db, "update_role", _user, {"role_id": role.id, "name": role.name})
     return _role_dict(role)
 
 
@@ -204,6 +220,7 @@ def set_role_permissions(
         perm.can_edit = entry.canEdit
         perm.can_delete = entry.canDelete
     db.commit()
+    _log_admin_action(db, "set_role_permissions", _user, {"role_id": role_id, "role_name": role.name})
     return {"ok": True}
 
 
@@ -238,6 +255,7 @@ def create_module(
     db.add(module)
     db.commit()
     db.refresh(module)
+    _log_admin_action(db, "create_module", _user, {"module_id": module.id, "key": module.key})
     return _module_dict(module)
 
 
@@ -255,6 +273,7 @@ def update_module(
     module.description = body.description
     module.status = body.status
     db.commit()
+    _log_admin_action(db, "update_module", _user, {"module_id": module.id, "key": module.key})
     return _module_dict(module)
 
 
@@ -269,9 +288,11 @@ def delete_module(
         raise HTTPException(status_code=404, detail="Module not found.")
     if db.query(MenuItem).filter(MenuItem.module_id == module_id).first():
         raise HTTPException(status_code=400, detail="Cannot delete a module that is still linked to a menu item.")
+    module_key = module.key
     db.query(RolePermission).filter(RolePermission.module_id == module_id).delete()
     db.delete(module)
     db.commit()
+    _log_admin_action(db, "delete_module", _user, {"module_id": module_id, "key": module_key})
     return {"ok": True}
 
 
@@ -432,6 +453,7 @@ def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    _log_admin_action(db, "create_user", _user, {"user_id": new_user.id, "email": new_user.email, "role": role.name})
     return _user_dict(new_user, role.name, role.id)
 
 
@@ -455,6 +477,7 @@ def update_user(
     if body.password:
         target.hashed_password = get_password_hash(body.password)
     db.commit()
+    _log_admin_action(db, "update_user", _user, {"user_id": target.id, "email": target.email, "role": role.name})
     return _user_dict(target, role.name, role.id)
 
 
@@ -469,9 +492,11 @@ def delete_user(
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
+    target_email = target.email
     db.delete(target)
     try:
         db.commit()
+        _log_admin_action(db, "delete_user", current_user, {"user_id": user_id, "email": target_email})
     except IntegrityError:
         # login_history / detection_runs both FK to users.id with no cascade —
         # by design, so login/audit trails and past detection runs survive a

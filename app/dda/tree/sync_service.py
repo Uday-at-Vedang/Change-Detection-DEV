@@ -145,6 +145,7 @@ def ensure_node_from_disk(db: Session, physical_path: str, *, created_by: str = 
         node_id=node.id,
         new_value={"name": node_name, "path": node_path, "physical": rel},
         action_by=created_by,
+        module="library",
     )
     db.commit()
     db.refresh(node)

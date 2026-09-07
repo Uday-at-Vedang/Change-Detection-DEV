@@ -108,7 +108,7 @@ def create_node(
     db.add(node)
     db.flush()
     ensure_node_directory(physical_path)
-    log_action(db, "create", node_id=node.id, new_value={"name": name, "path": node_path}, action_by=created_by)
+    log_action(db, "create", node_id=node.id, new_value={"name": name, "path": node_path}, action_by=created_by, module="library")
     db.commit()
     db.refresh(node)
     logger.info("Created tree node %s (%s)", node_path, physical_path)
@@ -193,7 +193,7 @@ def rename_node(
             node.physical_path = new_physical
             _update_descendant_paths(db, node)
 
-    log_action(db, "rename", node_id=node.id, old_value=old, new_value={"name": name, "path": node.node_path}, action_by=action_by)
+    log_action(db, "rename", node_id=node.id, old_value=old, new_value={"name": name, "path": node.node_path}, action_by=action_by, module="library")
     db.commit()
     db.refresh(node)
     return node
@@ -250,7 +250,7 @@ def move_node(
         node.physical_path = new_physical
         _update_descendant_paths(db, node)
 
-    log_action(db, "move", node_id=node.id, old_value=old, new_value={"parentId": new_parent_id, "path": node.node_path}, action_by=action_by)
+    log_action(db, "move", node_id=node.id, old_value=old, new_value={"parentId": new_parent_id, "path": node.node_path}, action_by=action_by, module="library")
     db.commit()
     db.refresh(node)
     return node
@@ -294,6 +294,6 @@ def delete_node(
             raise HTTPException(status_code=400, detail="Node has images")
         node.is_active = False
 
-    log_action(db, "delete", node_id=node_id, old_value=old, new_value={"delete_files": delete_files}, action_by=action_by)
+    log_action(db, "delete", node_id=node_id, old_value=old, new_value={"delete_files": delete_files}, action_by=action_by, module="library")
     db.commit()
     return {"ok": True, "deletedIds": ids}

@@ -215,7 +215,7 @@ async def upload_image(
         format=meta.format,
     )
     db.add(img)
-    log_action(db, "upload", node_id=node.id, new_value={"file": rel, "type": itype}, action_by=uploaded_by)
+    log_action(db, "upload", node_id=node.id, new_value={"file": rel, "type": itype}, action_by=uploaded_by, module="library")
     db.commit()
     db.refresh(img)
     logger.info("Uploaded %s -> %s", original, rel)
@@ -356,6 +356,7 @@ def delete_library_image(
         node_id=node_id,
         old_value={"file": rel, "name": image_name},
         action_by=action_by,
+        module="library",
     )
     db.delete(img)
     db.commit()

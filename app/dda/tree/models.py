@@ -70,3 +70,20 @@ class AuditLog(Base):
     new_value = Column(Text, default="")
     action_date = Column(DateTime, default=_utcnow)
     action_by = Column(String(100), default="")
+    role = Column(String(64), default="")
+    module = Column(String(64), default="")
+
+
+class ExceptionLog(Base):
+    __tablename__ = "dda_exception_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exception_type = Column(String(100), nullable=False)
+    message = Column(Text, default="")
+    path = Column(String(255), default="")
+    method = Column(String(20), default="")
+    status_code = Column(Integer, default=500)
+    handled = Column(Boolean, default=False)
+    traceback = Column(Text, default="")
+    user_email = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)

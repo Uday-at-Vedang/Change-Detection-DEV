@@ -22,6 +22,20 @@ def _require_dda():
         raise HTTPException(status_code=404, detail="DDA mode is not enabled")
 
 
+def _log_masters_action(db: Session, action: str, user: User, new_value: Optional[dict] = None) -> None:
+    try:
+        from .dda_auth import get_user_role
+        from .tree.audit_service import log_action
+        log_action(
+            db, action, action_by=getattr(user, "email", "") or "",
+            role=get_user_role(db, user), module="masters", new_value=new_value,
+        )
+        db.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to write audit log for masters action %s", action)
+
+
 class ZoneBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     mode: str = Field("admin", max_length=32)
@@ -81,6 +95,7 @@ def create_zone(
     db.add(zone)
     db.commit()
     db.refresh(zone)
+    _log_masters_action(db, "create_zone", user, {"zone_id": zone.id, "name": zone.name})
     return {"ok": True, "zone": _zone_dict(zone, 0)}
 
 
@@ -102,6 +117,7 @@ def update_zone(
     zone.name = name
     zone.mode = (body.mode or zone.mode or "admin").strip()
     db.commit()
+    _log_masters_action(db, "update_zone", user, {"zone_id": zone.id, "name": zone.name})
     count = db.query(DdaVillage).filter(DdaVillage.zone_id == zone.id).count()
     return {"ok": True, "zone": _zone_dict(zone, count)}
 
@@ -119,9 +135,11 @@ def delete_zone(
     in_use = db.query(ImageAsset).filter(ImageAsset.zone_id == zone_id).count()
     if in_use:
         raise HTTPException(status_code=409, detail="This zone is used by library images and cannot be deleted.")
+    zone_name = zone.name
     db.query(DdaVillage).filter(DdaVillage.zone_id == zone_id).delete(synchronize_session=False)
     db.delete(zone)
     db.commit()
+    _log_masters_action(db, "delete_zone", user, {"zone_id": zone_id, "name": zone_name})
     return {"ok": True}
 
 
@@ -166,6 +184,7 @@ def create_village(
     db.add(village)
     db.commit()
     db.refresh(village)
+    _log_masters_action(db, "create_village", user, {"village_id": village.id, "name": village.name, "zone_id": zone.id})
     return {"ok": True, "village": _village_dict(village, zone)}
 
 
@@ -198,6 +217,7 @@ def update_village(
     village.name = name
     village.zone_id = zone.id
     db.commit()
+    _log_masters_action(db, "update_village", user, {"village_id": village.id, "name": village.name, "zone_id": zone.id})
     return {"ok": True, "village": _village_dict(village, zone)}
 
 
@@ -214,6 +234,8 @@ def delete_village(
     in_use = db.query(ImageAsset).filter(ImageAsset.village_id == village_id).count()
     if in_use:
         raise HTTPException(status_code=409, detail="This location is used by library images and cannot be deleted.")
+    village_name = village.name
     db.delete(village)
     db.commit()
+    _log_masters_action(db, "delete_village", user, {"village_id": village_id, "name": village_name})
     return {"ok": True}

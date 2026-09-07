@@ -30,6 +30,8 @@ DEFAULT_MODULES = [
     ("reports", "Reports", "Detection history, exports, and PDF reports"),
     ("logs", "Logs", "Application log viewer"),
     ("admin", "Administration", "Users, roles, modules, and menu management"),
+    ("audit_log", "Audit Log", "User activity audit trail"),
+    ("exception_log", "Exception Log", "System error log"),
 ]
 
 # (label, url, module_key, sort_order, parent_label)
@@ -45,11 +47,14 @@ DEFAULT_MENU_ITEMS = [
     ("Village / Location", "/masters/villages", "masters", 2, "Masters"),
     ("Change Detection", "/detect", "detect", 2, None),
     ("Reports", "/reports", "reports", 3, None),
-    ("Logs", "/logs", "logs", 4, None),
+    # "Logs" (top-level) was retired below — Application Logs is now a tab on
+    # the Exception Log page instead of its own sidebar entry.
     ("Configuration", "#", None, 5, None),
     ("Roles & Users", "/admin/roles-users", "admin", 0, "Configuration"),
     ("App Modules", "/admin/modules", "admin", 1, "Configuration"),
     ("Menu Management", "/admin/menu", "admin", 2, "Configuration"),
+    ("Audit Log", "/audit-log", "audit_log", 3, "Configuration"),
+    ("Exception Log", "/exception-log", "exception_log", 4, "Configuration"),
 ]
 
 # module_key -> {role_name: (can_view, can_create, can_edit, can_delete)}
@@ -80,6 +85,14 @@ DEFAULT_PERMISSIONS = {
         "analyst": (0, 0, 0, 0), "admin": (1, 1, 1, 1),
     },
     "admin": {
+        "viewer": (0, 0, 0, 0), "uploader": (0, 0, 0, 0),
+        "analyst": (0, 0, 0, 0), "admin": (1, 1, 1, 1),
+    },
+    "audit_log": {
+        "viewer": (0, 0, 0, 0), "uploader": (0, 0, 0, 0),
+        "analyst": (0, 0, 0, 0), "admin": (1, 1, 1, 1),
+    },
+    "exception_log": {
         "viewer": (0, 0, 0, 0), "uploader": (0, 0, 0, 0),
         "analyst": (0, 0, 0, 0), "admin": (1, 1, 1, 1),
     },
@@ -168,6 +181,16 @@ def seed_rbac(db: Session) -> None:
                     can_view=bool(view), can_create=bool(create),
                     can_edit=bool(edit), can_delete=bool(delete),
                 ))
+
+    # Retire the old top-level "Logs" sidebar entry — its content (Application
+    # Logs) is now a tab on the Exception Log page (see exception_log_dda.html).
+    retired_logs_item = (
+        db.query(MenuItem)
+        .filter(MenuItem.url == "/logs", MenuItem.parent_id.is_(None), MenuItem.is_active.is_(True))
+        .first()
+    )
+    if retired_logs_item:
+        retired_logs_item.is_active = False
 
     db.commit()
 

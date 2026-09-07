@@ -1742,6 +1742,40 @@ a.stat-box.dda-dash-kpi:hover { border-color: var(--accent); transform: translat
 .dda-log-row.is-error .dda-log-level { background: var(--danger-glow); color: var(--danger); }
 .dda-log-row.is-debug .dda-log-level { background: var(--bg-hover); color: var(--text-dim); }
 
+/* Audit Log / Exception Log */
+.dda-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+  margin: 0 0 1rem;
+}
+.dda-stat-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  padding: 0.9rem 1rem;
+  text-align: center;
+}
+.dda-stat-card .dda-stat-icon { font-size: 1.1rem; line-height: 1; margin-bottom: 0.3rem; }
+.dda-stat-card .dda-stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.15; }
+.dda-stat-card .dda-stat-label { margin-top: 0.2rem; font-size: 0.76rem; color: var(--text-muted); }
+.dda-stat-card.is-danger .dda-stat-value { color: var(--danger); }
+.dda-stat-card.is-warn .dda-stat-value { color: #b45309; }
+
+.dda-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.dda-badge.is-ok { background: rgba(16, 130, 90, 0.12); color: #0f7a56; }
+.dda-badge.is-danger { background: var(--danger-glow); color: var(--danger); }
+.dda-badge.is-neutral { background: var(--bg-hover); color: var(--text-dim); }
+.dda-action-cell { font-family: var(--font-mono); font-size: 0.78rem; }
+
 .dda-otp-input,
 .dda-totp-input {
   letter-spacing: 0.28em;

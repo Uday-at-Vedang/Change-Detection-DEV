@@ -18,6 +18,8 @@ from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.exception_handlers import http_exception_handler as starlette_http_exception_handler
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
@@ -111,6 +113,131 @@ except Exception as e:
 
 app = FastAPI(title="AI Change Detection", version="2.4.0-dda" if IS_DDA_MODE else "2.2.0")
 setup_dda(app)
+
+
+def _exception_log_user_email(request: Request) -> str | None:
+    """Best-effort user lookup for the exception log — never raises."""
+    try:
+        from .database import SessionLocal
+        token = request.cookies.get("access_token") or request.cookies.get(COOKIE_NAME)
+        if not token:
+            return None
+        db = SessionLocal()
+        try:
+            user = get_user_from_token(token, db)
+            return user.email if user else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _dda_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Log every deliberate HTTPException (401/404/429/...) as a handled exception."""
+    if IS_DDA_MODE:
+        try:
+            from .database import SessionLocal
+            from .dda.tree.audit_service import log_exception
+            db = SessionLocal()
+            try:
+                log_exception(
+                    db, exc=exc, path=request.url.path, method=request.method,
+                    status_code=exc.status_code, handled=True,
+                    user_email=_exception_log_user_email(request),
+                )
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Failed to write exception log entry")
+    return await starlette_http_exception_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def _dda_unhandled_exception_handler(request: Request, exc: Exception):
+    """Log every uncaught exception as unhandled, then return a generic 500."""
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    if IS_DDA_MODE:
+        try:
+            from .database import SessionLocal
+            from .dda.tree.audit_service import log_exception
+            db = SessionLocal()
+            try:
+                log_exception(
+                    db, exc=exc, path=request.url.path, method=request.method,
+                    status_code=500, handled=False,
+                    user_email=_exception_log_user_email(request),
+                )
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Failed to write exception log entry")
+    return JSONResponse(status_code=500, content={"detail": f"Internal server error: {type(exc).__name__}"})
+
+
+# --- Global auth backstop ---------------------------------------------------
+# Every page/API route is expected to gate itself (a per-route dependency or
+# a manual check in the function body) — see the RBAC audit that found
+# /api/overlay, /api/detect, and /dda/reports/{id} had silently lost theirs.
+# This middleware is a defense-in-depth backstop: it rejects any request to a
+# non-public path with no valid session before it ever reaches a route
+# handler, so a future route that forgets its own login check still fails
+# closed instead of silently serving an unauthenticated request. It only
+# enforces "is logged in" — per-module/action permission checks (view/
+# create/edit/delete) remain each route's own responsibility.
+_PUBLIC_EXACT_PATHS = {
+    "/health",
+    "/login",
+    "/forgot-password",
+    "/reset-password",
+    "/favicon.ico",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/auth/login/request-otp",
+    "/api/auth/login/verify-otp",
+    "/api/auth/login/resend-otp",
+    "/api/auth/logout",
+    "/api/auth/reset-password",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password-token",
+}
+_PUBLIC_PATH_PREFIXES = ("/static/",)
+
+
+def _request_has_valid_session(request: Request) -> bool:
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.split(" ", 1)[1].strip() if auth_header.lower().startswith("bearer ") else None
+    if not token:
+        token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        return False
+    from .database import SessionLocal
+    db = SessionLocal()
+    try:
+        user = get_user_from_token(token, db)
+        return bool(user) and not user.email.startswith("__guest__")
+    finally:
+        db.close()
+
+
+@app.middleware("http")
+async def _dda_global_auth_gate(request: Request, call_next):
+    if not IS_DDA_MODE or request.method == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path
+    if path in _PUBLIC_EXACT_PATHS or path.startswith(_PUBLIC_PATH_PREFIXES):
+        return await call_next(request)
+
+    if _request_has_valid_session(request):
+        return await call_next(request)
+
+    if path.startswith("/api/"):
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+    return RedirectResponse(url="/login")
 
 
 @app.get("/health")
@@ -645,7 +772,10 @@ async def detect(
 ):
     if IS_DDA_MODE:
         from .dda.dda_auth import get_dda_user
+        from .dda.rbac.permissions import user_can
         user = get_dda_user(request, db)
+        if not user_can(user, db, "detect", "create"):
+            raise HTTPException(status_code=403, detail="Missing 'create' permission on 'detect'.")
     else:
         user = get_or_create_guest_user(db)
     MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
@@ -830,7 +960,7 @@ def notify_test(
 
 
 @app.get("/api/overlay/{path:path}")
-def serve_overlay(path: str):
+def serve_overlay(path: str, request: Request, db: Session = Depends(get_db)):
     # Restrict to overlays directory
     full = (OVERLAYS_DIR.parent / path).resolve()
     base = OVERLAYS_DIR.parent.resolve()
@@ -840,6 +970,44 @@ def serve_overlay(path: str):
         raise HTTPException(404)
     if not full.exists() or not full.is_file():
         raise HTTPException(404)
+
+    if IS_DDA_MODE:
+        from .dda.dda_auth import get_dda_user
+        user = get_dda_user(request, db)
+    else:
+        user = get_or_create_guest_user(db)
+
+    # Result images are saved as overlays/"<owner_user_id>_<uuid>[_suffix].png"
+    # (see detect(), detect_service.py) — verify the requester owns the file
+    # (or is otherwise entitled to the run it belongs to, e.g. an
+    # auto-schedule run any user may view) before serving it.
+    from sqlalchemy import or_
+    run = (
+        db.query(DetectionRun)
+        .filter(or_(
+            DetectionRun.overlay_path == path,
+            DetectionRun.before_full_path == path,
+            DetectionRun.before_thumb_path == path,
+            DetectionRun.after_thumb_path == path,
+            DetectionRun.after_full_path == path,
+        ))
+        .first()
+    )
+    if run is not None:
+        if IS_DDA_MODE:
+            from .dda.auto_detect import user_can_access_run
+            if not user_can_access_run(db, run.id, user.id):
+                raise HTTPException(404)
+        elif run.user_id != user.id:
+            raise HTTPException(404)
+    else:
+        # Not tied to a persisted run (e.g. a probability-map preview) — fall
+        # back to the owner-id-prefix filename convention every overlay file
+        # is saved with.
+        owner_id_str = Path(path).name.split("_", 1)[0]
+        if owner_id_str.isdigit() and int(owner_id_str) != user.id:
+            raise HTTPException(404)
+
     return FileResponse(full, media_type="image/png")
 
 
@@ -999,9 +1167,11 @@ def delete_run(
     db: Session = Depends(get_db),
 ):
     if IS_DDA_MODE:
-        from .dda.dda_auth import get_dda_user, require_min_role
+        from .dda.dda_auth import get_dda_user
+        from .dda.rbac.permissions import user_can
         user = get_dda_user(request, db)
-        require_min_role(user, db, "analyst")
+        if not user_can(user, db, "reports", "delete"):
+            raise HTTPException(status_code=403, detail="Missing 'delete' permission on 'reports'.")
     else:
         user = get_or_create_guest_user(db)
     run = db.query(DetectionRun).filter(DetectionRun.id == run_id, DetectionRun.user_id == user.id).first()
@@ -1026,10 +1196,13 @@ def delete_run(
 
 # --- Serve SPA ---
 @app.get("/dda/reports/{run_id}", response_class=HTMLResponse)
-def dda_report_page(run_id: int):
+def dda_report_page(run_id: int, request: Request, db: Session = Depends(get_db)):
     """Standalone browser report (FR-05)."""
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
+    _user, redirect = _dda_session_or_redirect(request, db)
+    if redirect:
+        return redirect
     report_file = TEMPLATES_DIR / "report_dda.html"
     if not report_file.exists():
         raise HTTPException(status_code=404, detail="Report template missing")
@@ -1143,10 +1316,9 @@ def _dda_module_page_or_redirect(request: Request, db: Session, module_key: str)
 def dda_library_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    user, redirect = _dda_session_or_redirect(request, db)
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "library")
     if redirect:
         return redirect
-    menu_items = resolve_user_menu(user, db)
     return templates.TemplateResponse(request, "library_dda.html", {"active_page": "library", "menu_items": menu_items})
 
 
@@ -1154,10 +1326,9 @@ def dda_library_page(request: Request, db: Session = Depends(get_db)):
 def dda_detect_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    user, redirect = _dda_session_or_redirect(request, db)
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "detect")
     if redirect:
         return redirect
-    menu_items = resolve_user_menu(user, db)
     return templates.TemplateResponse(request, "detect_dda.html", {"active_page": "detect", "menu_items": menu_items})
 
 
@@ -1165,21 +1336,39 @@ def dda_detect_page(request: Request, db: Session = Depends(get_db)):
 def dda_reports_page(request: Request, db: Session = Depends(get_db)):
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    user, redirect = _dda_session_or_redirect(request, db)
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "reports")
     if redirect:
         return redirect
-    menu_items = resolve_user_menu(user, db)
     return templates.TemplateResponse(request, "reports_dda.html", {"active_page": "reports", "menu_items": menu_items})
 
 
 @app.get("/logs", response_class=HTMLResponse)
-def dda_logs_page(request: Request, db: Session = Depends(get_db)):
+def dda_logs_page(request: Request):
+    # Application Logs is now a tab on the Exception Log page (Configuration >
+    # Exception Log) rather than its own sidebar entry; redirect old links/bookmarks.
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "logs")
+    return RedirectResponse(url="/exception-log?tab=applogs", status_code=307)
+
+
+@app.get("/audit-log", response_class=HTMLResponse)
+def dda_audit_log_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "audit_log")
     if redirect:
         return redirect
-    return templates.TemplateResponse(request, "logs_dda.html", {"active_page": "logs", "menu_items": menu_items})
+    return templates.TemplateResponse(request, "audit_log_dda.html", {"active_page": "audit-log", "menu_items": menu_items})
+
+
+@app.get("/exception-log", response_class=HTMLResponse)
+def dda_exception_log_page(request: Request, db: Session = Depends(get_db)):
+    if not IS_DDA_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    user, menu_items, redirect = _dda_module_page_or_redirect(request, db, "exception_log")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "exception_log_dda.html", {"active_page": "exception-log", "menu_items": menu_items})
 
 
 @app.get("/masters/zones", response_class=HTMLResponse)
