@@ -37,3 +37,5 @@ third_party/
 models/dsifn_proxy/*.pt
 # Building-footprint reference data (461MB geojson — exceeds GitHub's 100MB limit)
 data/building_footprints/
+# Priyanka synthetic CD triplets (before/after/mask PNGs — local training only)
+data/synthetic_cd/

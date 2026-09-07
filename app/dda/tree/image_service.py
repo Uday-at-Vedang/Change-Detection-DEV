@@ -20,6 +20,7 @@ from .audit_service import log_action
 from .models import ImageLibrary, TreeNode
 from .path_service import images_dir, resolve_file, storage_root
 from .query_compat import active_node_clause
+from .library_cache import invalidate_library_caches
 from .tree_service import get_node_or_404
 
 logger = logging.getLogger(__name__)
@@ -88,16 +89,22 @@ def _as_iso(value) -> Optional[str]:
     return text
 
 
-def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
+def image_to_dict(
+    img: ImageLibrary,
+    node: Optional[TreeNode] = None,
+    *,
+    include_bounds: bool = True,
+    slim: bool = False,
+) -> dict:
     rel = (img.file_path or "").replace("\\", "/")
     encoded = quote(rel, safe="/")
     bounds = None
-    if img.bounds_json:
+    if include_bounds and img.bounds_json:
         try:
             bounds = json.loads(img.bounds_json)
         except json.JSONDecodeError:
             bounds = None
-    return {
+    payload = {
         "id": img.id,
         "nodeId": img.node_id,
         "path": rel,
@@ -108,18 +115,24 @@ def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
         "breadcrumb": f"{node.node_path}/{img.image_name}" if node else img.image_name,
         "fileSizeBytes": img.file_size_bytes,
         "captureDate": _as_iso(img.capture_date),
-        "uploadedBy": img.uploaded_by,
         "uploadedOn": _as_iso(img.uploaded_on),
         "thumbUrl": f"/api/dda/local/thumb?path={encoded}",
-        "previewUrl": f"/api/dda/local/preview?path={encoded}",
-        "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
         "hasGeoref": bool(img.has_georef),
-        "bounds": bounds,
         "width": img.width,
         "height": img.height,
+    }
+    if include_bounds:
+        payload["bounds"] = bounds
+    if slim:
+        return payload
+    payload.update({
+        "uploadedBy": img.uploaded_by,
+        "previewUrl": f"/api/dda/local/preview?path={encoded}",
+        "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
         "format": img.format,
         "source": "tree_library",
-    }
+    })
+    return payload
 
 
 def _parse_manual_bounds(raw: Optional[str]) -> Optional[str]:
@@ -218,6 +231,7 @@ async def upload_image(
     log_action(db, "upload", node_id=node.id, new_value={"file": rel, "type": itype}, action_by=uploaded_by, module="library")
     db.commit()
     db.refresh(img)
+    invalidate_library_caches()
     logger.info("Uploaded %s -> %s", original, rel)
     return img
 
@@ -251,7 +265,7 @@ def _node_and_descendants_clause(node: TreeNode):
     return or_(*clauses)
 
 
-def list_all_images(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None) -> List[dict]:
+def _images_query(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None):
     q = (
         db.query(ImageLibrary, TreeNode)
         .outerjoin(TreeNode, ImageLibrary.node_id == TreeNode.id)
@@ -269,9 +283,47 @@ def list_all_images(db: Session, *, node_id: Optional[int] = None, query: Option
             func.lower(ImageLibrary.image_name).like(like),
             func.lower(func.coalesce(TreeNode.node_path, "")).like(like),
         ))
-    rows = q.all()
-    rows.sort(key=lambda pair: pair[0].uploaded_on or datetime.min, reverse=True)
-    return [image_to_dict(img, node) for img, node in rows]
+    return q
+
+
+def count_library_images(db: Session) -> int:
+    return int(_images_query(db).count() or 0)
+
+
+def library_fingerprint(db: Session) -> tuple:
+    n, mx, up = db.query(
+        func.count(ImageLibrary.id),
+        func.max(ImageLibrary.id),
+        func.max(ImageLibrary.uploaded_on),
+    ).one()
+    return (int(n or 0), int(mx or 0), str(up or ""))
+
+
+def list_all_images(
+    db: Session,
+    *,
+    node_id: Optional[int] = None,
+    query: Optional[str] = None,
+    include_bounds: bool = False,
+    slim: bool = True,
+    limit: Optional[int] = None,
+    offset: int = 0,
+):
+    q = _images_query(db, node_id=node_id, query=query)
+    ordered = q.order_by(ImageLibrary.uploaded_on.desc())
+    if limit is not None:
+        total = q.count()
+        rows = ordered.offset(offset).limit(limit).all()
+        items = [
+            image_to_dict(img, node, include_bounds=include_bounds, slim=slim)
+            for img, node in rows
+        ]
+        return {"items": items, "total": total, "offset": offset, "limit": limit}
+    rows = ordered.all()
+    return [
+        image_to_dict(img, node, include_bounds=include_bounds, slim=slim)
+        for img, node in rows
+    ]
 
 
 def get_or_build_thumb(relative_path: str, max_side: int = 256) -> Path:
@@ -360,5 +412,6 @@ def delete_library_image(
     )
     db.delete(img)
     db.commit()
+    invalidate_library_caches()
     logger.info("Deleted library image %s (%s)", image_name, rel)
     return {"ok": True, "deletedPath": rel, "imageName": image_name, "imageId": saved_id}

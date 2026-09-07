@@ -15,7 +15,7 @@ except ImportError:
 
 from jose import JWTError, jwt
 from sqlalchemy import text as sa_text
-from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -258,11 +258,11 @@ def health():
     if IS_DDA_MODE:
         try:
             from .dda.job_runner import is_job_runner_busy
-            from .dda.tree.image_service import list_all_images
+            from .dda.tree.image_service import count_library_images
             from .database import SessionLocal
             _sdb = SessionLocal()
             try:
-                lib_count = len(list_all_images(_sdb))
+                lib_count = count_library_images(_sdb)
             finally:
                 _sdb.close()
             payload["dda"] = {
@@ -1016,6 +1016,7 @@ def serve_overlay(path: str, request: Request, db: Session = Depends(get_db)):
 def history(
     request: Request,
     db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=200),
 ):
     if IS_DDA_MODE:
         from .dda.dda_auth import get_dda_user
@@ -1035,10 +1036,10 @@ def history(
         filt = DetectionRun.user_id == user.id
         if auto_ids:
             filt = or_(filt, DetectionRun.id.in_(auto_ids))
-        runs = db.query(DetectionRun).filter(filt).order_by(DetectionRun.created_at.desc()).limit(100).all()
+        runs = db.query(DetectionRun).filter(filt).order_by(DetectionRun.created_at.desc()).limit(limit).all()
     else:
         user = get_or_create_guest_user(db)
-        runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(100).all()
+        runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(limit).all()
     return [
         {
             "id": r.id,

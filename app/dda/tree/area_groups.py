@@ -1,7 +1,9 @@
 """Group library images that cover the same place (oldest → Before, newest → After)."""
 from __future__ import annotations
 
+import math
 import re
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -240,6 +242,24 @@ def _match_reason(images: list[dict]) -> str:
     return "filename"
 
 
+def _spatial_cells(b: tuple[float, float, float, float], cell: float = 0.05):
+    west, south, east, north = b
+    x0 = math.floor(west / cell)
+    x1 = math.floor((east - 1e-12) / cell)
+    y0 = math.floor(south / cell)
+    y1 = math.floor((north - 1e-12) / cell)
+    for x in range(x0, x1 + 1):
+        for y in range(y0, y1 + 1):
+            yield (x, y)
+
+
+def _public_image(img: dict) -> dict:
+    """Drop heavy fields after pairing so the HTTP payload stays small."""
+    out = dict(img)
+    out.pop("bounds", None)
+    return out
+
+
 def build_area_groups(images: list[dict]) -> dict:
     """Cluster images that cover the same area; suggest oldest/newest as Before/After."""
     items = list(images or [])
@@ -247,15 +267,39 @@ def build_area_groups(images: list[dict]) -> dict:
     uf = _UnionFind(n)
     keys = [distinctive_keys(img.get("filename") or img.get("path") or "") for img in items]
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            if keys[i] and keys[j] and (keys[i] & keys[j]):
-                uf.union(i, j)
-                continue
-            if distinct_places(keys[i], keys[j]):
-                continue
-            if bounds_same_area(items[i].get("bounds"), items[j].get("bounds")):
-                uf.union(i, j)
+    by_key: dict[str, list[int]] = defaultdict(list)
+    for i, ks in enumerate(keys):
+        for k in ks:
+            by_key[k].append(i)
+    for idxs in by_key.values():
+        root = idxs[0]
+        for j in idxs[1:]:
+            uf.union(root, j)
+
+    cell_map: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for i, img in enumerate(items):
+        box = _bbox(img.get("bounds"))
+        if not box:
+            continue
+        for cell in _spatial_cells(box):
+            cell_map[cell].append(i)
+
+    seen: set[tuple[int, int]] = set()
+    for idxs in cell_map.values():
+        uniq = list(dict.fromkeys(idxs))
+        for a in range(len(uniq)):
+            for b in range(a + 1, len(uniq)):
+                i, j = uniq[a], uniq[b]
+                pair = (i, j) if i < j else (j, i)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                if uf.find(i) == uf.find(j):
+                    continue
+                if distinct_places(keys[i], keys[j]):
+                    continue
+                if bounds_same_area(items[i].get("bounds"), items[j].get("bounds")):
+                    uf.union(i, j)
 
     buckets: dict[int, list[int]] = {}
     for i in range(n):
@@ -275,13 +319,14 @@ def build_area_groups(images: list[dict]) -> dict:
             else:
                 shared &= keys[i]
         before, after = members[0], members[-1]
+        public_members = [_public_image(m) for m in members]
         groups.append({
             "id": f"area-{before.get('id')}-{after.get('id')}",
             "label": _group_label(members, shared),
             "match": _match_reason(members),
-            "images": members,
-            "suggestedBefore": before,
-            "suggestedAfter": after,
+            "images": public_members,
+            "suggestedBefore": _public_image(before),
+            "suggestedAfter": _public_image(after),
             "beforePath": before.get("path"),
             "afterPath": after.get("path"),
             "beforeDate": sort_datetime(before).date().isoformat() if sort_datetime(before) != datetime.min else None,
@@ -289,10 +334,46 @@ def build_area_groups(images: list[dict]) -> dict:
         })
 
     groups.sort(key=lambda g: (g["label"].lower(), g["id"]))
-    unpaired = _sort_images(unpaired)
+    unpaired = [_public_image(img) for img in _sort_images(unpaired)]
     return {
         "groups": groups,
         "unpaired": unpaired,
         "totalImages": n,
         "pairedImages": n - len(unpaired),
+    }
+
+
+def load_cached_area_groups(db) -> dict:
+    """Build same-area groups once per library fingerprint, then reuse in-process."""
+    from .image_service import library_fingerprint, list_all_images
+    from .library_cache import get_area_groups_cache, set_area_groups_cache
+
+    fp = library_fingerprint(db)
+    cached = get_area_groups_cache(fp)
+    if cached is not None:
+        return cached
+    images = list_all_images(db, include_bounds=True, slim=True)
+    payload = build_area_groups(images)
+    set_area_groups_cache(fp, payload)
+    return payload
+
+
+def filter_area_groups_for_node(payload: dict, node) -> dict:
+    prefix = (getattr(node, "node_path", None) or "").rstrip("/")
+    node_id = getattr(node, "id", None)
+
+    def _in_node(img: dict) -> bool:
+        path = (img.get("nodePath") or "").rstrip("/")
+        return path == prefix or path.startswith(prefix + "/") or img.get("nodeId") == node_id
+
+    groups = [
+        g for g in (payload.get("groups") or [])
+        if any(_in_node(img) for img in g.get("images") or [])
+    ]
+    unpaired = [img for img in (payload.get("unpaired") or []) if _in_node(img)]
+    return {
+        "groups": groups,
+        "unpaired": unpaired,
+        "totalImages": payload.get("totalImages", 0),
+        "pairedImages": sum(len(g.get("images") or []) for g in groups),
     }

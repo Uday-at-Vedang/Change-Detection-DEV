@@ -232,10 +232,9 @@ def _schedule_owner_id(db: Session) -> int:
 
 
 def _load_identified_pairs(db: Session) -> list[dict[str, Any]]:
-    from .tree.area_groups import build_area_groups
-    from .tree.image_service import list_all_images
+    from .tree.area_groups import load_cached_area_groups
 
-    payload = build_area_groups(list_all_images(db))
+    payload = load_cached_area_groups(db)
     pairs = []
     for group in payload.get("groups") or []:
         before = group.get("beforePath") or (group.get("suggestedBefore") or {}).get("path")

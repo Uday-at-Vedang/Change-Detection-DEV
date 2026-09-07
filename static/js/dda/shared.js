@@ -34,6 +34,28 @@ async function ddaApi(method, path, options = {}) {
   return data;
 }
 
+function unwrapImagePage(data) {
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, offset: 0, limit: data.length };
+  }
+  const items = (data && data.items) || [];
+  return {
+    items,
+    total: Number(data && data.total != null ? data.total : items.length),
+    offset: Number((data && data.offset) || 0),
+    limit: Number((data && data.limit) || items.length),
+  };
+}
+
+function deferIdle(fn, timeoutMs) {
+  const run = () => { try { fn(); } catch (_) { /* page teardown */ } };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: timeoutMs || 1200 });
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 function showDdaError(msg) {
   const el = document.getElementById('dda-error');
   if (!el) return;

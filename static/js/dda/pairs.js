@@ -200,6 +200,9 @@ async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
     }
     populateAutoAreaSelect();
     applyPairFromUrl();
+    if (typeof populateSelects === 'function' && typeof selectSourceItems === 'function') {
+      populateSelects(selectSourceItems((window.ddaState && window.ddaState.libraryItems) || []));
+    }
     if (typeof loadAutoDetectStatus === 'function') loadAutoDetectStatus();
     if (autoFillCompare && !areaPairsState.autoApplied && areaPairsState.groups.length) {
       if (typeof getDetectMode !== 'function' || getDetectMode() !== 'automatic') {

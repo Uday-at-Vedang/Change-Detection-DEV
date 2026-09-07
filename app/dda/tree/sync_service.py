@@ -339,8 +339,10 @@ def _sync_directory(db: Session, abs_dir: Path, rel_path: str, stats: dict) -> N
         _sync_directory(db, child, child_rel, stats)
 
 
-def sync_from_filesystem(db: Session) -> dict:
+def sync_from_filesystem(db: Session, *, check_orphans: bool = True) -> dict:
     """Import disk folders/images into tree_nodes and image_library."""
+    from .library_cache import invalidate_library_caches
+
     root = storage_root()
     stats = {
         "nodesCreated": 0,
@@ -355,11 +357,12 @@ def sync_from_filesystem(db: Session) -> dict:
 
     _sync_directory(db, root, "", stats)
 
-    # Flag DB images whose files are missing on disk
-    for img in db.query(ImageLibrary).all():
-        full = storage_root() / img.file_path.replace("\\", "/")
-        if not full.exists():
-            stats["orphansFlagged"] += 1
+    if check_orphans:
+        for img in db.query(ImageLibrary).all():
+            full = storage_root() / img.file_path.replace("\\", "/")
+            if not full.exists():
+                stats["orphansFlagged"] += 1
 
+    invalidate_library_caches()
     logger.info("Filesystem sync complete: %s", stats)
     return stats

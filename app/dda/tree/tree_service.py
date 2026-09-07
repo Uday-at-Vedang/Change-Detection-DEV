@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from typing import List, Optional
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .audit_service import log_action
 from .models import ImageLibrary, TreeNode
 from .path_service import delete_directory, ensure_node_directory, move_directory
 from .path_slugs import unique_slug
+from .library_cache import invalidate_library_caches
 from .query_compat import active_node_clause
 
 logger = logging.getLogger(__name__)
@@ -45,19 +48,34 @@ def _node_to_dict(node: TreeNode, *, image_count: int = 0, children: Optional[li
 
 
 def build_tree(db: Session, parent_id: Optional[int] = None) -> List[dict]:
+    """Assemble the folder tree in memory (one nodes query + one count query)."""
     nodes = (
         db.query(TreeNode)
-        .filter(TreeNode.parent_id == parent_id, active_node_clause(TreeNode.is_active))  # noqa: E712
+        .filter(active_node_clause(TreeNode.is_active))
         .order_by(TreeNode.node_name)
         .all()
     )
-    result = []
+    counts = dict(
+        db.query(ImageLibrary.node_id, func.count(ImageLibrary.id))
+        .group_by(ImageLibrary.node_id)
+        .all()
+    )
+    by_parent: dict[Optional[int], list[TreeNode]] = defaultdict(list)
     for node in nodes:
-        children = build_tree(db, node.id)
-        img_count = db.query(ImageLibrary).filter(ImageLibrary.node_id == node.id).count()
-        child_img = sum(c.get("imageCount", 0) for c in children)
-        result.append(_node_to_dict(node, image_count=img_count + child_img, children=children))
-    return result
+        by_parent[node.parent_id].append(node)
+
+    def assemble(pid: Optional[int]) -> List[dict]:
+        result = []
+        for node in by_parent.get(pid, []):
+            children = assemble(node.id)
+            own = int(counts.get(node.id, 0) or 0)
+            child_img = sum(c.get("imageCount", 0) for c in children)
+            result.append(_node_to_dict(node, image_count=own + child_img, children=children))
+        return result
+
+    if parent_id is None:
+        return assemble(None)
+    return assemble(parent_id)
 
 
 def get_node_or_404(db: Session, node_id: int) -> TreeNode:
@@ -196,6 +214,7 @@ def rename_node(
     log_action(db, "rename", node_id=node.id, old_value=old, new_value={"name": name, "path": node.node_path}, action_by=action_by, module="library")
     db.commit()
     db.refresh(node)
+    invalidate_library_caches()
     return node
 
 
@@ -253,6 +272,7 @@ def move_node(
     log_action(db, "move", node_id=node.id, old_value=old, new_value={"parentId": new_parent_id, "path": node.node_path}, action_by=action_by, module="library")
     db.commit()
     db.refresh(node)
+    invalidate_library_caches()
     return node
 
 
@@ -296,4 +316,5 @@ def delete_node(
 
     log_action(db, "delete", node_id=node_id, old_value=old, new_value={"delete_files": delete_files}, action_by=action_by, module="library")
     db.commit()
+    invalidate_library_caches()
     return {"ok": True, "deletedIds": ids}
