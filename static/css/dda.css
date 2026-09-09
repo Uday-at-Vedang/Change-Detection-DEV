@@ -607,6 +607,89 @@
 }
 .dda-detect-options .form-group { margin: 0; min-width: 160px; }
 .dda-check { display: flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; color: var(--text-muted); }
+.dda-sensitivity-field label { display: flex; align-items: baseline; gap: 0.35rem; }
+.dda-sensitivity-field em { font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
+.dda-sensitivity-field input[type="range"] { width: 100%; min-width: 140px; }
+.dda-field-hint { font-size: 0.78rem; margin: 0.3rem 0 0; color: var(--accent-dim); font-weight: 500; }
+
+/* Min region area: a unified [−] [140 px] [+] stepper control — one bordered
+   group instead of a plain number input, since the browser's own spinner
+   arrows collide with our "px" suffix and can't be styled consistently. */
+.dda-stepper-wrap {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.dda-stepper-wrap:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(46, 51, 197, 0.18);
+}
+.dda-stepper-wrap .dda-input-suffix-wrap { flex: 1; min-width: 0; }
+.dda-stepper-wrap input[type="number"] {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.dda-stepper-wrap input[type="number"]:focus { outline: none; box-shadow: none; }
+.dda-stepper-btn {
+  flex: 0 0 auto;
+  width: 2.25rem;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.dda-stepper-btn:first-child { border-right: 1px solid var(--border); }
+.dda-stepper-btn:last-child { border-left: 1px solid var(--border); }
+.dda-stepper-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--accent-dim); }
+.dda-stepper-btn:active:not(:disabled) { background: var(--accent-glow); }
+.dda-stepper-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.dda-input-suffix-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.dda-input-suffix-wrap input[type="number"] {
+  padding-right: 2.75rem;
+  /* Hide the native spinner — it renders at a browser-chosen width that
+     collides with our own "px" suffix instead of sitting cleanly beside it;
+     our own stepper buttons replace its increment/decrement role. */
+  -moz-appearance: textfield;
+}
+.dda-input-suffix-wrap input[type="number"]::-webkit-outer-spin-button,
+.dda-input-suffix-wrap input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.dda-input-suffix-wrap input[type="number"]:focus + .dda-input-suffix {
+  color: var(--accent-dim);
+}
+.dda-input-suffix {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  transition: color var(--transition);
+}
 
 .dda-modal {
   position: fixed;
@@ -1018,6 +1101,9 @@
 @media (max-width: 768px) {
   .dda-compare-slots {
     grid-template-columns: 1fr;
+  }
+  .dda-detect-options .form-group {
+    min-width: 100%;
   }
 }
 

@@ -29,6 +29,11 @@ class User(Base):
     # accounts can bind a number on first successful OTP verify.
     phone = Column(String(20), unique=True, nullable=True, index=True)
     created_at = Column(DateTime, default=_utcnow)
+    # Bumped on logout and on any password change/reset so previously-issued
+    # JWTs (a copy in another tab, or a leaked token) stop authenticating
+    # immediately instead of staying valid until natural expiry — see
+    # create_access_token()/get_user_from_token() in auth.py.
+    token_version = Column(Integer, default=0, nullable=False)
 
     detections = relationship("DetectionRun", back_populates="user", order_by="desc(DetectionRun.created_at)")
     role_obj = relationship("Role", foreign_keys=[role_id])
@@ -53,6 +58,11 @@ class DetectionRun(Base):
     zone = Column(String(128), default="")
     village = Column(String(128), default="")
     regions_json = Column(Text, default="[]")
+    # The Sensitivity / Minimum Region Area values actually used for this run
+    # (post-clamp — see detect_service.clamp_detection_params) — nullable so
+    # runs created before this column existed just show as blank, not 0.
+    detection_sensitivity = Column(Float, nullable=True)
+    min_region_area = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="detections")

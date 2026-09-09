@@ -27,6 +27,17 @@ THUMB_MAX_SIZE = 200
 MAX_POLYGON_VERTICES = 100
 
 
+def clamp_detection_params(detection_sensitivity, min_region_area):
+    """Single source of truth for valid ranges, shared by every entry point
+    that accepts these as Form params (app/main.py's /api/detect and this
+    module's run_detection_and_save, used by /api/dda/detect/from-library) —
+    previously each clamped independently and could drift apart."""
+    sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
+    if min_region_area is not None:
+        min_region_area = int(max(50, min(10000, min_region_area)))
+    return sensitivity, min_region_area
+
+
 def _serialize_polygon(raw) -> Optional[list]:
     """Normalize an engine polygon to ``[[x, y], ...]`` ints, or None.
 
@@ -225,9 +236,7 @@ def run_detection_and_save(
     else:
         user = get_or_create_guest_user(db)
     db.commit()
-    detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
-    if min_region_area is not None:
-        min_region_area = int(max(50, min(10000, min_region_area)))
+    detection_sensitivity, min_region_area = clamp_detection_params(detection_sensitivity, min_region_area)
 
     def _on_engine_progress(engine_pct: int, stage: str) -> None:
         # Map engine 0–100% into job 15–78%
@@ -414,6 +423,8 @@ def run_detection_and_save(
         after_thumb_path=relative_after_thumb,
         after_full_path=relative_after_full,
         regions_json=json.dumps(regions_serializable),
+        detection_sensitivity=detection_sensitivity,
+        min_region_area=min_region_area,
     )
     db.add(run)
     db.commit()
@@ -468,6 +479,8 @@ def run_detection_and_save(
             "changedPixels": changed_px,
             "unchangedPixels": int(stats["unchanged_pixels"]),
             "changePercentage": change_pct,
+            "detectionSensitivity": detection_sensitivity,
+            "minRegionArea": min_region_area,
             "thresholdDebug": stats.get("threshold_debug", {}),
             "params": stats.get("params", {}),
             "alignmentWarning": stats.get("alignment_warning"),

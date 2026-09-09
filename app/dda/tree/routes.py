@@ -4,14 +4,17 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from typing import List
 
 from ...database import get_db
 from ...models import User
 from ..config import IS_DDA_MODE
 from ..dda_auth import current_dda_user, get_user_role
 from ..rbac.permissions import require_module_permission
+from .bulk_upload_service import build_bulk_upload_template, bulk_upload_images, parse_bulk_manifest
 from .image_service import (
     IMAGE_TYPES,
     delete_library_image,
@@ -211,6 +214,46 @@ async def api_upload_image(
     )
     node = get_node_or_404(db, node_id)
     return {"status": True, "message": "Image Uploaded Successfully", "image": image_to_dict(img, node)}
+
+
+@router.get("/tree/bulk-upload/template")
+def api_bulk_upload_template(
+    user: User = Depends(require_module_permission("library", "view")),
+):
+    _require_dda()
+    content = build_bulk_upload_template()
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=bulk_image_upload_template.xlsx"},
+    )
+
+
+@router.post("/tree/bulk-upload")
+async def api_bulk_upload(
+    excel: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_module_permission("library", "create")),
+):
+    _require_dda()
+    xlsx_bytes = await excel.read()
+    rows, row_errors = parse_bulk_manifest(xlsx_bytes)
+    result = await bulk_upload_images(db, rows, files, uploaded_by=user.email or str(user.id))
+    result.errors = row_errors + result.errors
+    return {
+        "status": True,
+        "created": result.created,
+        "duplicates": result.duplicates,
+        "errors": result.errors,
+        "unmatchedFiles": result.unmatched_files,
+        "summary": {
+            "created": len(result.created),
+            "duplicates": len(result.duplicates),
+            "errors": len(result.errors),
+            "unmatchedFiles": len(result.unmatched_files),
+        },
+    }
 
 
 @router.delete("/tree/images/{image_id}")

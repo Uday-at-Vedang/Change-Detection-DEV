@@ -369,7 +369,7 @@ async def detect_from_library(
     enable_registration: bool = Form(True),
     enable_normalization: bool = Form(True),
     detection_sensitivity: float = Form(0.5),
-    min_region_area: Optional[int] = Form(150),
+    min_region_area: Optional[int] = Form(None),
     notify_email: Optional[str] = Form(None),
     roi: Optional[str] = Form(None),
     shape_mode: str = Form("polygon"),

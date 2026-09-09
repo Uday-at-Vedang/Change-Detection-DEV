@@ -45,10 +45,15 @@ async function loadReportPage() {
       `${data.method || '—'} · ${loc} · ${data.createdAt || ''}`;
 
     const stats = data.statistics || {};
+    const sensStat = stats.detectionSensitivity != null
+      ? `<div class="dda-stat"><span class="label">Sensitivity</span><span class="value">${Number(stats.detectionSensitivity).toFixed(2)}</span></div>` : '';
+    const minAreaStat = stats.minRegionArea != null
+      ? `<div class="dda-stat"><span class="label">Min region</span><span class="value">${Number(stats.minRegionArea).toLocaleString()} px</span></div>` : '';
     document.getElementById('report-stats').innerHTML = `
       <div class="dda-stat"><span class="label">Change</span><span class="value">${(stats.changePercentage ?? 0).toFixed(2)}%</span></div>
       <div class="dda-stat"><span class="label">Changed px</span><span class="value">${(stats.changedPixels ?? 0).toLocaleString()}</span></div>
-      <div class="dda-stat"><span class="label">Regions</span><span class="value">${data.regionsCount ?? (data.regions || []).length}</span></div>`;
+      <div class="dda-stat"><span class="label">Regions</span><span class="value">${data.regionsCount ?? (data.regions || []).length}</span></div>
+      ${sensStat}${minAreaStat}`;
 
     const overlay = document.getElementById('report-overlay');
     if (overlay) {

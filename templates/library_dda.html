@@ -34,7 +34,10 @@
             <div class="card" id="upload-card">
               <div class="card-header">
                 <h3>Upload images</h3>
-                <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload" data-requires-permission="library:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to upload images.">Upload</button>
+                <div class="dda-sidebar-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-open-bulk-upload" data-requires-permission="library:create">Bulk upload (Excel)</button>
+                  <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload" data-requires-permission="library:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to upload images.">Upload</button>
+                </div>
               </div>
               <p class="sub" id="upload-limit-hint">Select a folder, then drop files here or browse. Folders keep their subfolder names.</p>
               <form id="form-tree-upload" class="dda-upload-form">
@@ -186,6 +189,47 @@
     </div>
   </div>
 
+  <div id="dda-bulk-upload-modal" class="dda-modal hidden" role="dialog" aria-labelledby="dda-bulk-upload-title">
+    <div class="dda-modal-panel card dda-manage-panel">
+      <div class="card-header">
+        <h3 id="dda-bulk-upload-title">Bulk upload (Excel)</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dda-bulk-upload-close">Close</button>
+      </div>
+      <p class="sub dim">Upload many images in one go. An Excel sheet tells us which folder and image type each file goes to — different rows can point to different folders, and missing folders are created automatically.</p>
+      <div class="dda-manage-section">
+        <h4>1. Get the template</h4>
+        <a class="btn btn-secondary btn-sm" id="btn-bulk-upload-template" href="/api/dda/tree/bulk-upload/template" download>Download Excel template</a>
+      </div>
+      <div class="dda-manage-section">
+        <h4>2. Fill it in, then upload the sheet and the matching image files</h4>
+        <div class="location-row">
+          <label class="btn btn-secondary btn-sm dda-file-btn">Choose Excel file
+            <input type="file" id="bulk-upload-excel" accept=".xlsx" />
+          </label>
+          <span id="bulk-upload-excel-name" class="dim">No file selected.</span>
+        </div>
+        <div class="location-row">
+          <label class="btn btn-secondary btn-sm dda-file-btn">Choose image files
+            <input type="file" id="bulk-upload-files" accept=".tif,.tiff,.png,.jpg,.jpeg" multiple />
+          </label>
+          <span id="bulk-upload-files-name" class="dim">No files selected.</span>
+        </div>
+      </div>
+      <div id="bulk-upload-progress" class="dda-upload-progress hidden">
+        <div class="dda-progress-bar"><div id="bulk-upload-progress-fill" class="dda-progress-fill"></div></div>
+        <span id="bulk-upload-progress-label" class="dim">Uploading…</span>
+      </div>
+      <div id="bulk-upload-result" class="dda-manage-section hidden">
+        <h4>Result</h4>
+        <div id="bulk-upload-summary"></div>
+        <div id="bulk-upload-errors"></div>
+      </div>
+      <div class="location-row">
+        <button type="button" class="btn btn-primary" id="btn-bulk-upload-submit" data-requires-permission="library:create">Upload</button>
+      </div>
+    </div>
+  </div>
+
   <div id="dda-tree-menu" class="dda-tree-menu hidden" role="menu">
     <button type="button" role="menuitem" data-tree-act="upload" data-requires-permission="library:create">Upload images here</button>
     <button type="button" role="menuitem" data-tree-act="add" data-requires-permission="library:create">Add subfolder</button>
@@ -199,7 +243,7 @@
   <script src="/static/js/dda/app.js?v=28"></script>
   <script src="/static/js/dda/tree.js?v=5"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=18"></script>
+  <script src="/static/js/dda/library.js?v=19"></script>
   <script src="/static/js/dda/pairs.js?v=9"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>

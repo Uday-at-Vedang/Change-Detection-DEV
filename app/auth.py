@@ -175,6 +175,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def revoke_user_sessions(user: User) -> None:
+    """Invalidate every previously-issued session token for `user` (any tab,
+    device, or leaked copy) by bumping token_version — get_user_from_token()
+    rejects any token whose embedded 'tv' no longer matches. Caller commits.
+    """
+    user.token_version = int(user.token_version or 0) + 1
+
+
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
 
 
@@ -345,7 +353,14 @@ def get_user_from_token(token: str, db: Session, *, allow_pending_otp: bool = Fa
             return None
     except JWTError:
         return None
-    return get_user_by_id(db, user_id)
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        return None
+    if purpose == "session" and int(payload.get("tv", 0)) != int(user.token_version or 0):
+        # Token was issued before a logout / password change bumped
+        # token_version — reject it even though it hasn't expired yet.
+        return None
+    return user
 
 
 LOGIN_OTP_EXPIRE_MINUTES = 10

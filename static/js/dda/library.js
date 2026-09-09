@@ -544,3 +544,95 @@ window.uploadLibraryFiles = uploadLibraryFiles;
 window.setUploadTargetNode = setUploadTargetNode;
 window.setPendingUploadFiles = setPendingUploadFiles;
 window.readDroppedEntries = readDroppedEntries;
+
+// --- Bulk upload (Excel manifest + files) ---------------------------------
+
+function openBulkUploadModal() {
+  document.getElementById('bulk-upload-result')?.classList.add('hidden');
+  document.getElementById('dda-bulk-upload-modal')?.classList.remove('hidden');
+}
+function closeBulkUploadModal() {
+  document.getElementById('dda-bulk-upload-modal')?.classList.add('hidden');
+}
+
+document.getElementById('btn-open-bulk-upload')?.addEventListener('click', openBulkUploadModal);
+document.getElementById('dda-bulk-upload-close')?.addEventListener('click', closeBulkUploadModal);
+document.getElementById('dda-bulk-upload-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'dda-bulk-upload-modal') closeBulkUploadModal();
+});
+
+document.getElementById('bulk-upload-excel')?.addEventListener('change', (e) => {
+  const f = e.target.files?.[0];
+  document.getElementById('bulk-upload-excel-name').textContent = f ? f.name : 'No file selected.';
+});
+document.getElementById('bulk-upload-files')?.addEventListener('change', (e) => {
+  const n = e.target.files?.length || 0;
+  document.getElementById('bulk-upload-files-name').textContent = n
+    ? `${n} file${n === 1 ? '' : 's'} selected.`
+    : 'No files selected.';
+});
+
+function renderBulkUploadResult(data) {
+  const wrap = document.getElementById('bulk-upload-result');
+  const summaryEl = document.getElementById('bulk-upload-summary');
+  const errorsEl = document.getElementById('bulk-upload-errors');
+  if (!wrap || !summaryEl || !errorsEl) return;
+  const s = data.summary || {};
+  summaryEl.innerHTML = `
+    <p><strong>${s.created || 0}</strong> created,
+    <strong>${s.duplicates || 0}</strong> already existed (skipped),
+    <strong>${s.errors || 0}</strong> error${(s.errors || 0) === 1 ? '' : 's'},
+    <strong>${s.unmatchedFiles || 0}</strong> file${(s.unmatchedFiles || 0) === 1 ? '' : 's'} not listed in the sheet.</p>`;
+  const rows = [
+    ...(data.errors || []).map((e) => ({ row: e.row, file: e.file, reason: e.reason })),
+    ...(data.unmatchedFiles || []).map((u) => ({ row: '—', file: u.file, reason: 'No matching row in the Excel sheet' })),
+  ];
+  errorsEl.innerHTML = rows.length
+    ? `<table class="dda-logs-table"><thead><tr><th>Row</th><th>File</th><th>Reason</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><td>${escapeHtml(String(r.row))}</td><td>${escapeHtml(r.file || '')}</td><td>${escapeHtml(r.reason || '')}</td></tr>`).join('')}
+       </tbody></table>`
+    : '';
+  wrap.classList.remove('hidden');
+}
+
+document.getElementById('btn-bulk-upload-submit')?.addEventListener('click', async () => {
+  const excelInput = document.getElementById('bulk-upload-excel');
+  const filesInput = document.getElementById('bulk-upload-files');
+  const excelFile = excelInput?.files?.[0];
+  const imageFiles = Array.from(filesInput?.files || []);
+  if (!excelFile) { showDdaError?.('Choose the filled-in Excel sheet first.'); return; }
+  if (!imageFiles.length) { showDdaError?.('Choose the image files listed in the sheet.'); return; }
+
+  const btn = document.getElementById('btn-bulk-upload-submit');
+  const progWrap = document.getElementById('bulk-upload-progress');
+  const progFill = document.getElementById('bulk-upload-progress-fill');
+  const progLabel = document.getElementById('bulk-upload-progress-label');
+  if (btn) btn.disabled = true;
+  progWrap?.classList.remove('hidden');
+  if (progLabel) progLabel.textContent = `Uploading ${imageFiles.length} file${imageFiles.length === 1 ? '' : 's'}…`;
+  if (progFill) progFill.style.width = '0%';
+
+  const form = new FormData();
+  form.append('excel', excelFile);
+  imageFiles.forEach((f) => form.append('files', f));
+
+  try {
+    const data = await uploadWithProgress('/api/dda/tree/bulk-upload', form, (loaded, total) => {
+      if (progFill && total) progFill.style.width = `${Math.round((loaded / total) * 100)}%`;
+    });
+    if (progFill) progFill.style.width = '100%';
+    renderBulkUploadResult(data);
+    const created = data.summary?.created || 0;
+    if (created) {
+      showDdaSuccess?.(`Bulk upload complete — ${created} image${created === 1 ? '' : 's'} added.`);
+      if (typeof window.ddaState?.rescan === 'function') await window.ddaState.rescan();
+    } else {
+      showDdaError?.('No images were created — see the results below.');
+    }
+  } catch (err) {
+    showDdaError?.(err.message || 'Bulk upload failed.');
+  } finally {
+    if (btn) btn.disabled = false;
+    setTimeout(() => progWrap?.classList.add('hidden'), 1500);
+  }
+});

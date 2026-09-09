@@ -86,8 +86,12 @@
     }
     try {
       await ddaApi('POST', '/api/auth/change-password', { body: JSON.stringify({ current_password, new_password }) });
-      showMsg('password-success', 'Password changed.', false);
       document.getElementById('password-form').reset();
+      // Changing the password invalidates the current session too (server-side,
+      // so a leaked old token can't keep working) — send the user back to sign
+      // in with the new password instead of leaving a now-dead session active.
+      showMsg('password-success', 'Password changed. Signing you out for security — please sign in again.', false);
+      setTimeout(() => { window.location.href = '/login'; }, 2000);
     } catch (err) {
       showMsg('password-error', err.message || 'Could not change password.', true);
     }

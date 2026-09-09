@@ -50,6 +50,7 @@ from .auth import (
     mask_email,
     normalize_phone,
     record_login_event,
+    revoke_user_sessions,
     verify_login_otp,
     verify_password,
 )
@@ -466,7 +467,7 @@ def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
             user_id=user.id, ip_address=ip, user_agent=ua,
         )
         expires = REMEMBER_ME_EXPIRE if data.remember_me else SESSION_TOKEN_EXPIRE
-        token = create_access_token(data={"sub": str(user.id), "purpose": "session"}, expires_delta=expires)
+        token = create_access_token(data={"sub": str(user.id), "purpose": "session", "tv": int(user.token_version or 0)}, expires_delta=expires)
         return _auth_response(token, user, remember=data.remember_me)
     except HTTPException:
         raise
@@ -507,7 +508,8 @@ def request_login_otp(data: OtpRequest, request: Request, db: Session = Depends(
 
 @app.post("/api/auth/logout")
 def logout(request: Request, db: Session = Depends(get_db)):
-    """Record the logout, then clear the auth cookie so subsequent requests are unauthenticated."""
+    """Record the logout, revoke the session token (and any other copy of it —
+    another tab, another device, or a leaked token), then clear the cookie."""
     token = request.cookies.get(COOKIE_NAME)
     if token:
         user = get_user_from_token(token, db)
@@ -516,6 +518,8 @@ def logout(request: Request, db: Session = Depends(get_db)):
                 db, event_type="logout", attempted_email=user.email, user_id=user.id,
                 ip_address=get_client_ip(request), user_agent=get_user_agent(request),
             )
+            revoke_user_sessions(user)
+            db.commit()
     response = JSONResponse(content={"ok": True})
     response.delete_cookie(COOKIE_NAME, path="/")
     return response
@@ -535,6 +539,7 @@ def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
         # Intentionally vague to prevent email enumeration
         raise HTTPException(status_code=404, detail="No account found with that email")
     user.hashed_password = get_password_hash(data.new_password)
+    revoke_user_sessions(user)
     db.commit()
     return {"ok": True, "message": "Password has been reset. You can now sign in."}
 
@@ -579,6 +584,7 @@ def reset_password_with_token(data: ResetPasswordWithToken, db: Session = Depend
     if not user:
         raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
     user.hashed_password = get_password_hash(data.new_password)
+    revoke_user_sessions(user)
     db.commit()
     return {"ok": True, "message": "Password has been reset. You can now sign in."}
 
@@ -642,6 +648,7 @@ def change_password(data: ChangePasswordRequest, user: Optional[User] = Depends(
     if len(data.new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
     user.hashed_password = get_password_hash(data.new_password)
+    revoke_user_sessions(user)
     db.commit()
     return {"ok": True, "message": "Password changed."}
 
@@ -720,7 +727,7 @@ def verify_login_otp_route(data: OtpVerifyRequest, request: Request, db: Session
         user_id=user.id, ip_address=ip, user_agent=ua,
     )
     expires = REMEMBER_ME_EXPIRE if remember else SESSION_TOKEN_EXPIRE
-    token = create_access_token(data={"sub": str(user.id), "purpose": "session"}, expires_delta=expires)
+    token = create_access_token(data={"sub": str(user.id), "purpose": "session", "tv": int(user.token_version or 0)}, expires_delta=expires)
     return _auth_response(token, user, remember=remember)
 
 
@@ -804,9 +811,8 @@ async def detect(
 
     before_pil = _read_upload(before, "before")
     after_pil = _read_upload(after, "after")
-    detection_sensitivity = max(0.0, min(1.0, float(detection_sensitivity)))
-    if min_region_area is not None:
-        min_region_area = int(max(50, min(10000, min_region_area)))
+    from .dda.detect_service import clamp_detection_params
+    detection_sensitivity, min_region_area = clamp_detection_params(detection_sensitivity, min_region_area)
 
     from .detection_engine import run_detection
     change_mask, result_image, stats, change_regions = run_detection(
@@ -891,6 +897,8 @@ async def detect(
         before_thumb_path=relative_before_thumb,
         after_thumb_path=relative_after_thumb,
         regions_json=json.dumps(regions_serializable),
+        detection_sensitivity=detection_sensitivity,
+        min_region_area=min_region_area,
     )
     db.add(run)
     db.commit()

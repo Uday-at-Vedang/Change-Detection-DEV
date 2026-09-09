@@ -314,6 +314,9 @@ function showDdaResult(data) {
   const shadowHint = shadowPx > 0
     ? `<div class="stat-box"><div class="value" title="${shadowPx.toLocaleString()}">${formatCompact(shadowPx)}</div><div class="label">Shadow px</div></div>`
     : '';
+  const settingsHint = stats.detectionSensitivity != null
+    ? `<div class="stat-box"><div class="value value-sm">${Number(stats.detectionSensitivity).toFixed(2)} / ${(stats.minRegionArea ?? 0).toLocaleString()}px</div><div class="label">Sensitivity / Min region</div></div>`
+    : '';
 
   statsEl.innerHTML = warnHtml + `
     <div class="stat-box"><div class="value">${pct}%</div><div class="label">Changed</div></div>

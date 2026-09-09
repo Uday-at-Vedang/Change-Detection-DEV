@@ -29,6 +29,72 @@ function initShapeToggle() {
   apply();
 }
 
+// --- Sensitivity slider + Minimum Region validation --------------------
+function clampSensitivity(raw) {
+  const n = Number(raw);
+  return Number.isNaN(n) ? 0.45 : Math.max(0, Math.min(1, n));
+}
+function clampMinRegionArea(raw) {
+  const n = Math.round(Number(raw));
+  return Number.isNaN(n) ? 50 : Math.max(50, Math.min(10000, n));
+}
+
+function initDetectSettingsControls() {
+  const sens = document.getElementById('dda-detect-sensitivity');
+  const sensVal = document.getElementById('dda-detect-sensitivity-val');
+  if (sens && !sens.dataset.bound) {
+    sens.dataset.bound = '1';
+    const syncSensLabel = () => { if (sensVal) sensVal.textContent = clampSensitivity(sens.value).toFixed(2); };
+    sens.addEventListener('input', syncSensLabel);
+    syncSensLabel();
+  }
+
+  const minArea = document.getElementById('dda-detect-min-area');
+  const minAreaHint = document.getElementById('dda-detect-min-area-hint');
+  const decBtn = document.getElementById('dda-detect-min-area-dec');
+  const incBtn = document.getElementById('dda-detect-min-area-inc');
+  const MIN_AREA_STEP = 10;
+
+  function updateMinAreaStepperState() {
+    if (!minArea) return;
+    const v = clampMinRegionArea(minArea.value);
+    if (decBtn) decBtn.disabled = v <= 50;
+    if (incBtn) incBtn.disabled = v >= 10000;
+  }
+
+  function applyMinAreaValue(rawValue, { wasBlank = false } = {}) {
+    if (!minArea) return;
+    const before = wasBlank ? NaN : Number(rawValue);
+    const clamped = clampMinRegionArea(rawValue);
+    const changed = wasBlank || Number.isNaN(before) || before !== clamped;
+    minArea.value = String(clamped);
+    if (minAreaHint) {
+      if (changed) {
+        const reason = clamped === 50 ? 'minimum allowed' : clamped === 10000 ? 'maximum allowed' : 'valid range';
+        minAreaHint.textContent = `Adjusted to ${clamped} (${reason}).`;
+        minAreaHint.classList.remove('hidden');
+      } else {
+        minAreaHint.classList.add('hidden');
+      }
+    }
+    updateMinAreaStepperState();
+  }
+
+  if (minArea && !minArea.dataset.bound) {
+    minArea.dataset.bound = '1';
+    minArea.addEventListener('blur', () => {
+      applyMinAreaValue(minArea.value, { wasBlank: minArea.value.trim() === '' });
+    });
+    decBtn?.addEventListener('click', () => {
+      applyMinAreaValue(clampMinRegionArea(minArea.value) - MIN_AREA_STEP);
+    });
+    incBtn?.addEventListener('click', () => {
+      applyMinAreaValue(clampMinRegionArea(minArea.value) + MIN_AREA_STEP);
+    });
+    updateMinAreaStepperState();
+  }
+}
+
 function compareFormatBytes(n) {
   if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
   if (n >= 1024 ** 2) return (n / 1024 ** 2).toFixed(1) + ' MB';
@@ -843,9 +909,8 @@ async function runLibraryDetection() {
   form.append('method', document.getElementById('dda-detect-method')?.value || 'AI-Based Deep Learning');
   form.append('enable_registration', String(document.getElementById('dda-detect-registration')?.checked !== false));
   form.append('enable_normalization', String(document.getElementById('dda-detect-normalization')?.checked !== false));
-  form.append('detection_sensitivity', String(Math.max(0, Math.min(1, Number(document.getElementById('dda-detect-sensitivity')?.value ?? 0.45)))));
-  const minArea = Number(document.getElementById('dda-detect-min-area')?.value ?? 150);
-  if (!Number.isNaN(minArea) && minArea >= 50) form.append('min_region_area', String(Math.round(minArea)));
+  form.append('detection_sensitivity', String(clampSensitivity(document.getElementById('dda-detect-sensitivity')?.value ?? 0.45)));
+  form.append('min_region_area', String(clampMinRegionArea(document.getElementById('dda-detect-min-area')?.value ?? 150)));
   const notifyCb = document.getElementById('dda-detect-notify');
   const notifyEmail = document.getElementById('dda-detect-notify-email');
   if (notifyCb?.checked && notifyEmail?.value?.trim()) {
@@ -879,6 +944,7 @@ let compareInitialized = false;
 function initCompareTab() {
   initShapeToggle();
   initDetectMode();
+  initDetectSettingsControls();
   if (!compareInitialized) {
     if (typeof registerCompareTreeSidebar === 'function') {
       registerCompareTreeSidebar({

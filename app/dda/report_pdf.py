@@ -31,6 +31,8 @@ def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False, r
             "changedPixels": run.changed_pixels,
             "unchangedPixels": run.total_pixels - run.changed_pixels,
             "changePercentage": run.change_percentage,
+            "detectionSensitivity": run.detection_sensitivity,
+            "minRegionArea": run.min_region_area,
         },
         "regions": regions,
         "regionsCount": run.regions_count,
@@ -80,8 +82,12 @@ def generate_report_pdf(run: DetectionRun, *, regions: Optional[List[dict]] = No
         Paragraph(f"<b>Location:</b> {location}", body),
         Paragraph(f"<b>Change:</b> {run.change_percentage:.2f}% ({run.changed_pixels:,} / {run.total_pixels:,} px)", body),
         Paragraph(f"<b>Regions detected:</b> {run.regions_count}", body),
-        Spacer(1, 10),
     ]
+    if run.detection_sensitivity is not None or run.min_region_area is not None:
+        sens_txt = f"{run.detection_sensitivity:.2f}" if run.detection_sensitivity is not None else "—"
+        area_txt = f"{run.min_region_area:,} px" if run.min_region_area is not None else "—"
+        story.append(Paragraph(f"<b>Detection settings:</b> Sensitivity {sens_txt} · Min region area {area_txt}", body))
+    story.append(Spacer(1, 10))
 
     overlay_path = run.overlay_path
     if overlay_path:

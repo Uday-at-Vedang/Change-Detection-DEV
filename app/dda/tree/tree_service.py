@@ -155,6 +155,29 @@ def get_or_create_node(
         raise
 
 
+def get_or_create_node_by_path(
+    db: Session,
+    path: str,
+    *,
+    created_by: str,
+    node_type: str = "Folder",
+) -> TreeNode:
+    """Walk a "/"-separated path from the root, creating any missing folder
+    segment along the way (mirrors the frontend's ensureFolderPath, used for
+    webkitdirectory uploads, but server-side — see bulk_upload_service.py)."""
+    segments = [s.strip() for s in (path or "").split("/") if s.strip()]
+    if not segments:
+        raise HTTPException(status_code=400, detail="Folder path is required")
+    parent_id: Optional[int] = None
+    node: Optional[TreeNode] = None
+    for segment in segments:
+        node, _created = get_or_create_node(
+            db, parent_id=parent_id, node_name=segment, node_type=node_type, created_by=created_by,
+        )
+        parent_id = node.id
+    return node
+
+
 def rename_node(
     db: Session,
     node_id: int,

@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ...auth import get_password_hash, get_user_by_email, get_user_by_phone, normalize_phone
+from ...auth import get_password_hash, get_user_by_email, get_user_by_phone, normalize_phone, revoke_user_sessions
 from ...database import get_db
 from ...models import User
 from ..dda_auth import current_dda_user
@@ -476,6 +476,7 @@ def update_user(
     target.role = role.name
     if body.password:
         target.hashed_password = get_password_hash(body.password)
+        revoke_user_sessions(target)
     db.commit()
     _log_admin_action(db, "update_user", _user, {"user_id": target.id, "email": target.email, "role": role.name})
     return _user_dict(target, role.name, role.id)
