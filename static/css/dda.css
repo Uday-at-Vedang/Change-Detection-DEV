@@ -397,6 +397,19 @@
 .dda-tree-node-summary { list-style: none; cursor: pointer; }
 .dda-tree-node-summary .dda-tree-node-btn { display: inline; width: auto; }
 .dda-tree-children { padding-left: 0.65rem; border-left: 1px solid var(--border); margin-left: 0.35rem; }
+.dda-tree-toolbar { display: flex; gap: 0.5rem; margin: -0.35rem 0 0.6rem; }
+.dda-tree-toolbar-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dda-tree-toolbar-btn:hover { color: var(--grad-start); }
+.dda-tree-hit { background: rgba(255, 205, 60, 0.45); color: inherit; border-radius: 2px; }
 .dda-tree-leaf { padding-left: 0.75rem; }
 .dda-crumb { font-size: 0.78rem; line-height: 1.3; }
 .dda-manage-panel { max-width: 640px; width: 100%; }
@@ -516,11 +529,18 @@
   line-height: 1.3;
   /* Fixed height regardless of path length — the variable-length crumb
      text (folder path + filename) was the other source of uneven card
-     heights, wrapping to 1-3 lines depending on the image. */
-  height: 2.6em;
+     heights, wrapping to 1-3 lines depending on the image. Three lines now:
+     crumb, type/size/dims, uploaded date. */
+  height: 3.9em;
   overflow: hidden;
 }
 .dda-card-img .meta .dda-crumb {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dda-card-img .meta .dda-card-uploaded {
   display: block;
   white-space: nowrap;
   overflow: hidden;
@@ -786,6 +806,9 @@
 }
 .dda-image-viewer-status { min-height: 1.2rem; margin: 0 0 0.5rem; }
 .dda-image-viewer-status.dda-viewer-error { color: var(--danger, #dc2626); }
+.dda-image-viewer-meta { margin: 0 0 0.4rem; }
+.dda-viewer-meta-row { line-height: 1.5; }
+.dda-viewer-meta-row .dda-meta-sep { opacity: 0.5; margin: 0 0.15rem; }
 
 .dda-viewer-mode-bar {
   display: flex;

@@ -3,6 +3,22 @@
 let treeData = null;
 let imageTypes = [];
 
+// Folders a user has explicitly collapsed, persisted across re-renders
+// (uploads, rescans, node selection) so closing a folder actually sticks
+// instead of snapping back open on the next redraw.
+const collapsedTreeNodeIds = new Set();
+
+function highlightMatch(name, filter) {
+  const escaped = escapeHtml(name);
+  if (!filter) return escaped;
+  const idx = name.toLowerCase().indexOf(filter);
+  if (idx === -1) return escaped;
+  const before = escapeHtml(name.slice(0, idx));
+  const hit = escapeHtml(name.slice(idx, idx + filter.length));
+  const after = escapeHtml(name.slice(idx + filter.length));
+  return `${before}<mark class="dda-tree-hit">${hit}</mark>${after}`;
+}
+
 const librarySidebar = {
   containerId: 'lib-tree',
   searchId: 'lib-tree-search',
@@ -51,20 +67,24 @@ function renderTreeNodes(nodes, sidebar, depth = 0) {
     const hasKids = children.length > 0;
     const count = node.imageCount ? ` <span class="dim">(${node.imageCount})</span>` : '';
     const indent = depth > 0 ? ` style="padding-left:${depth * 0.5}rem"` : '';
+    const label = highlightMatch(name, filter);
 
     if (hasKids) {
+      // While filtering, force every branch open so matches stay visible;
+      // otherwise honor the user's own collapse/expand choice.
+      const isOpen = filter ? true : !collapsedTreeNodeIds.has(node.id);
       return `
-        <details class="dda-tree-node-wrap" open>
+        <details class="dda-tree-node-wrap" data-node-id="${node.id}"${isOpen ? ' open' : ''}>
           <summary class="dda-tree-node-summary ${active ? 'active' : ''}" data-node-id="${node.id}">
             <button type="button" class="dda-tree-node-btn ${active ? 'active' : ''}" data-node-id="${node.id}"
-              data-node-path="${escapeHtml(node.nodePath || name)}">${escapeHtml(name)}${count}</button>
+              data-node-path="${escapeHtml(node.nodePath || name)}">${label}${count}</button>
           </summary>
           <div class="dda-tree-children">${renderTreeNodes(children, sidebar, depth + 1)}</div>
         </details>`;
     }
     return `
       <button type="button" class="dda-tree-node-btn dda-tree-leaf ${active ? 'active' : ''}" data-node-id="${node.id}"
-        data-node-path="${escapeHtml(node.nodePath || name)}"${indent}>${escapeHtml(name)}${count}</button>`;
+        data-node-path="${escapeHtml(node.nodePath || name)}"${indent}>${label}${count}</button>`;
   }).join('');
 }
 
@@ -77,10 +97,14 @@ function renderTreeSidebar(sidebar, tree, types) {
   const sel = sidebar.getSelectedNode?.();
   const allActive = !sel?.id;
   const allBtnId = sidebar.allBtnId || `btn-tree-all-${sidebar.containerId}`;
+  const filterVal = (document.getElementById(sidebar.searchId)?.value || '').trim();
   let html = `<button type="button" class="dda-tree-all ${allActive ? 'active' : ''}" id="${allBtnId}">All images</button>`;
-  html += renderTreeNodes(nodes, sidebar);
+  const nodesHtml = renderTreeNodes(nodes, sidebar);
+  html += nodesHtml;
   if (!nodes.length) {
     html += '<p class="dim">No folders yet. Use Folders master to add zones and areas, or drop a folder onto Upload.</p>';
+  } else if (filterVal && !nodesHtml.trim()) {
+    html += `<p class="dim">No folders match "${escapeHtml(filterVal)}".</p>`;
   }
   el.innerHTML = html;
 
@@ -89,8 +113,22 @@ function renderTreeSidebar(sidebar, tree, types) {
     renderAllTrees(treeData, imageTypes);
   });
 
+  el.querySelectorAll('details.dda-tree-node-wrap').forEach((det) => {
+    det.addEventListener('toggle', () => {
+      const id = parseInt(det.dataset.nodeId, 10);
+      if (det.open) collapsedTreeNodeIds.delete(id);
+      else collapsedTreeNodeIds.add(id);
+    });
+  });
+
   el.querySelectorAll('.dda-tree-node-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
+      // Without this, clicking the folder name (inside <summary>) also
+      // triggers the browser's native disclosure toggle on the parent
+      // <details> — harmless before collapse state was persisted (every
+      // redraw forced it back open), but a real bug now: selecting a
+      // folder would silently collapse it too.
+      e.preventDefault();
       e.stopPropagation();
       sidebar.onNodeSelect?.({
         id: parseInt(btn.dataset.nodeId, 10),
@@ -117,6 +155,17 @@ function registerCompareTreeSidebar(config) {
 }
 
 document.getElementById('lib-tree-search')?.addEventListener('input', () => {
+  if (treeData) renderAllTrees(treeData, imageTypes);
+});
+
+document.getElementById('lib-tree-expand-all')?.addEventListener('click', () => {
+  collapsedTreeNodeIds.clear();
+  if (treeData) renderAllTrees(treeData, imageTypes);
+});
+document.getElementById('lib-tree-collapse-all')?.addEventListener('click', () => {
+  flattenNodes(treeData?.tree || treeData || []).forEach((n) => {
+    if ((n.children || []).length) collapsedTreeNodeIds.add(n.id);
+  });
   if (treeData) renderAllTrees(treeData, imageTypes);
 });
 

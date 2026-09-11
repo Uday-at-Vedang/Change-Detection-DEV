@@ -57,9 +57,7 @@ async function initDda() {
 
     const folderPath = document.getElementById('lib-folder-path');
     if (folderPath) {
-      folderPath.textContent = localCfg.isHosted
-        ? 'Hugging Face — tree library'
-        : `Storage: ${localCfg.storageRoot || ''}`;
+      folderPath.textContent = `Storage: ${localCfg.storageRoot || ''}`;
     }
 
     const instr = document.getElementById('lib-instructions');
@@ -115,7 +113,8 @@ function renderLibGrid() {
       ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
       <div class="meta">
         <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
-        <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
+        <span class="dim">${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}${img.width && img.height ? ` · ${img.width}×${img.height}` : ''}</span><br/>
+        <span class="dim dda-card-uploaded">Uploaded ${typeof formatDateIst === 'function' ? formatDateIst(img.uploadedOn) : (img.uploadedOn || '—')}</span>
       </div>
     </div>`;
   }).join('');

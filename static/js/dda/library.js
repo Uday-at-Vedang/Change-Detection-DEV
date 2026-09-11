@@ -115,14 +115,7 @@ function openLibraryImageViewer(img) {
   revokeViewerObjectUrl();
   libraryViewerState.image = img;
   title.textContent = img.filename || img.imageName || 'Image';
-  const parts = [
-    img.breadcrumb || img.nodePath || '',
-    img.imageType || '',
-    typeof formatBytes === 'function' ? formatBytes(img.fileSizeBytes) : '',
-    img.width && img.height ? `${img.width}×${img.height}` : '',
-    img.hasGeoref ? 'georeferenced' : '',
-  ].filter(Boolean);
-  meta.textContent = parts.join(' · ');
+  meta.innerHTML = buildImageMetaHtml(img);
   imageEl.alt = img.filename || 'Library image';
   imageEl.removeAttribute('src');
   setViewerStatus('Loading preview…', false);

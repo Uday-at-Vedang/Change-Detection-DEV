@@ -57,6 +57,40 @@ function formatBytes(n) {
   return (n / 1024).toFixed(0) + ' KB';
 }
 
+/** Structured metadata rows (path, type/format/size/dims/georef, capture/upload
+ * info) for a library image dict (see app/dda/tree/image_service.py::image_to_dict).
+ * Shared by the Image Library viewer and the Change Detection Before/After slots. */
+function buildImageMetaHtml(img) {
+  const esc = (s) => escapeHtml(String(s));
+  const row = (parts) => {
+    const filled = parts.filter(Boolean);
+    return filled.length ? `<div class="dda-viewer-meta-row">${filled.join(' <span class="dda-meta-sep">·</span> ')}</div>` : '';
+  };
+  const path = img.breadcrumb || img.nodePath || '';
+  const size = typeof formatBytes === 'function' ? formatBytes(img.fileSizeBytes) : '';
+  const dims = img.width && img.height ? `${img.width}×${img.height}px` : '';
+  const captureDate = img.captureDate && typeof formatDateIst === 'function'
+    ? formatDateIst(img.captureDate, { withTime: false }) : '';
+  const uploadedOn = img.uploadedOn && typeof formatDateIst === 'function'
+    ? formatDateIst(img.uploadedOn) : '';
+  const uploadedBy = img.uploadedBy ? esc(img.uploadedBy) : '';
+
+  return [
+    row([path ? esc(path) : '']),
+    row([
+      img.imageType ? esc(img.imageType) : '',
+      img.format ? esc(img.format) : '',
+      size,
+      dims,
+      img.hasGeoref ? 'Georeferenced' : 'Not georeferenced',
+    ]),
+    row([
+      captureDate ? `Captured ${captureDate}` : '',
+      uploadedOn ? `Uploaded ${uploadedOn}${uploadedBy ? ` by ${uploadedBy}` : ''}` : '',
+    ]),
+  ].join('');
+}
+
 // --- Dynamic role permissions (drives show/hide/disable in the UI so it
 // always matches whatever's set in the Roles & Users permission matrix,
 // without hardcoding any role name in a template or JS file). ---

@@ -24,7 +24,7 @@ DEFAULT_ROLES = [
 # (key, name, description)
 DEFAULT_MODULES = [
     ("home", "Dashboard", "System dashboard — detection overview, regions, reports"),
-    ("library", "Master Library", "Browse and upload satellite / drone imagery"),
+    ("library", "Image Library", "Browse and upload satellite / drone imagery"),
     ("masters", "Masters", "Zone / district and village / location master data"),
     ("detect", "Change Detection", "Compare imagery and run detections"),
     ("reports", "Reports", "Detection history, exports, and PDF reports"),
@@ -42,7 +42,7 @@ DEFAULT_MODULES = [
 DEFAULT_MENU_ITEMS = [
     ("Dashboard", "/", "home", 0, None),
     ("Masters", "#masters", None, 1, None),
-    ("Master Library", "/library", "library", 0, "Masters"),
+    ("Image Library", "/library", "library", 0, "Masters"),
     ("Zone / District", "/masters/zones", "masters", 1, "Masters"),
     ("Village / Location", "/masters/villages", "masters", 2, "Masters"),
     ("Change Detection", "/detect", "detect", 2, None),

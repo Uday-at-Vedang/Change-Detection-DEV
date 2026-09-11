@@ -164,11 +164,26 @@ def init_dda_database():
         mig = run_tree_migration(db)
         logger.info("Tree migration: %s", mig)
         try:
-            from .tree.sync_service import sync_from_filesystem
-            sync_stats = sync_from_filesystem(db)
-            logger.info("Filesystem sync at startup: %s", sync_stats)
+            import threading
+
+            def _background_fs_sync() -> None:
+                from ..database import SessionLocal as _SessionLocal
+                from .tree.sync_service import sync_from_filesystem
+                sync_db = _SessionLocal()
+                try:
+                    sync_stats = sync_from_filesystem(sync_db)
+                    logger.info("Filesystem sync (background): %s", sync_stats)
+                except Exception as exc:
+                    logger.warning("Background filesystem sync failed: %s", exc)
+                finally:
+                    sync_db.close()
+
+            threading.Thread(
+                target=_background_fs_sync, name="dda-fs-sync", daemon=True
+            ).start()
+            logger.info("Filesystem sync moved to background thread")
         except Exception as exc:
-            logger.warning("Filesystem sync at startup failed: %s", exc)
+            logger.warning("Could not start background filesystem sync: %s", exc)
         from .auto_detect import reset_schedule_on_process_start
         reset_schedule_on_process_start()
         from .job_runner import reconcile_stale_jobs

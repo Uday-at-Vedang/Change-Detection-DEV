@@ -22,6 +22,7 @@ _NODE_TYPES = ("Zone", "Area", "Year", "Folder")
 _SKIP_DIRS = frozenset({".git", ".thumbs", "__pycache__", "cache", "thumbs"})
 _RESERVED_DIR_NAMES = RESERVED
 _SKIP_CACHE: Optional[dict] = None
+_COMMIT_BATCH_SIZE = 200
 
 
 def _skip_cache_path() -> Path:
@@ -182,6 +183,9 @@ def _index_image_file(
 
     Unreadable rasters (corrupt TIFF, etc.) are skipped and counted in
     ``stats['imagesSkipped']`` so one bad file cannot fail the whole rescan.
+
+    Does not commit — the caller batches commits across many files (see
+    ``_COMMIT_BATCH_SIZE``) so a large sync isn't one fsync per row.
     """
     existing = db.query(ImageLibrary).filter(ImageLibrary.file_path == rel_file).first()
     path_fixed = False
@@ -197,7 +201,7 @@ def _index_image_file(
     skip_meta = skip.get(rel_file)
     if skip_meta is not None and int(skip_meta.get("size") or 0) == stat.st_size:
         if path_fixed:
-            db.commit()
+            db.flush()
         stats["imagesSkipped"] = stats.get("imagesSkipped", 0) + 1
         return False
     if existing and existing.file_size_bytes == stat.st_size and (existing.width or 0) > 0:
@@ -209,7 +213,7 @@ def _index_image_file(
                 changed = True
         if changed:
             existing.node_id = node.id
-            db.commit()
+            db.flush()
             stats["imagesUpdated"] += 1
         return False
     try:
@@ -249,13 +253,13 @@ def _index_image_file(
                 inferred = _infer_capture_date(file_path, node)
                 if inferred:
                     existing.capture_date = inferred
-            db.commit()
+            db.flush()
             stats["imagesUpdated"] += 1
         elif existing.capture_date is None:
             inferred = _infer_capture_date(file_path, node)
             if inferred:
                 existing.capture_date = inferred
-                db.commit()
+                db.flush()
                 stats["imagesUpdated"] += 1
         return False
 
@@ -275,7 +279,7 @@ def _index_image_file(
         format=meta.format,
     )
     db.add(img)
-    db.commit()
+    db.flush()
     logger.info("Indexed image from disk: %s", rel_file)
     return True
 
@@ -312,12 +316,19 @@ def _sync_directory(db: Session, abs_dir: Path, rel_path: str, stats: dict) -> N
                         logger.warning("Skipping images under %s: %s", rel_path, exc)
                         stats["foldersSkipped"] = stats.get("foldersSkipped", 0) + 1
                         continue
+                since_commit = 0
                 for f in sorted(child.iterdir()):
                     if not f.is_file() or f.suffix.lower() not in ALLOWED_EXTENSIONS:
                         continue
                     rel_file = f.relative_to(storage_root()).as_posix()
                     if _index_image_file(db, node, f, rel_file, stats):
                         stats["imagesIndexed"] += 1
+                    since_commit += 1
+                    if since_commit >= _COMMIT_BATCH_SIZE:
+                        db.commit()
+                        since_commit = 0
+                if since_commit:
+                    db.commit()
             continue
 
         if child.name.lower() in _RESERVED_DIR_NAMES:

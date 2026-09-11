@@ -223,9 +223,10 @@ function renderSlotPreview(slotKey, selection) {
 
   slot.classList.add('filled');
   const thumb = selection.thumbUrl || thumbUrlFor(selection.path);
+  const metaHtml = typeof buildImageMetaHtml === 'function' ? buildImageMetaHtml(selection) : '';
   wrap.innerHTML = `
     <img class="dda-slot-preview" src="${thumb}" alt="" />
-    <div class="dda-slot-meta">${escapeHtml(selection.label || selection.filename)}${selection.captureDate ? `<br/><span class="dim">${escapeHtml(String(selection.captureDate).slice(0, 10))}</span>` : ''}</div>`;
+    <div class="dda-slot-meta">${metaHtml || escapeHtml(selection.label || selection.filename)}</div>`;
   if (slotKey === 't2') setupRoiDraw();
 }
 
@@ -369,6 +370,16 @@ function setSlot(slotKey, img, options) {
     filename: img.filename,
     thumbUrl: img.thumbUrl || thumbUrlFor(img.path),
     captureDate: img.captureDate || null,
+    breadcrumb: img.breadcrumb || null,
+    nodePath: img.nodePath || null,
+    imageType: img.imageType || null,
+    format: img.format || null,
+    fileSizeBytes: img.fileSizeBytes || 0,
+    width: img.width || 0,
+    height: img.height || 0,
+    hasGeoref: !!img.hasGeoref,
+    uploadedBy: img.uploadedBy || null,
+    uploadedOn: img.uploadedOn || null,
   };
   if (slotKey === 't1') {
     compareState.t1 = item;
