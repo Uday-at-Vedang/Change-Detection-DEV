@@ -9,19 +9,60 @@ function _pairDateLabel(img) {
 }
 
 function _pairOptionLabel(img) {
-  const date = _pairDateLabel(img);
   const name = img.filename || img.imageName || img.path || '';
-  return date ? `${date} · ${name}` : name;
+  const parts = [_pairDateLabel(img), name, img.villageName || img.zoneName || ''];
+  return parts.filter(Boolean).join(' · ');
+}
+
+function _assignedPaths(exceptGroupId) {
+  const used = new Set();
+  for (const group of areaPairsState.groups || []) {
+    if (group.id === exceptGroupId) continue;
+    const ov = areaPairsState.overrides[group.id];
+    const before = ov?.beforePath || group.beforePath;
+    const after = ov?.afterPath || group.afterPath;
+    if (before) used.add(before);
+    if (after) used.add(after);
+  }
+  return used;
+}
+
+// Automatic pairing is always two images. The dropdown may offer unused
+// images from the same place, but never an image already assigned elsewhere.
+function _pairOptions(group, { excludePath } = {}) {
+  const used = _assignedPaths(group.id);
+  const pool = [];
+  const seen = new Set();
+  const add = (img) => {
+    if (!img?.path || seen.has(img.path)) return;
+    if (excludePath && img.path === excludePath) return;
+    seen.add(img.path);
+    pool.push(img);
+  };
+  (group.images || []).forEach(add);
+  (group.candidates || []).forEach((img) => {
+    if (used.has(img.path)) return;
+    add(img);
+  });
+  return pool;
 }
 
 function _pairChoice(group) {
   const ov = areaPairsState.overrides[group.id];
-  const images = group.images || [];
   const beforePath = ov?.beforePath || group.beforePath || group.suggestedBefore?.path;
   const afterPath = ov?.afterPath || group.afterPath || group.suggestedAfter?.path;
+  const images = _pairOptions(group);
   const before = images.find((i) => i.path === beforePath) || group.suggestedBefore;
   const after = images.find((i) => i.path === afterPath) || group.suggestedAfter;
+  if (before?.path && after?.path && before.path === after.path) {
+    return { before: group.suggestedBefore, after: group.suggestedAfter, overridden: false };
+  }
   return { before, after, overridden: !!ov };
+}
+
+function _pairReasonText(group) {
+  if (group.reasons?.length) return group.reasons.join(' · ');
+  return group.match === 'bounds' ? 'overlapping map extent' : 'matching name / grid';
 }
 
 function renderAreaPairRows(container, groups, { compact } = {}) {
@@ -32,23 +73,22 @@ function renderAreaPairRows(container, groups, { compact } = {}) {
   }
   container.innerHTML = groups.map((g) => {
     const { before, after, overridden } = _pairChoice(g);
-    const opts = (g.images || []).map((img) => {
+    const optionHtml = (excludePath) => _pairOptions(g, { excludePath }).map((img) => {
       const enc = encodeURIComponent(img.path);
       return `<option value="${enc}">${escapeHtml(_pairOptionLabel(img))}</option>`;
     }).join('');
-    const match = g.match === 'bounds' ? 'overlapping map extent' : 'matching name / grid';
-    const n = (g.images || []).length;
+    const extra = Math.max(0, _pairOptions(g).length - 2);
     return `
       <article class="dda-area-pair" data-group-id="${escapeHtml(g.id)}">
         <div class="dda-area-pair-head">
           <p class="dda-area-pair-title">${escapeHtml(g.label)}</p>
-          <p class="dda-area-pair-meta dim">${n} image${n === 1 ? '' : 's'} · ${escapeHtml(match)}${overridden ? ' · <span class="dda-area-pair-overridden">overridden</span>' : ''}</p>
+          <p class="dda-area-pair-meta dim">${escapeHtml(_pairReasonText(g))}${extra ? ` · ${extra} other image${extra === 1 ? '' : 's'} here` : ''}${overridden ? ' · <span class="dda-area-pair-overridden">overridden</span>' : ''}</p>
         </div>
         <label>Before (oldest)
-          <select data-role="before">${opts}</select>
+          <select data-role="before">${optionHtml(after?.path)}</select>
         </label>
         <label>After (newest)
-          <select data-role="after">${opts}</select>
+          <select data-role="after">${optionHtml(before?.path)}</select>
         </label>
         <div class="dda-area-pair-actions">
           <button type="button" class="btn btn-primary btn-sm" data-role="compare">Compare</button>
@@ -66,10 +106,20 @@ function renderAreaPairRows(container, groups, { compact } = {}) {
     if (afterSel && after) afterSel.value = encodeURIComponent(after.path);
 
     const saveOverride = () => {
-      areaPairsState.overrides[group.id] = {
-        beforePath: decodeURIComponent(beforeSel.value || ''),
-        afterPath: decodeURIComponent(afterSel.value || ''),
-      };
+      const beforePath = decodeURIComponent(beforeSel.value || '');
+      const afterPath = decodeURIComponent(afterSel.value || '');
+      if (!beforePath || !afterPath || beforePath === afterPath) {
+        if (typeof showDdaError === 'function') {
+          showDdaError('A pair must be two different images. The same file cannot be Before and After.');
+        }
+        renderAreaPairRows(document.getElementById('dda-area-pairs'), areaPairsState.groups);
+        const cmp = document.getElementById('dda-compare-pairs');
+        if (cmp && areaPairsState.groups.length) {
+          renderAreaPairRows(cmp, areaPairsState.groups, { compact: true });
+        }
+        return;
+      }
+      areaPairsState.overrides[group.id] = { beforePath, afterPath };
       renderAreaPairRows(document.getElementById('dda-area-pairs'), areaPairsState.groups);
       const cmp = document.getElementById('dda-compare-pairs');
       if (cmp && areaPairsState.groups.length) {
@@ -140,8 +190,8 @@ function populateAutoAreaSelect() {
     return;
   }
   sel.innerHTML = groups.map((g) => {
-    const n = (g.images || []).length;
-    return `<option value="${escapeHtml(g.id)}">${escapeHtml(g.label)} · ${n} image${n === 1 ? '' : 's'}</option>`;
+    const span = [g.beforeDate, g.afterDate].filter(Boolean).join(' → ');
+    return `<option value="${escapeHtml(g.id)}">${escapeHtml(g.label)}${span ? ` · ${escapeHtml(span)}` : ''}</option>`;
   }).join('');
   if (prev && groups.some((g) => g.id === prev)) sel.value = prev;
   else sel.value = groups[0].id;
@@ -200,6 +250,9 @@ async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
     }
     populateAutoAreaSelect();
     applyPairFromUrl();
+    if (typeof populateSelects === 'function' && typeof selectSourceItems === 'function') {
+      populateSelects(selectSourceItems((window.ddaState && window.ddaState.libraryItems) || []));
+    }
     if (typeof loadAutoDetectStatus === 'function') loadAutoDetectStatus();
     if (autoFillCompare && !areaPairsState.autoApplied && areaPairsState.groups.length) {
       if (typeof getDetectMode !== 'function' || getDetectMode() !== 'automatic') {

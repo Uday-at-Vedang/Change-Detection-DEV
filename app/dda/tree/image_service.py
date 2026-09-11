@@ -20,6 +20,7 @@ from .audit_service import log_action
 from .models import ImageLibrary, TreeNode
 from .path_service import images_dir, resolve_file, storage_root
 from .query_compat import active_node_clause
+from .library_cache import invalidate_library_caches
 from .tree_service import get_node_or_404
 
 logger = logging.getLogger(__name__)
@@ -88,16 +89,87 @@ def _as_iso(value) -> Optional[str]:
     return text
 
 
-def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
+def resolve_location(
+    db: Session,
+    zone_id: Optional[int],
+    village_id: Optional[int],
+) -> tuple[Optional[int], Optional[int]]:
+    """Validate an optional zone/village choice; a village implies its zone."""
+    from ..models import DdaVillage, DdaZone
+
+    zid = int(zone_id) if zone_id else None
+    vid = int(village_id) if village_id else None
+    if vid:
+        village = db.query(DdaVillage).filter(DdaVillage.id == vid).first()
+        if not village:
+            raise HTTPException(status_code=404, detail="Location (village) not found")
+        if zid and village.zone_id != zid:
+            raise HTTPException(
+                status_code=400,
+                detail="The selected location does not belong to the selected zone.",
+            )
+        return village.zone_id, village.id
+    if zid and not db.query(DdaZone).filter(DdaZone.id == zid).first():
+        raise HTTPException(status_code=404, detail="Zone not found")
+    return zid, None
+
+
+def location_names(db: Session) -> tuple[dict[int, str], dict[int, str]]:
+    """id → name lookups for zones and villages (both tables are small)."""
+    from ..models import DdaVillage, DdaZone
+
+    zones = {z.id: z.name for z in db.query(DdaZone.id, DdaZone.name).all()}
+    villages = {v.id: v.name for v in db.query(DdaVillage.id, DdaVillage.name).all()}
+    return zones, villages
+
+
+def resolve_run_location(db: Session, base_path: str, comparison_path: str) -> tuple[str, str]:
+    """Best-effort zone/village NAME for a detection run, derived from the
+    library images being compared (their own zone_id/village_id, set at
+    upload time) — so a new DetectionRun isn't bucketed under "Unassigned"
+    on the dashboard just because the caller didn't pass zone/village
+    explicitly. Prefers the after/comparison image's location, falling back
+    to the before/base image's. Returns ("", "") if neither image has one."""
+    def _norm(p: str) -> str:
+        return (p or "").replace("\\", "/").strip().lstrip("/")
+
+    paths = [p for p in (_norm(comparison_path), _norm(base_path)) if p]
+    if not paths:
+        return "", ""
+    by_path = {
+        img.file_path: img
+        for img in db.query(ImageLibrary).filter(ImageLibrary.file_path.in_(paths)).all()
+    }
+    zones, villages = location_names(db)
+    for p in paths:
+        img = by_path.get(p)
+        if not img or not (img.zone_id or img.village_id):
+            continue
+        zone_name = zones.get(img.zone_id, "") if img.zone_id else ""
+        village_name = villages.get(img.village_id, "") if img.village_id else ""
+        if zone_name or village_name:
+            return zone_name, village_name
+    return "", ""
+
+
+def image_to_dict(
+    img: ImageLibrary,
+    node: Optional[TreeNode] = None,
+    *,
+    include_bounds: bool = True,
+    slim: bool = False,
+    zone_names: Optional[dict] = None,
+    village_names: Optional[dict] = None,
+) -> dict:
     rel = (img.file_path or "").replace("\\", "/")
     encoded = quote(rel, safe="/")
     bounds = None
-    if img.bounds_json:
+    if include_bounds and img.bounds_json:
         try:
             bounds = json.loads(img.bounds_json)
         except json.JSONDecodeError:
             bounds = None
-    return {
+    payload = {
         "id": img.id,
         "nodeId": img.node_id,
         "path": rel,
@@ -108,18 +180,30 @@ def image_to_dict(img: ImageLibrary, node: Optional[TreeNode] = None) -> dict:
         "breadcrumb": f"{node.node_path}/{img.image_name}" if node else img.image_name,
         "fileSizeBytes": img.file_size_bytes,
         "captureDate": _as_iso(img.capture_date),
-        "uploadedBy": img.uploaded_by,
         "uploadedOn": _as_iso(img.uploaded_on),
         "thumbUrl": f"/api/dda/local/thumb?path={encoded}",
-        "previewUrl": f"/api/dda/local/preview?path={encoded}",
-        "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
         "hasGeoref": bool(img.has_georef),
-        "bounds": bounds,
         "width": img.width,
         "height": img.height,
+        "zoneId": img.zone_id,
+        "villageId": img.village_id,
+    }
+    if zone_names is not None:
+        payload["zoneName"] = zone_names.get(img.zone_id, "") if img.zone_id else ""
+    if village_names is not None:
+        payload["villageName"] = village_names.get(img.village_id, "") if img.village_id else ""
+    if include_bounds:
+        payload["bounds"] = bounds
+    if slim:
+        return payload
+    payload.update({
+        "uploadedBy": img.uploaded_by,
+        "previewUrl": f"/api/dda/local/preview?path={encoded}",
+        "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
         "format": img.format,
         "source": "tree_library",
-    }
+    })
+    return payload
 
 
 def _parse_manual_bounds(raw: Optional[str]) -> Optional[str]:
@@ -147,8 +231,11 @@ async def upload_image(
     capture_date: Optional[str],
     uploaded_by: str,
     manual_bounds: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
 ) -> ImageLibrary:
     node = get_node_or_404(db, node_id)
+    zone_id, village_id = resolve_location(db, zone_id, village_id)
     itype = image_type.strip() or "GeoTIFF"
     if itype not in IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=f"image_type must be one of: {', '.join(sorted(IMAGE_TYPES))}")
@@ -164,6 +251,19 @@ async def upload_image(
         .first()
     )
     if existing is not None:
+        # Re-uploading the same file is a no-op, but it is still the natural way
+        # to fill in a location that was left blank the first time.
+        backfilled = False
+        if zone_id and not existing.zone_id:
+            existing.zone_id = zone_id
+            backfilled = True
+        if village_id and not existing.village_id:
+            existing.village_id = village_id
+            backfilled = True
+        if backfilled:
+            db.commit()
+            db.refresh(existing)
+            invalidate_library_caches()
         logger.info("Skipped duplicate upload %s -> node %s (already exists as image id %s)",
                     original, node.id, existing.id)
         return existing
@@ -205,6 +305,8 @@ async def upload_image(
         image_type=itype,
         file_path=rel,
         capture_date=cap,
+        zone_id=zone_id,
+        village_id=village_id,
         uploaded_by=uploaded_by or "",
         file_size_bytes=size,
         thumb_cache_key=hashlib.sha256(rel.encode()).hexdigest()[:32],
@@ -215,9 +317,14 @@ async def upload_image(
         format=meta.format,
     )
     db.add(img)
-    log_action(db, "upload", node_id=node.id, new_value={"file": rel, "type": itype}, action_by=uploaded_by, module="library")
+    log_action(
+        db, "upload", node_id=node.id,
+        new_value={"file": rel, "type": itype, "zoneId": zone_id, "villageId": village_id},
+        action_by=uploaded_by, module="library",
+    )
     db.commit()
     db.refresh(img)
+    invalidate_library_caches()
     logger.info("Uploaded %s -> %s", original, rel)
     return img
 
@@ -225,7 +332,8 @@ async def upload_image(
 def list_images_for_node(db: Session, node_id: int) -> List[dict]:
     node = get_node_or_404(db, node_id)
     rows = db.query(ImageLibrary).filter(ImageLibrary.node_id == node_id).order_by(ImageLibrary.uploaded_on.desc()).all()
-    return [image_to_dict(r, node) for r in rows]
+    zones, villages = location_names(db)
+    return [image_to_dict(r, node, zone_names=zones, village_names=villages) for r in rows]
 
 
 def get_image_by_file_path(db: Session, relative_path: str) -> Optional[ImageLibrary]:
@@ -251,7 +359,7 @@ def _node_and_descendants_clause(node: TreeNode):
     return or_(*clauses)
 
 
-def list_all_images(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None) -> List[dict]:
+def _images_query(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None):
     q = (
         db.query(ImageLibrary, TreeNode)
         .outerjoin(TreeNode, ImageLibrary.node_id == TreeNode.id)
@@ -269,9 +377,50 @@ def list_all_images(db: Session, *, node_id: Optional[int] = None, query: Option
             func.lower(ImageLibrary.image_name).like(like),
             func.lower(func.coalesce(TreeNode.node_path, "")).like(like),
         ))
-    rows = q.all()
-    rows.sort(key=lambda pair: pair[0].uploaded_on or datetime.min, reverse=True)
-    return [image_to_dict(img, node) for img, node in rows]
+    return q
+
+
+def count_library_images(db: Session) -> int:
+    return int(_images_query(db).count() or 0)
+
+
+def library_fingerprint(db: Session) -> tuple:
+    n, mx, up = db.query(
+        func.count(ImageLibrary.id),
+        func.max(ImageLibrary.id),
+        func.max(ImageLibrary.uploaded_on),
+    ).one()
+    return (int(n or 0), int(mx or 0), str(up or ""))
+
+
+def list_all_images(
+    db: Session,
+    *,
+    node_id: Optional[int] = None,
+    query: Optional[str] = None,
+    include_bounds: bool = False,
+    slim: bool = True,
+    limit: Optional[int] = None,
+    offset: int = 0,
+):
+    q = _images_query(db, node_id=node_id, query=query)
+    ordered = q.order_by(ImageLibrary.uploaded_on.desc())
+    zones, villages = location_names(db)
+    if limit is not None:
+        total = q.count()
+        rows = ordered.offset(offset).limit(limit).all()
+        items = [
+            image_to_dict(img, node, include_bounds=include_bounds, slim=slim,
+                          zone_names=zones, village_names=villages)
+            for img, node in rows
+        ]
+        return {"items": items, "total": total, "offset": offset, "limit": limit}
+    rows = ordered.all()
+    return [
+        image_to_dict(img, node, include_bounds=include_bounds, slim=slim,
+                      zone_names=zones, village_names=villages)
+        for img, node in rows
+    ]
 
 
 def get_or_build_thumb(relative_path: str, max_side: int = 256) -> Path:
@@ -360,5 +509,6 @@ def delete_library_image(
     )
     db.delete(img)
     db.commit()
+    invalidate_library_caches()
     logger.info("Deleted library image %s (%s)", image_name, rel)
     return {"ok": True, "deletedPath": rel, "imageName": image_name, "imageId": saved_id}

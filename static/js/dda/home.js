@@ -18,6 +18,24 @@ function dashDelta(v, suffix) {
 
 const dashCharts = {};
 
+/** Current From/To date filter, as a URLSearchParams-ready query string
+ * fragment (without leading '?') — shared by every dashboard fetch except
+ * the trend chart, which has its own fixed month window. */
+function dashDateParams() {
+  const from = document.getElementById('dash-filter-from')?.value || '';
+  const to = document.getElementById('dash-filter-to')?.value || '';
+  const params = new URLSearchParams();
+  if (from) params.set('date_from', from);
+  if (to) params.set('date_to', to);
+  return params.toString();
+}
+
+function dashUrl(path) {
+  const qs = dashDateParams();
+  if (!qs) return path;
+  return path + (path.includes('?') ? '&' : '?') + qs;
+}
+
 function renderDashChart(canvasId, config) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || typeof Chart === 'undefined') return;
@@ -85,11 +103,22 @@ function renderDashLatest(run) {
 
 async function loadDashboardSummary() {
   try {
-    const summary = await ddaApi('GET', '/api/dda/dashboard/summary');
+    const summary = await ddaApi('GET', dashUrl('/api/dda/dashboard/summary'));
     dashSummaryCache = summary;
     const empty = document.getElementById('dda-dash-empty');
     const content = document.getElementById('dda-dash-content');
     if (!summary.totalRuns) {
+      const filtered = !!dashDateParams();
+      const heading = empty?.querySelector('h3');
+      const body = empty?.querySelector('p');
+      const cta = empty?.querySelector('a');
+      if (heading) heading.textContent = filtered ? 'No runs in this date range' : 'No detections yet';
+      if (body) {
+        body.textContent = filtered
+          ? 'Try clearing the From/To filter or picking a wider range.'
+          : 'Run your first comparison to start populating the dashboard with detection statistics, region/village breakdowns, and reports.';
+      }
+      if (cta) cta.classList.toggle('hidden', filtered);
       empty?.classList.remove('hidden');
       content?.classList.add('hidden');
       return summary;
@@ -159,7 +188,7 @@ function renderDashRolesTable(roles) {
 async function loadDashboardRoles() {
   const el = document.getElementById('dda-dash-roles');
   try {
-    const data = await ddaApi('GET', '/api/dda/dashboard/roles');
+    const data = await ddaApi('GET', dashUrl('/api/dda/dashboard/roles'));
     const roles = data.roles || [];
     renderDashRolesTable(roles);
     renderDashChart('dda-chart-roles', {
@@ -218,6 +247,7 @@ function renderDashRegionsTable(regions) {
 
 function selectDashRegion(zone) {
   dashSelectedZone = dashSelectedZone === zone ? '' : zone;
+  dashSelectedVillageKey = '';
   renderDashRegionsTable(dashRegionsCache);
   loadDashboardVillages(dashSelectedZone);
   const label = document.getElementById('dda-dash-village-filter-label');
@@ -234,7 +264,7 @@ function selectDashRegion(zone) {
 
 async function loadDashboardRegions() {
   try {
-    const data = await ddaApi('GET', '/api/dda/dashboard/regions');
+    const data = await ddaApi('GET', dashUrl('/api/dda/dashboard/regions'));
     dashRegionsCache = data.regions || [];
     renderDashRegionsTable(dashRegionsCache);
     renderDashChart('dda-chart-regions', {
@@ -249,6 +279,8 @@ async function loadDashboardRegions() {
     document.getElementById('dda-dash-regions').innerHTML = `<p class="dim">Could not load regions: ${escapeHtml(err.message || 'error')}</p>`;
   }
 }
+
+let dashSelectedVillageKey = '';
 
 function renderDashVillagesTable(villages) {
   const el = document.getElementById('dda-dash-villages');
@@ -271,8 +303,11 @@ function renderDashVillagesTable(villages) {
         </tr>
       </thead>
       <tbody>
-        ${villages.map((v) => `
-          <tr class="dda-dash-row-clickable" data-zone="${escapeHtml(v.zone)}" data-village="${escapeHtml(v.village)}">
+        ${villages.map((v) => {
+          const key = `${v.zone} ${v.village}`;
+          return `
+          <tr class="dda-dash-row-clickable${key === dashSelectedVillageKey ? ' dda-dash-row-active' : ''}"
+              data-zone="${escapeHtml(v.zone)}" data-village="${escapeHtml(v.village)}">
             <td>${escapeHtml(v.zone)}</td>
             <td>${escapeHtml(v.village)}</td>
             <td>${v.runsCount}</td>
@@ -280,11 +315,14 @@ function renderDashVillagesTable(villages) {
             <td>${v.unclassified}</td>
             <td>${dashPct(v.avgChangePercentage)}</td>
             <td><time datetime="${escapeHtml(v.lastDetectionAt || '')}">${formatHomeDate(v.lastDetectionAt)}</time></td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
   el.querySelectorAll('[data-village]').forEach((row) => {
     row.addEventListener('click', () => {
+      dashSelectedVillageKey = `${row.dataset.zone} ${row.dataset.village}`;
+      renderDashVillagesTable(villages);
       loadDashboardLocation(row.dataset.zone, row.dataset.village);
       document.getElementById('dda-dash-location-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -295,10 +333,20 @@ async function loadDashboardVillages(zone) {
   const el = document.getElementById('dda-dash-villages');
   if (el) el.innerHTML = '<p class="dim">Loading villages…</p>';
   try {
-    const qs = zone ? `?zone=${encodeURIComponent(zone)}` : '';
-    const data = await ddaApi('GET', `/api/dda/dashboard/villages${qs}`);
+    const params = new URLSearchParams(dashDateParams());
+    if (zone) params.set('zone', zone);
+    const qs = params.toString();
+    const data = await ddaApi('GET', `/api/dda/dashboard/villages${qs ? `?${qs}` : ''}`);
     const villages = data.villages || [];
     renderDashVillagesTable(villages);
+    // Default the Change Comparison card to the busiest village instead of
+    // leaving it empty until someone clicks a row — nothing to disambiguate
+    // when there's only one, and it's the most useful starting point either way.
+    if (villages.length && !dashSelectedVillageKey) {
+      dashSelectedVillageKey = `${villages[0].zone} ${villages[0].village}`;
+      renderDashVillagesTable(villages);
+      loadDashboardLocation(villages[0].zone, villages[0].village);
+    }
     const top = villages.slice(0, 15);
     renderDashChart('dda-chart-villages', {
       type: 'bar',
@@ -406,49 +454,6 @@ async function loadDashboardTrend() {
   }
 }
 
-async function loadDashboardReports() {
-  const el = document.getElementById('dda-dash-reports');
-  if (!el) return;
-  try {
-    const data = await ddaApi('GET', '/api/dda/dashboard/recent-reports?limit=8');
-    const rows = data.reports || [];
-    if (!rows.length) {
-      el.innerHTML = '<p class="dim">No detection reports yet. Run a comparison on the Change Detection page.</p>';
-      return;
-    }
-    el.innerHTML = `
-      <table class="dda-reports-table">
-        <thead>
-          <tr>
-            <th>Date (IST)</th>
-            <th>Title</th>
-            <th>Area</th>
-            <th>Change %</th>
-            <th>Regions</th>
-            <th>Confirmed</th>
-            <th>Unclassified</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((r) => `
-            <tr>
-              <td><time datetime="${escapeHtml(r.createdAt || '')}">${formatHomeDate(r.createdAt)}</time></td>
-              <td>${escapeHtml(r.title)}</td>
-              <td>${escapeHtml(r.zone)} &rsaquo; ${escapeHtml(r.village)}</td>
-              <td>${dashPct(r.changePercentage)}</td>
-              <td>${r.regionsCount}</td>
-              <td>${r.confirmed}</td>
-              <td>${r.unclassified}</td>
-              <td><a class="btn btn-secondary btn-sm" href="/dda/reports/${r.id}" target="_blank" rel="noopener">Report</a></td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`;
-  } catch (err) {
-    el.innerHTML = `<p class="dim">Could not load recent reports: ${escapeHtml(err.message || 'error')}</p>`;
-  }
-}
-
 function markDashUpdated() {
   const el = document.getElementById('dda-dash-updated');
   if (!el) return;
@@ -457,6 +462,7 @@ function markDashUpdated() {
 
 async function loadDashboard() {
   dashSelectedZone = '';
+  dashSelectedVillageKey = '';
   document.getElementById('dda-dash-village-filter-label')?.classList.add('hidden');
   document.getElementById('btn-dash-village-clear')?.classList.add('hidden');
   document.getElementById('dda-dash-location').innerHTML =
@@ -472,13 +478,23 @@ async function loadDashboard() {
     loadDashboardRegions(),
     loadDashboardVillages(''),
     loadDashboardTrend(),
-    loadDashboardReports(),
   ]);
   markDashUpdated();
 }
 
 document.getElementById('btn-dash-refresh')?.addEventListener('click', loadDashboard);
 document.getElementById('btn-dash-village-clear')?.addEventListener('click', () => selectDashRegion(''));
+
+// Date filter applies on an explicit Search click, not on every date pick —
+// picking From then To would otherwise fire two reloads back to back.
+document.getElementById('btn-dash-filter-apply')?.addEventListener('click', loadDashboard);
+document.getElementById('btn-dash-filter-clear')?.addEventListener('click', () => {
+  const from = document.getElementById('dash-filter-from');
+  const to = document.getElementById('dash-filter-to');
+  if (from) from.value = '';
+  if (to) to.value = '';
+  loadDashboard();
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   loadHomeGreeting();

@@ -126,14 +126,21 @@ def _run_job_sync(job_id: int) -> None:
             "Job %d detection max_size=%d (loaded %s)",
             job_id, detect_max, before_pil.size,
         )
+        zone = (params.get("zone") or "").strip()
+        village = (params.get("village") or "").strip()
+        if not zone or not village:
+            from .tree.image_service import resolve_run_location
+            auto_zone, auto_village = resolve_run_location(db, base_path, comparison_path)
+            zone = zone or auto_zone
+            village = village or auto_village
         result = run_detection_and_save(
             db,
             before_pil,
             after_pil,
             method=method,
             title=title,
-            zone=params.get("zone", ""),
-            village=params.get("village", ""),
+            zone=zone,
+            village=village,
             enable_registration=bool(params.get("enable_registration", True)),
             enable_normalization=bool(params.get("enable_normalization", True)),
             detection_sensitivity=float(params.get("detection_sensitivity", 0.45)),

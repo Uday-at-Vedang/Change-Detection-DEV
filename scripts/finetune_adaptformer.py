@@ -213,6 +213,7 @@ class DelhiTileDataset:
         change_centered: bool = False,
         drop_empty_tiles: bool = False,
         pos_only: bool = False,
+        max_train_tiles: int | None = 160,
     ):
         _torch, _dl, Dataset, _wrs, _proc, _model = _try_torch()
         self.pairs = pairs  # keep source images once
@@ -292,22 +293,22 @@ class DelhiTileDataset:
             for _ in range(self.pos_oversample - 1):
                 self.index.extend(extras)
 
-        # Soft cap so CPU runs stay tractable while keeping centered crops
-        max_tiles = 160 if train else None
+        # Soft cap so CPU/6GB GPU runs stay tractable. Prefer real Delhi tiles
+        # over synthetic so the 2000-tile set cannot dominate the cap.
+        max_tiles = int(max_train_tiles) if (train and max_train_tiles) else None
         if max_tiles and len(self.index) > max_tiles:
-            centered = [e for e in self.index if e[1] == self.KIND_CENTER]
-            rest = [e for e in self.index if e[1] != self.KIND_CENTER]
-            self._rng.shuffle(centered)
-            self._rng.shuffle(rest)
-            # Prefer more centered when pos_only
-            center_frac = 0.85 if self.pos_only else 0.7
-            n_center_keep = min(len(centered), max(1, int(max_tiles * center_frac)))
-            n_rest_keep = min(len(rest), max_tiles - n_center_keep)
-            keep = centered[:n_center_keep] + rest[:n_rest_keep]
+            delhi = [e for e in self.index if not str(self.pairs[e[0]][3]).startswith("synth_")]
+            synth = [e for e in self.index if str(self.pairs[e[0]][3]).startswith("synth_")]
+            self._rng.shuffle(delhi)
+            self._rng.shuffle(synth)
+            reserve_synth = min(len(synth), int(max_tiles * 0.35)) if synth else 0
+            n_delhi = min(len(delhi), max_tiles - reserve_synth)
+            n_synth = min(len(synth), max_tiles - n_delhi)
+            keep = delhi[:n_delhi] + synth[:n_synth]
             self._rng.shuffle(keep)
             self.index = keep
             print(f"  Capped train tiles to {len(self.index)} "
-                  f"(centered={n_center_keep}, other={n_rest_keep})",
+                  f"(delhi={n_delhi}, synth={n_synth})",
                   flush=True)
 
         self.n_pos_unique = n_pos
@@ -350,12 +351,22 @@ class DelhiTileDataset:
         return self._dataset
 
     def sampler_weights(self) -> list[float]:
-        """Per-index weights for WeightedRandomSampler (positives / centered heavier)."""
+        """Per-index weights: positives/centered heavier, Delhi vs synthetic balanced."""
+        domains = []
+        n_delhi = n_synth = 0
+        for pi, _kind, _x, _y, _is_pos in self.index:
+            is_synth = str(self.pairs[pi][3]).startswith("synth_")
+            domains.append(is_synth)
+            n_synth += int(is_synth)
+            n_delhi += int(not is_synth)
         w = []
-        for _pi, kind, _x, _y, is_pos in self.index:
+        for (_pi, kind, _x, _y, is_pos), is_synth in zip(self.index, domains):
             base = float(self.pos_oversample) if is_pos else 1.0
             if kind == self.KIND_CENTER:
                 base *= 2.0
+            if n_delhi and n_synth:
+                # Equal domain mass so 2000 synthetic tiles cannot drown Delhi.
+                base *= (0.5 / n_synth) if is_synth else (0.5 / n_delhi)
             w.append(base)
         return w
 
@@ -521,12 +532,89 @@ def _class_balance_report(pairs: list[tuple], name: str) -> dict:
     return report
 
 
+def _resolve_pair_file(rel: str, pair_id: str, kind: str) -> Path | None:
+    """Resolve a train path, including Priyanka absolute paths and labeling-pack PNGs."""
+    raw = Path(rel)
+    candidates = []
+    if raw.is_absolute():
+        candidates.append(raw)
+        candidates.append(Path(r"C:\Users\udayb\Downloads") / raw.name)
+        # before5 (1).tif → before5.tif on this machine
+        candidates.append(Path(r"C:\Users\udayb\Downloads") / raw.name.replace(" (1)", ""))
+    else:
+        candidates.append(ROOT / raw)
+    pack = ROOT / "docs" / "delhi_eval" / "dda_labeling" / pair_id
+    kind_name = {"before": "before.png", "after": "after.png", "gt": "gt_mask.png"}[kind]
+    candidates.append(pack / kind_name)
+    if kind == "gt":
+        candidates.append(ROOT / "docs" / "delhi_eval" / "labels" / f"{pair_id}.png")
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
 def _load_rgb_pair(before_rel: str, after_rel: str, gt_rel: str, pair_id: str) -> tuple:
     from app.evaluation.delhi_eval import _load_label, _load_rgb
-    before = _load_rgb(ROOT / before_rel)
-    after = _load_rgb(ROOT / after_rel)
-    gt = _load_label(ROOT / gt_rel)
+    before_p = _resolve_pair_file(before_rel, pair_id, "before")
+    after_p = _resolve_pair_file(after_rel, pair_id, "after")
+    gt_p = _resolve_pair_file(gt_rel, pair_id, "gt")
+    if not before_p or not after_p or not gt_p:
+        raise FileNotFoundError(
+            f"{pair_id}: missing files before={before_p} after={after_p} gt={gt_p}"
+        )
+    before = _load_rgb(before_p)
+    after = _load_rgb(after_p)
+    gt = _load_label(gt_p)
     return before, after, gt, pair_id
+
+
+_SYNTHETIC_DIR_CANDIDATES = (
+    Path(r"C:\Users\Priyanka\Downloads\Synthetic_CD_dataset"),
+    Path(r"C:\Users\udayb\Downloads\Synthetic_CD_dataset"),
+    ROOT / "data" / "synthetic_cd",
+    ROOT / "data" / "Synthetic_CD_dataset",
+)
+
+
+def discover_synthetic_dir(explicit: str = "") -> Path | None:
+    """Priyanka's gen_synthetic.py layout: before/*.png, after/*.png, mask/*.png."""
+    ordered = []
+    if explicit:
+        ordered.append(Path(explicit))
+    ordered.extend(_SYNTHETIC_DIR_CANDIDATES)
+    seen: set[str] = set()
+    for path in ordered:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if (path / "before").is_dir() and (path / "mask").is_dir() and (path / "after").is_dir():
+            return path
+    return None
+
+
+def _load_pairs_from_synthetic(dataset_dir: Path) -> list[tuple]:
+    before_dir = dataset_dir / "before"
+    after_dir = dataset_dir / "after"
+    mask_dir = dataset_dir / "mask"
+    pairs = []
+    for before_p in sorted(before_dir.glob("*.png")):
+        name = before_p.name
+        after_p = after_dir / name
+        mask_p = mask_dir / name
+        if not after_p.is_file() or not mask_p.is_file():
+            continue
+        before = np.array(Image.open(before_p).convert("RGB"))
+        after = np.array(Image.open(after_p).convert("RGB"))
+        if after.shape[:2] != before.shape[:2]:
+            after = np.array(Image.fromarray(after).resize((before.shape[1], before.shape[0]), Image.Resampling.LANCZOS))
+        gt = np.array(Image.open(mask_p).convert("L"))
+        if gt.shape[:2] != before.shape[:2]:
+            gt = np.array(Image.fromarray(gt).resize((before.shape[1], before.shape[0]), Image.Resampling.NEAREST))
+        pairs.append((before, after, gt, before_p.stem))
+    print(f"  Synthetic GT: {len(pairs)} triplets from {dataset_dir}", flush=True)
+    return pairs
 
 
 def _load_pairs_from_delhi_cd(delhi_cd: Path) -> tuple[list[tuple], list[tuple], list[tuple], dict]:
@@ -542,10 +630,16 @@ def _load_pairs_from_delhi_cd(delhi_cd: Path) -> tuple[list[tuple], list[tuple],
         if not man.is_file():
             raise SystemExit(f"Missing {man}")
         rows = json.loads(man.read_text(encoding="utf-8")).get("pairs", [])
-        loaded[name] = [
-            _load_rgb_pair(p["before_path"], p["after_path"], p["gt_mask"], p["pair_id"])
-            for p in rows
-        ]
+        loaded[name] = []
+        for p in rows:
+            try:
+                loaded[name].append(
+                    _load_rgb_pair(p["before_path"], p["after_path"], p["gt_mask"], p["pair_id"])
+                )
+            except Exception as exc:
+                print(f"  SKIP {p.get('pair_id')}: {exc}", flush=True)
+        if not loaded[name]:
+            raise SystemExit(f"No loadable pairs in {man}")
     split_info = {
         "train": [p[3] for p in loaded["train"]],
         "val": [p[3] for p in loaded["val"]],
@@ -625,7 +719,7 @@ def _resize_to_gt(arr: np.ndarray, gt: np.ndarray, nearest: bool = False) -> np.
 
 def _eval_pairs(model, processor, device, pairs: list[tuple],
                 threshold: float = 0.5) -> dict:
-    f1s, precs, recs, ious = [], [], [], []
+    f1s, precs, recs, ious, accs = [], [], [], [], []
     scores_all = []
     for before, after, gt, _pair_id in pairs:
         mask, score = _predict_mask(model, processor, device, before, after, threshold)
@@ -637,11 +731,13 @@ def _eval_pairs(model, processor, device, pairs: list[tuple],
         precs.append(m["precision"])
         recs.append(m["recall"])
         ious.append(m["iou"])
+        accs.append(m["pixelAccuracy"])
     return {
         "mean_f1": round(float(np.mean(f1s)), 4) if f1s else 0.0,
         "mean_precision": round(float(np.mean(precs)), 4) if precs else 0.0,
         "mean_recall": round(float(np.mean(recs)), 4) if recs else 0.0,
         "mean_iou": round(float(np.mean(ious)), 4) if ious else 0.0,
+        "mean_pixel_acc": round(float(np.mean(accs)), 4) if accs else 0.0,
         "n": len(f1s),
         "threshold": threshold,
         "mean_prob": round(float(np.mean([s.mean() for s in scores_all])), 6) if scores_all else 0.0,
@@ -816,6 +912,9 @@ def train(
     warm_start: str | None = None,
     pos_only: bool = False,
     keep_hard_neg: bool = True,
+    synthetic_dir: Path | None = None,
+    max_train_tiles: int | None = 160,
+    synth_train_cap: int = 256,
 ) -> Path:
     torch, DataLoader, _Dataset, WeightedRandomSampler, AutoImageProcessor, AutoModel = _try_torch()
     import torch.nn.functional as F
@@ -831,6 +930,33 @@ def train(
             "test": [p[3] for p in test_pairs],
             "split": "70/15/15",
         }
+
+    synth_holdout_pairs: list[tuple] = []
+    if synthetic_dir is not None and not dummy:
+        synth_pairs = _load_pairs_from_synthetic(synthetic_dir)
+        if synth_pairs:
+            s_train, s_val, s_test = _split_pairs(synth_pairs)
+            pool = list(s_train) + list(s_test) + list(s_val)
+            rng = random.Random(0)
+            rng.shuffle(pool)
+            cap = max(0, int(synth_train_cap))
+            extra_train = pool[:cap]
+            synth_holdout_pairs = pool[cap:cap + 64]
+            train_pairs = list(train_pairs) + extra_train
+            # Primary val stays Delhi-only. The 94% F1 last run was synthetic val.
+            split_info["synthetic_dir"] = str(synthetic_dir)
+            split_info["synthetic_train"] = [p[3] for p in extra_train]
+            split_info["synthetic_holdout"] = [p[3] for p in synth_holdout_pairs]
+            split_info["synthetic_train_cap"] = cap
+            split_info["primary_val"] = "delhi_only"
+            split_info["primary_score"] = "frozen_delhi_test_f1"
+            split_info["train"] = [p[3] for p in train_pairs]
+            split_info["val"] = [p[3] for p in val_pairs]
+            print(
+                f"  Synthetic mix: train+={len(extra_train)} holdout={len(synth_holdout_pairs)} "
+                f"(val remains {len(val_pairs)} Delhi pairs)",
+                flush=True,
+            )
 
     if exclude_empty and not dummy:
         train_pairs = _filter_empty(
@@ -862,7 +988,8 @@ def train(
         train_pairs, train=True, stride=stride, augment=augment, seed=0,
         full_resize=full_resize, min_tile_change=min_tile_change,
         pos_oversample=pos_oversample, change_centered=change_centered,
-        drop_empty_tiles=drop_empty_tiles, pos_only=pos_only)
+        drop_empty_tiles=drop_empty_tiles, pos_only=pos_only,
+        max_train_tiles=max_train_tiles)
     val_ds = DelhiTileDataset(
         val_pairs, train=False, stride=_TILE, augment=False, full_resize=full_resize,
         min_tile_change=0.0, pos_oversample=1, change_centered=False)
@@ -1067,6 +1194,21 @@ def train(
             best_model, best_processor, device, test_pairs, best_thr,
             run_dir / "visuals_test", epoch=0, max_pairs=len(test_pairs))
 
+    synth_holdout_metrics = None
+    if synth_holdout_pairs and best_path.is_dir():
+        if "best_model" not in locals():
+            best_model = AutoModel.from_pretrained(best_path, trust_remote_code=True)
+            best_model.to(device)
+            best_processor = AutoImageProcessor.from_pretrained(best_path, trust_remote_code=True)
+            best_model.eval()
+        synth_holdout_metrics = _eval_pairs(
+            best_model, best_processor, device, synth_holdout_pairs, threshold=best_thr)
+        print(
+            f"Synthetic holdout (secondary) F1={synth_holdout_metrics['mean_f1']:.4f} "
+            f"n={synth_holdout_metrics['n']}",
+            flush=True,
+        )
+
     meta = {
         "model_id": _MODEL_ID,
         "dummy": dummy,
@@ -1093,15 +1235,32 @@ def train(
         "test_precision": test_metrics.get("mean_precision", 0.0),
         "test_recall": test_metrics.get("mean_recall", 0.0),
         "test_iou": test_metrics.get("mean_iou", 0.0),
+        "test_pixel_acc": test_metrics.get("mean_pixel_acc", 0.0),
+        "primary_score": {
+            "name": "frozen_delhi_test_f1",
+            "f1": test_metrics["mean_f1"],
+            "precision": test_metrics.get("mean_precision", 0.0),
+            "recall": test_metrics.get("mean_recall", 0.0),
+            "iou": test_metrics.get("mean_iou", 0.0),
+            "pixel_acc": test_metrics.get("mean_pixel_acc", 0.0),
+            "n": test_metrics.get("n", 0),
+            "threshold": best_thr,
+        },
+        "synthetic_holdout": synth_holdout_metrics,
         "history": history,
         "preset": preset_name,
         "output_probe": probe,
     }
     (run_dir / "metrics.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    (run_dir / "primary_score.json").write_text(
+        json.dumps(meta.get("primary_score"), indent=2), encoding="utf-8")
     print(
-        f"Test F1={test_metrics['mean_f1']:.4f} P={test_metrics.get('mean_precision', 0):.3f} "
-        f"R={test_metrics.get('mean_recall', 0):.3f} IoU={test_metrics.get('mean_iou', 0):.3f} "
-        f"@ thr={best_thr} ({test_metrics['n']} pairs)",
+        f"PRIMARY SCORE (frozen Delhi test): F1={test_metrics['mean_f1']:.4f} "
+        f"P={test_metrics.get('mean_precision', 0):.3f} "
+        f"R={test_metrics.get('mean_recall', 0):.3f} "
+        f"IoU={test_metrics.get('mean_iou', 0):.3f} "
+        f"acc={test_metrics.get('mean_pixel_acc', 0):.3f} "
+        f"@ thr={best_thr} n={test_metrics['n']}",
         flush=True,
     )
     print(f"Run complete. Artifacts: {run_dir}", flush=True)
@@ -1210,6 +1369,30 @@ def main():
     parser.add_argument("--scheduler", action="store_true")
     parser.add_argument("--no-scheduler", action="store_true")
     parser.add_argument("--eval-run-dir", type=str, default="")
+    parser.add_argument(
+        "--synthetic-dir",
+        type=str,
+        default="",
+        help="Priyanka synthetic GT folder (before/after/mask PNG triplets). "
+             "If omitted, common local paths are auto-detected.",
+    )
+    parser.add_argument(
+        "--no-synthetic",
+        action="store_true",
+        help="do not mix auto-detected synthetic GT into training",
+    )
+    parser.add_argument(
+        "--max-train-tiles",
+        type=int,
+        default=None,
+        help="Cap training tiles after oversample (default 160; 768 when synthetic is used).",
+    )
+    parser.add_argument(
+        "--synth-train-cap",
+        type=int,
+        default=256,
+        help="Max synthetic triplets mixed into train (val stays Delhi-only).",
+    )
     args = parser.parse_args()
 
     if args.preset == "wed":
@@ -1288,6 +1471,27 @@ def main():
         finalize_run(Path(args.eval_run_dir).resolve(), manifest, args.dummy)
         return
 
+    synthetic_dir = None
+    if not args.no_synthetic:
+        synthetic_dir = discover_synthetic_dir(args.synthetic_dir)
+        if synthetic_dir:
+            print(f"Using synthetic GT dataset: {synthetic_dir}", flush=True)
+        elif args.synthetic_dir:
+            raise SystemExit(f"Synthetic GT folder not found: {args.synthetic_dir}")
+        else:
+            print(
+                "No synthetic GT folder on this machine "
+                f"(looked for {_SYNTHETIC_DIR_CANDIDATES[0]}). Training on Delhi labeled GT only.",
+                flush=True,
+            )
+
+    max_train_tiles = args.max_train_tiles
+    if max_train_tiles is None:
+        max_train_tiles = 768 if synthetic_dir else 160
+    if synthetic_dir and args.thr_max is None:
+        thr_max = max(thr_max, 0.85)
+        print(f"  Delhi-primary threshold window [{thr_min}, {thr_max}]", flush=True)
+
     train(
         eval_dir=manifest,
         dummy=args.dummy,
@@ -1296,6 +1500,7 @@ def main():
         lr=lr,
         out_root=Path(args.out).resolve(),
         delhi_cd=delhi_cd,
+        synthetic_dir=synthetic_dir,
         augment=augment,
         stride=stride,
         early_stop_patience=early_stop,
@@ -1315,6 +1520,8 @@ def main():
         warm_start=warm_start,
         pos_only=pos_only,
         keep_hard_neg=keep_hard_neg,
+        max_train_tiles=max_train_tiles,
+        synth_train_cap=args.synth_train_cap,
     )
 
 

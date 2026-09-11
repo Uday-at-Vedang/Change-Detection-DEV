@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -232,10 +233,9 @@ def _schedule_owner_id(db: Session) -> int:
 
 
 def _load_identified_pairs(db: Session) -> list[dict[str, Any]]:
-    from .tree.area_groups import build_area_groups
-    from .tree.image_service import list_all_images
+    from .tree.area_groups import load_cached_area_groups
 
-    payload = build_area_groups(list_all_images(db))
+    payload = load_cached_area_groups(db)
     pairs = []
     for group in payload.get("groups") or []:
         before = group.get("beforePath") or (group.get("suggestedBefore") or {}).get("path")
@@ -258,13 +258,18 @@ def _sync_schedules(db: Session, pairs: list[dict[str, Any]]) -> None:
     live_keys = set()
     now = _utcnow()
     for pair in pairs:
-        key = pair_key_for(pair["before_path"], pair["after_path"])
+        before, after = pair["before_path"], pair["after_path"]
+        if not before or not after or before == after:
+            continue
+        key = pair_key_for(before, after)
+        if key in live_keys:
+            continue
         live_keys.add(key)
         row = db.query(AutoPairSchedule).filter(AutoPairSchedule.pair_key == key).first()
         if row:
             row.group_label = pair["label"]
-            row.before_path = pair["before_path"]
-            row.after_path = pair["after_path"]
+            row.before_path = before
+            row.after_path = after
             row.interval_days = interval
             row.enabled = True
             row.updated_at = now
@@ -272,8 +277,8 @@ def _sync_schedules(db: Session, pairs: list[dict[str, Any]]) -> None:
             db.add(AutoPairSchedule(
                 pair_key=key,
                 group_label=pair["label"],
-                before_path=pair["before_path"],
-                after_path=pair["after_path"],
+                before_path=before,
+                after_path=after,
                 interval_days=interval,
                 enabled=True,
             ))
@@ -286,7 +291,11 @@ def _sync_schedules(db: Session, pairs: list[dict[str, Any]]) -> None:
         if row.pair_key not in live_keys:
             row.enabled = False
             row.updated_at = now
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning("Auto-pair schedule sync hit a duplicate pair_key; it will retry on the next tick.")
 
 
 def _pending_job_for_paths(db: Session, before: str, after: str) -> Optional[DetectionJob]:

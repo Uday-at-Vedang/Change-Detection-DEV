@@ -14,7 +14,7 @@ window.ddaState = {
   set userRole(r) { window._ddaUserRole = r; },
   setNode(n) { selectedNode.id = n.id; selectedNode.path = n.path || ''; },
   clearNode() { selectedNode.id = null; selectedNode.path = ''; },
-  refreshImages: () => loadLibraryImages(),
+  refreshImages: () => loadLibraryImages({ resetPage: true }),
   rescan: () => rescanLibrary(),
 };
 
@@ -34,15 +34,13 @@ async function initDda() {
   const needsDetect = !!document.getElementById('tab-detect');
   if (!needsLibrary && !needsDetect) return;
   try {
-    try {
-      const me = await ddaApi('GET', '/api/dda/me');
-      window.ddaState.userRole = me.role || 'analyst';
-    } catch (_) {
-      window.ddaState.userRole = 'analyst';
-    }
-
-    ddaConfig = await ddaApi('GET', '/api/dda/config');
-    const localCfg = await ddaApi('GET', '/api/dda/local/config');
+    const [me, cfg, localCfg] = await Promise.all([
+      ddaApi('GET', '/api/dda/me').catch(() => null),
+      ddaApi('GET', '/api/dda/config'),
+      ddaApi('GET', '/api/dda/local/config'),
+    ]);
+    window.ddaState.userRole = (me && me.role) || 'analyst';
+    ddaConfig = cfg;
     window._localCfg = localCfg;
 
 
@@ -73,8 +71,12 @@ async function initDda() {
       resHint.textContent = `Detection runs at up to ${localCfg.detectionMaxSide}px per side.`;
     }
 
-    if (needsLibrary && typeof loadTree === 'function') await loadTree();
-    if (needsLibrary) await loadLibraryImages();
+    if (needsLibrary) {
+      await Promise.all([
+        typeof loadTree === 'function' ? loadTree() : Promise.resolve(),
+        loadLibraryImages({ resetPage: true }),
+      ]);
+    }
   } catch (err) {
     showDdaError(err.message || 'Failed to load library');
   }
@@ -87,6 +89,7 @@ function selectionTitle() {
 let libGridPage = 0;
 const LIB_GRID_PER_PAGE = 16;
 let libGridItems = [];
+let libGridTotal = 0;
 
 function renderLibGrid() {
   const grid = document.getElementById('lib-grid');
@@ -98,14 +101,13 @@ function renderLibGrid() {
     return;
   }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / LIB_GRID_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(libGridTotal / LIB_GRID_PER_PAGE));
   libGridPage = Math.max(0, Math.min(libGridPage, totalPages - 1));
-  const start = libGridPage * LIB_GRID_PER_PAGE;
-  const pageItems = items.slice(start, start + LIB_GRID_PER_PAGE);
 
-  grid.innerHTML = pageItems.map((img) => {
+  grid.innerHTML = items.map((img) => {
     const thumb = img.thumbUrl || '';
     const crumb = img.breadcrumb || img.nodePath || img.filename;
+    const place = [img.villageName, img.zoneName].filter(Boolean).join(', ');
     const encPath = encodeURIComponent(img.path);
     return `
     <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
@@ -113,7 +115,8 @@ function renderLibGrid() {
       ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
       <div class="meta">
         <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
-        <span class="dim">${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}${img.width && img.height ? ` · ${img.width}×${img.height}` : ''}</span><br/>
+        ${place ? `<span class="dim dda-crumb">${escapeHtml(place)}</span><br/>` : ''}
+        <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}${img.width && img.height ? ` · ${img.width}×${img.height}` : ''}</span><br/>
         <span class="dim dda-card-uploaded">Uploaded ${typeof formatDateIst === 'function' ? formatDateIst(img.uploadedOn) : (img.uploadedOn || '—')}</span>
       </div>
     </div>`;
@@ -124,29 +127,39 @@ function renderLibGrid() {
   if (typeof renderPaginationControls === 'function') {
     renderPaginationControls(document.getElementById('lib-grid-pagination'), libGridPage, totalPages, (p) => {
       libGridPage = p;
-      renderLibGrid();
+      loadLibraryImages();
     });
   }
 }
 
-async function loadLibraryImages() {
+async function loadLibraryImages(opts) {
   const grid = document.getElementById('lib-grid');
   const title = document.getElementById('lib-grid-title');
   if (!grid) return;
+  if (opts && opts.resetPage) libGridPage = 0;
   const q = document.getElementById('lib-filter')?.value?.trim() || '';
   const params = new URLSearchParams();
   if (selectedNode.id) params.set('node_id', String(selectedNode.id));
   if (q) params.set('q', q);
+  params.set('limit', String(LIB_GRID_PER_PAGE));
+  params.set('offset', String(libGridPage * LIB_GRID_PER_PAGE));
   if (title) title.textContent = `Images — ${selectionTitle()}`;
 
   try {
-    const items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
-    window.ddaState.libraryItems = items;
-    libGridItems = items;
-    libGridPage = 0;
+    const page = unwrapImagePage(await ddaApi('GET', '/api/dda/local/images?' + params.toString()));
+    window.ddaState.libraryItems = page.items;
+    libGridItems = page.items;
+    libGridTotal = page.total;
+    const totalPages = Math.max(1, Math.ceil((libGridTotal || 0) / LIB_GRID_PER_PAGE));
+    if (libGridTotal && libGridPage > totalPages - 1) {
+      libGridPage = totalPages - 1;
+      return loadLibraryImages();
+    }
     renderLibGrid();
     if (typeof loadAreaPairs === 'function') {
-      loadAreaPairs({ nodeId: selectedNode.id || null });
+      const run = () => loadAreaPairs({ nodeId: selectedNode.id || null });
+      if (typeof deferIdle === 'function') deferIdle(run);
+      else setTimeout(run, 0);
     }
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
@@ -155,7 +168,7 @@ async function loadLibraryImages() {
 
 document.getElementById('lib-filter')?.addEventListener('input', () => {
   clearTimeout(window._libFilterTimer);
-  window._libFilterTimer = setTimeout(loadLibraryImages, 300);
+  window._libFilterTimer = setTimeout(() => loadLibraryImages({ resetPage: true }), 300);
 });
 
 document.getElementById('btn-refresh-lib')?.addEventListener('click', async () => {

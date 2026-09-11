@@ -28,6 +28,7 @@ from .config import (
     is_hf_hosted,
 )
 from .tree.image_service import (
+    count_library_images,
     delete_library_image,
     get_or_build_preview,
     get_or_build_thumb,
@@ -111,11 +112,21 @@ def local_library_config(user: User = Depends(current_dda_user)):
 def local_images(
     node_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
     _require_dda()
-    return list_all_images(db, node_id=node_id, query=q)
+    return list_all_images(
+        db,
+        node_id=node_id,
+        query=q,
+        include_bounds=False,
+        slim=True,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/local/area-groups")
@@ -126,23 +137,13 @@ def local_area_groups(
 ):
     """Images covering the same place, with oldest → Before and newest → After."""
     _require_dda()
-    from .tree.area_groups import build_area_groups
+    from .tree.area_groups import filter_area_groups_for_node, load_cached_area_groups
     from .tree.tree_service import get_node_or_404
 
-    images = list_all_images(db)
-    payload = build_area_groups(images)
+    payload = load_cached_area_groups(db)
     if node_id:
         node = get_node_or_404(db, node_id)
-        prefix = (node.node_path or "").rstrip("/")
-        def _in_node(img: dict) -> bool:
-            path = (img.get("nodePath") or "").rstrip("/")
-            return path == prefix or path.startswith(prefix + "/") or img.get("nodeId") == node.id
-        payload["groups"] = [
-            g for g in payload["groups"]
-            if any(_in_node(img) for img in g.get("images") or [])
-        ]
-        payload["unpaired"] = [img for img in payload["unpaired"] if _in_node(img)]
-        payload["pairedImages"] = sum(len(g.get("images") or []) for g in payload["groups"])
+        return filter_area_groups_for_node(payload, node)
     return payload
 
 
@@ -152,7 +153,11 @@ def local_thumb(path: str = Query(...), user: User = Depends(current_dda_user)):
     path = _normalize_library_path(path)
     try:
         thumb = get_or_build_thumb(path)
-        return FileResponse(thumb, media_type="image/png")
+        return FileResponse(
+            thumb,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
     except Exception as exc:
         logger.warning("Thumb endpoint fallback for %s: %s", path, exc)
         from .config import LOCAL_THUMB_CACHE
@@ -174,7 +179,11 @@ def local_preview(
     path = _normalize_library_path(path)
     try:
         preview = get_or_build_preview(path, max_side=max)
-        return FileResponse(preview, media_type="image/png")
+        return FileResponse(
+            preview,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Image file not found")
     except ValueError as exc:
@@ -293,16 +302,15 @@ def local_rescan(db: Session = Depends(get_db), user: User = Depends(require_mod
     from .tree.sync_service import sync_from_filesystem
 
     try:
-        sync_stats = sync_from_filesystem(db)
+        sync_stats = sync_from_filesystem(db, check_orphans=True)
     except Exception as exc:
         logger.exception("Filesystem rescan failed")
         raise HTTPException(status_code=500, detail=f"Rescan failed: {exc}") from exc
     tree = build_tree(db)
-    images = list_all_images(db)
     return {
         "ok": True,
         "tree": tree,
-        "totalImages": len(images),
+        "totalImages": count_library_images(db),
         "storageRoot": str(get_storage_root()),
         "sync": sync_stats,
     }
@@ -440,6 +448,12 @@ async def detect_from_library(
 
     if title == "Untitled run":
         title = f"{Path(base_norm).name} vs {Path(comp_norm).name}"
+
+    if not zone.strip() or not village.strip():
+        from .tree.image_service import resolve_run_location
+        auto_zone, auto_village = resolve_run_location(db, base_norm, comp_norm)
+        zone = zone.strip() or auto_zone
+        village = village.strip() or auto_village
 
     try:
         # Use fullres load cap (up to DETECTION_FULLRES_MAX_SIDE), not the

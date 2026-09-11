@@ -320,9 +320,98 @@ function setPendingUploadFiles(files) {
   updateUploadSummary();
 }
 
+const uploadLocations = { zones: [], villages: [] };
+
+function renderUploadVillageOptions() {
+  const villageSel = document.getElementById('upload-village');
+  if (!villageSel) return;
+  const zoneId = document.getElementById('upload-zone')?.value || '';
+  const previous = villageSel.value;
+  const list = zoneId
+    ? uploadLocations.villages.filter((v) => String(v.zoneId) === String(zoneId))
+    : uploadLocations.villages;
+  const empty = zoneId ? '— Select village —' : '— Select village (or pick a zone first) —';
+  villageSel.innerHTML = `<option value="">${empty}</option>` + list.map((v) => {
+    const label = zoneId ? v.name : `${v.name} · ${v.zoneName || ''}`;
+    return `<option value="${v.id}">${escapeHtml(label)}</option>`;
+  }).join('');
+  if (previous && list.some((v) => String(v.id) === String(previous))) villageSel.value = previous;
+}
+
+function markUploadLocationPicked() {
+  const zoneSel = document.getElementById('upload-zone');
+  if (zoneSel) zoneSel.dataset.userPicked = '1';
+}
+
+function suggestUploadLocationFromFolder() {
+  const zoneSel = document.getElementById('upload-zone');
+  const villageSel = document.getElementById('upload-village');
+  if (!zoneSel || zoneSel.dataset.userPicked === '1') return;
+  const path = document.getElementById('upload-node')?.selectedOptions?.[0]?.textContent || '';
+  const segments = path.split(/[/\\]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (!segments.length) return;
+  const zone = uploadLocations.zones.find((z) => segments.includes(String(z.name || '').toLowerCase()));
+  if (zone) zoneSel.value = String(zone.id);
+  renderUploadVillageOptions();
+  const matches = uploadLocations.villages.filter((v) => {
+    if (!segments.includes(String(v.name || '').toLowerCase())) return false;
+    if (zone && String(v.zoneId) !== String(zone.id)) return false;
+    return true;
+  });
+  if (matches.length === 1 && villageSel) {
+    if (!zoneSel.value) zoneSel.value = String(matches[0].zoneId);
+    renderUploadVillageOptions();
+    villageSel.value = String(matches[0].id);
+  }
+}
+
+async function loadUploadLocations() {
+  const zoneSel = document.getElementById('upload-zone');
+  if (!zoneSel) return;
+  try {
+    const data = await ddaApi('GET', '/api/dda/masters/options');
+    const zoneNames = new Map((data.zones || []).map((z) => [z.id, z.name]));
+    uploadLocations.zones = data.zones || [];
+    uploadLocations.villages = (data.villages || []).map((v) => ({
+      ...v, zoneName: zoneNames.get(v.zoneId) || '',
+    }));
+  } catch (_) {
+    // Masters are optional metadata — leave the pickers empty rather than
+    // blocking uploads when the user's role can't read them.
+    return;
+  }
+  const previousZone = zoneSel.value;
+  zoneSel.innerHTML = '<option value="">— Select zone —</option>' + uploadLocations.zones
+    .map((z) => `<option value="${z.id}">${escapeHtml(z.name)}</option>`)
+    .join('');
+  if (previousZone && uploadLocations.zones.some((z) => String(z.id) === String(previousZone))) {
+    zoneSel.value = previousZone;
+  }
+  renderUploadVillageOptions();
+  suggestUploadLocationFromFolder();
+  if (!zoneSel.dataset.bound) {
+    zoneSel.dataset.bound = '1';
+    zoneSel.addEventListener('change', () => {
+      markUploadLocationPicked();
+      renderUploadVillageOptions();
+    });
+    document.getElementById('upload-village')?.addEventListener('change', (e) => {
+      markUploadLocationPicked();
+      const village = uploadLocations.villages.find((v) => String(v.id) === String(e.target.value));
+      if (village) zoneSel.value = String(village.zoneId);
+      renderUploadVillageOptions();
+      if (village) document.getElementById('upload-village').value = String(village.id);
+    });
+    document.getElementById('upload-node')?.addEventListener('change', suggestUploadLocationFromFolder);
+  }
+}
+
 function setUploadTargetNode(nodeId) {
   const sel = document.getElementById('upload-node');
-  if (sel && nodeId) sel.value = String(nodeId);
+  if (sel && nodeId) {
+    sel.value = String(nodeId);
+    sel.dispatchEvent(new Event('change'));
+  }
   document.getElementById('upload-card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -348,6 +437,10 @@ async function uploadOneLibraryFile(nodeId, file, { onProgress } = {}) {
   form.append('capture_date', document.getElementById('upload-capture-date')?.value || '');
   const manualBounds = document.getElementById('upload-manual-bounds')?.value?.trim();
   if (manualBounds) form.append('manual_bounds', manualBounds);
+  const zoneId = document.getElementById('upload-zone')?.value || '';
+  const villageId = document.getElementById('upload-village')?.value || '';
+  if (zoneId) form.append('zone_id', zoneId);
+  if (villageId) form.append('village_id', villageId);
   return uploadWithProgress(`/api/dda/tree/nodes/${nodeId}/images/upload`, form, onProgress);
 }
 
@@ -533,6 +626,8 @@ document.getElementById('form-tree-upload')?.addEventListener('submit', async (e
 });
 
 initLibraryDropzone();
+loadUploadLocations();
+window.loadUploadLocations = loadUploadLocations;
 window.uploadLibraryFiles = uploadLibraryFiles;
 window.setUploadTargetNode = setUploadTargetNode;
 window.setPendingUploadFiles = setPendingUploadFiles;

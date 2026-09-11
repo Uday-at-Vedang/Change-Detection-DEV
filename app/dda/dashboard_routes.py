@@ -8,6 +8,7 @@ different dashboards, exactly like they already see different Reports lists.
 """
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -101,32 +102,94 @@ def _accessible_run_filter(db: Session, user: User):
     return filt
 
 
-def _load_dataset(db: Session, user: User) -> list[dict]:
+def _parse_date_bound(value: Optional[str], *, end_of_day: bool = False) -> Optional[datetime]:
+    """Parse a 'YYYY-MM-DD' filter bound (as sent by an <input type=date>) as
+    an IST calendar day — every timestamp in this app is shown in IST, so a
+    user picking "7 Sep" means the whole IST day, not UTC midnight — then
+    convert to UTC since DetectionRun.created_at is stored in UTC."""
+    if not value or not value.strip():
+        return None
+    try:
+        d = datetime.strptime(value.strip(), "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date '{value}', expected YYYY-MM-DD")
+    if end_of_day:
+        d = d + timedelta(days=1, microseconds=-1)
+    return d.replace(tzinfo=_IST).astimezone(timezone.utc)
+
+
+def _live_locations_for(db: Session, run_ids: list[int]) -> dict[int, tuple[str, str]]:
+    """Zone/village for runs that still have a blank one, re-derived on every
+    call from the run's original before/after image paths (kept on its
+    DetectionJob) and those images' *current* zone/village. This is what
+    makes assigning a location to an image in the Image Library immediately
+    reflected on the dashboard for every past run that used it — no separate
+    backfill step, no stale copy to re-sync."""
+    if not run_ids:
+        return {}
+    from .tree.image_service import resolve_run_location
+
+    jobs = db.query(DetectionJob).filter(DetectionJob.run_id.in_(run_ids)).all()
+    out: dict[int, tuple[str, str]] = {}
+    for job in jobs:
+        try:
+            params = json.loads(job.params_json or "{}")
+        except json.JSONDecodeError:
+            continue
+        base_path = params.get("base_path", "")
+        comparison_path = params.get("comparison_path", "")
+        if not base_path and not comparison_path:
+            continue
+        out[job.run_id] = resolve_run_location(db, base_path, comparison_path)
+    return out
+
+
+def _load_dataset(
+    db: Session,
+    user: User,
+    *,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> list[dict]:
     """One query for every accessible run + one grouped query for
     classification counts; every endpoint below aggregates from this in
     Python — mirrors the simple query style already used by
     admin_routes.admin_status(). Runs with a blank zone/village are bucketed
-    under "Unassigned" so totals reconcile.
+    under "Unassigned" so totals reconcile, after first trying to live-derive
+    one from the source images (see _live_locations_for). ``date_from``/
+    ``date_to`` are optional 'YYYY-MM-DD' bounds on created_at (inclusive on
+    both ends).
     """
-    runs = (
-        db.query(DetectionRun)
-        .filter(_accessible_run_filter(db, user))
-        .order_by(DetectionRun.created_at.asc())
-        .all()
-    )
+    from_dt = _parse_date_bound(date_from)
+    to_dt = _parse_date_bound(date_to, end_of_day=True)
+
+    query = db.query(DetectionRun).filter(_accessible_run_filter(db, user))
+    if from_dt:
+        query = query.filter(DetectionRun.created_at >= from_dt)
+    if to_dt:
+        query = query.filter(DetectionRun.created_at <= to_dt)
+    runs = query.order_by(DetectionRun.created_at.asc()).all()
     counts = bulk_classification_counts(db)
     # Same role resolution as dda_auth.get_user_role (raw User.role string,
     # falling back to "analyst") but bulk-loaded to avoid a query per run.
     roles_by_user = {uid: (role or DEFAULT_ROLE) for uid, role in db.query(User.id, User.role).all()}
+    blank_ids = [r.id for r in runs if not (r.zone or "").strip() or not (r.village or "").strip()]
+    live = _live_locations_for(db, blank_ids)
     rows = []
     for run in runs:
+        zone = (run.zone or "").strip()
+        village = (run.village or "").strip()
+        if not zone or not village:
+            auto_zone, auto_village = live.get(run.id, ("", ""))
+            zone = zone or auto_zone
+            village = village or auto_village
         c = counts.get(run.id, {})
         classified = c.get("confirmed", 0) + c.get("false_positive", 0) + c.get("submitted", 0)
         unclassified = max(0, (run.regions_count or 0) - classified)
         rows.append({
             "run": run,
-            "zone": (run.zone or "").strip() or UNASSIGNED,
-            "village": (run.village or "").strip() or UNASSIGNED,
+            "zone": zone or UNASSIGNED,
+            "village": village or UNASSIGNED,
             "role": roles_by_user.get(run.user_id, DEFAULT_ROLE),
             "confirmed": c.get("confirmed", 0),
             "falsePositive": c.get("false_positive", 0),
@@ -137,9 +200,14 @@ def _load_dataset(db: Session, user: User) -> list[dict]:
 
 
 @router.get("/dashboard/summary")
-def dashboard_summary(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def dashboard_summary(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
     _require_dda()
-    rows = _load_dataset(db, user)
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
 
     total_detected = sum((r["run"].regions_count or 0) for r in rows)
     pct_values = [r["run"].change_percentage for r in rows if r["run"].change_percentage is not None]
@@ -163,9 +231,14 @@ def dashboard_summary(db: Session = Depends(get_db), user: User = Depends(curren
 
 
 @router.get("/dashboard/regions")
-def dashboard_regions(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def dashboard_regions(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
     _require_dda()
-    rows = _load_dataset(db, user)
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
     by_zone: dict[str, list] = defaultdict(list)
     for r in rows:
         by_zone[r["zone"]].append(r)
@@ -189,10 +262,15 @@ def dashboard_regions(db: Session = Depends(get_db), user: User = Depends(curren
 
 
 @router.get("/dashboard/roles")
-def dashboard_roles(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+def dashboard_roles(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
     """Detection activity grouped by the role of the user who ran it."""
     _require_dda()
-    rows = _load_dataset(db, user)
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
     by_role: dict[str, list] = defaultdict(list)
     for r in rows:
         by_role[r["role"]].append(r)
@@ -221,11 +299,13 @@ def dashboard_roles(db: Session = Depends(get_db), user: User = Depends(current_
 @router.get("/dashboard/villages")
 def dashboard_villages(
     zone: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
     _require_dda()
-    rows = _load_dataset(db, user)
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
     if zone:
         rows = [r for r in rows if r["zone"] == zone]
     by_village: dict[tuple, list] = defaultdict(list)
@@ -334,10 +414,12 @@ def dashboard_location(
 @router.get("/dashboard/recent-reports")
 def dashboard_recent_reports(
     limit: int = Query(8, ge=1, le=50),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
     _require_dda()
-    rows = _load_dataset(db, user)
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
     rows.sort(key=lambda r: r["run"].created_at, reverse=True)
     return {"reports": [_run_summary(r) for r in rows[:limit]]}

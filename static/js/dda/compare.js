@@ -354,10 +354,46 @@ function populateSelects(items) {
     sel.innerHTML = `<option value="">${label}</option>` +
       sorted.map((img) => {
         const date = img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : '';
-        return `<option value="${encodePath(img.path)}">${escapeHtml(date + (img.breadcrumb || img.nodePath || img.filename))}</option>`;
+        return `<option value="${encodePath(img.path)}">${escapeHtml(date + (img.breadcrumb || img.nodePath || img.filename || img.label || ''))}</option>`;
       }).join('');
     if (current) sel.value = current;
   });
+}
+
+function ensureSelectOption(sel, img) {
+  if (!sel || !img?.path) return;
+  const val = encodePath(img.path);
+  if ([...sel.options].some((opt) => opt.value === val)) return;
+  const date = img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : '';
+  const opt = document.createElement('option');
+  opt.value = val;
+  opt.textContent = date + (img.breadcrumb || img.nodePath || img.filename || img.label || img.path);
+  sel.appendChild(opt);
+}
+
+function rememberLibraryItems(items) {
+  const byPath = new Map((compareState.allLibraryItems || []).map((img) => [img.path, img]));
+  (items || []).forEach((img) => {
+    if (img?.path) byPath.set(img.path, img);
+  });
+  compareState.allLibraryItems = [...byPath.values()];
+}
+
+function selectSourceItems(pageItems) {
+  const byPath = new Map();
+  (pageItems || []).forEach((img) => { if (img?.path) byPath.set(img.path, img); });
+  [compareState.t1, compareState.t2].forEach((img) => {
+    if (img?.path && !byPath.has(img.path)) byPath.set(img.path, img);
+  });
+  const groupId = document.getElementById('dda-auto-area')?.value
+    || (typeof areaPairsState !== 'undefined' && areaPairsState.selectedGroupId)
+    || '';
+  const groups = (typeof areaPairsState !== 'undefined' && areaPairsState.groups) || [];
+  const group = groups.find((g) => g.id === groupId);
+  (group?.images || []).forEach((img) => {
+    if (img?.path && !byPath.has(img.path)) byPath.set(img.path, img);
+  });
+  return [...byPath.values()];
 }
 
 function setSlot(slotKey, img, options) {
@@ -380,16 +416,20 @@ function setSlot(slotKey, img, options) {
     hasGeoref: !!img.hasGeoref,
     uploadedBy: img.uploadedBy || null,
     uploadedOn: img.uploadedOn || null,
+    villageName: img.villageName || null,
+    zoneName: img.zoneName || null,
   };
   if (slotKey === 't1') {
     compareState.t1 = item;
     const sel = document.getElementById('select-t1');
+    ensureSelectOption(sel, item);
     if (sel) sel.value = encodePath(item.path);
     renderSlotPreview('t1', item);
   } else {
     compareState.t2 = item;
     clearRoi(false);  // a new T2 invalidates any previous selection
     const sel = document.getElementById('select-t2');
+    ensureSelectOption(sel, item);
     if (sel) sel.value = encodePath(item.path);
     renderSlotPreview('t2', item);
   }
@@ -445,28 +485,33 @@ function updateCompareFolderPath() {
 
 let compareGridPage = 0;
 const COMPARE_GRID_PER_PAGE = 12;
+let compareGridItems = [];
+let compareGridTotal = 0;
+let pickerPage = 0;
+const PICKER_PER_PAGE = 24;
 
-function renderCompareGrid(allItems) {
+function renderCompareGrid(pageItems, total) {
   const grid = document.getElementById('compare-lib-grid');
   if (!grid) return;
+  compareGridItems = pageItems || [];
+  compareGridTotal = total || 0;
 
-  if (!allItems.length) {
+  if (!compareGridItems.length) {
     grid.innerHTML = `<p class="dim">No images in <strong>${escapeHtml(compareSelectionTitle())}</strong>. Select another folder or click Refresh to sync from disk.</p>`;
     document.getElementById('compare-lib-pagination')?.replaceChildren();
     return;
   }
 
-  const totalPages = Math.max(1, Math.ceil(allItems.length / COMPARE_GRID_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(compareGridTotal / COMPARE_GRID_PER_PAGE));
   compareGridPage = Math.max(0, Math.min(compareGridPage, totalPages - 1));
-  const start = compareGridPage * COMPARE_GRID_PER_PAGE;
-  const items = allItems.slice(start, start + COMPARE_GRID_PER_PAGE);
+  const items = compareGridItems;
 
   grid.innerHTML = items.map((img) => {
     const thumb = img.thumbUrl || thumbUrlFor(img.path);
     const enc = encodePath(img.path);
     const t1Sel = compareState.t1?.path === img.path ? ' selected-t1' : '';
     const t2Sel = compareState.t2?.path === img.path ? ' selected-t2' : '';
-    const safeName = img.filename.replace(/</g, '&lt;');
+    const safeName = String(img.filename || '').replace(/</g, '&lt;');
     return `
       <div class="dda-compare-card dda-card-img${t1Sel}${t2Sel}" data-image-path="${enc}" draggable="true">
         ${thumb ? `<img src="${thumb}" alt="" loading="lazy" draggable="false" />` : '<div class="meta">No preview</div>'}
@@ -494,7 +539,7 @@ function renderCompareGrid(allItems) {
   if (typeof renderPaginationControls === 'function') {
     renderPaginationControls(document.getElementById('compare-lib-pagination'), compareGridPage, totalPages, (p) => {
       compareGridPage = p;
-      renderCompareGrid(allItems);
+      loadCompareLibraryGrid({ keepPage: true });
     });
   }
 }
@@ -509,33 +554,47 @@ function refreshCompareLibrarySelection() {
   });
 }
 
-async function loadCompareLibraryGrid() {
+async function fetchLibraryPage({ nodeId, limit, offset, query } = {}) {
+  const params = new URLSearchParams();
+  if (nodeId) params.set('node_id', String(nodeId));
+  if (query) params.set('q', query);
+  if (limit) params.set('limit', String(limit));
+  if (offset) params.set('offset', String(offset));
+  return unwrapImagePage(await ddaApi('GET', '/api/dda/local/images?' + params.toString()));
+}
+
+async function loadCompareLibraryGrid(opts) {
   const grid = document.getElementById('compare-lib-grid');
   const title = document.getElementById('compare-grid-title');
   if (!grid) return;
+  if (!opts || !opts.keepPage) compareGridPage = 0;
 
   grid.innerHTML = '<p class="dim">Loading library images…</p>';
   if (title) title.textContent = `Pick from library — ${compareSelectionTitle()}`;
   updateCompareFolderPath();
 
   try {
-    const allItems = await ddaApi('GET', '/api/dda/local/images');
-    compareState.allLibraryItems = allItems;
-    populateSelects(allItems);
-
-    const params = new URLSearchParams();
-    if (compareState.selectedNode?.id) params.set('node_id', String(compareState.selectedNode.id));
-    const gridItems = compareState.selectedNode?.id
-      ? await ddaApi('GET', '/api/dda/local/images?' + params.toString())
-      : allItems;
-
-    ensureDdaState().libraryItems = gridItems;
-    renderCompareGrid(gridItems);
-    if (typeof loadAreaPairs === 'function') {
-      loadAreaPairs({
+    const page = await fetchLibraryPage({
+      nodeId: compareState.selectedNode?.id || null,
+      limit: COMPARE_GRID_PER_PAGE,
+      offset: compareGridPage * COMPARE_GRID_PER_PAGE,
+    });
+    rememberLibraryItems(page.items);
+    const totalPages = Math.max(1, Math.ceil((page.total || 0) / COMPARE_GRID_PER_PAGE));
+    if (page.total && compareGridPage > totalPages - 1) {
+      compareGridPage = totalPages - 1;
+      return loadCompareLibraryGrid({ keepPage: true });
+    }
+    ensureDdaState().libraryItems = page.items;
+    populateSelects(selectSourceItems(page.items));
+    renderCompareGrid(page.items, page.total);
+    if (typeof loadAreaPairs === 'function' && !opts?.keepPage) {
+      const run = () => loadAreaPairs({
         nodeId: compareState.selectedNode?.id || null,
         autoFillCompare: true,
       });
+      if (typeof deferIdle === 'function') deferIdle(run);
+      else setTimeout(run, 0);
     }
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
@@ -543,43 +602,29 @@ async function loadCompareLibraryGrid() {
   }
 }
 
-async function openPicker(slotKey) {
-  compareState.pickingSlot = slotKey;
-  const modal = document.getElementById('dda-picker-modal');
+async function renderPickerList() {
   const list = document.getElementById('dda-picker-list');
-  const title = document.getElementById('dda-picker-title');
-  if (!modal || !list) return;
-
-  if (title) {
-    title.textContent = slotKey === 't1' ? 'Select Old Image (T1)' : 'Select New Image (T2)';
-  }
+  if (!list) return;
   list.innerHTML = '<p class="dim">Loading library…</p>';
-  modal.classList.remove('hidden');
-
-  let items = ensureDdaState().libraryItems || [];
   try {
-    if (compareState.selectedNode?.id) {
-      const params = new URLSearchParams();
-      params.set('node_id', String(compareState.selectedNode.id));
-      items = await ddaApi('GET', '/api/dda/local/images?' + params.toString());
-    } else {
-      items = compareState.allLibraryItems.length
-        ? compareState.allLibraryItems
-        : await ddaApi('GET', '/api/dda/local/images');
-      compareState.allLibraryItems = items;
+    const page = await fetchLibraryPage({
+      nodeId: compareState.selectedNode?.id || null,
+      limit: PICKER_PER_PAGE,
+      offset: pickerPage * PICKER_PER_PAGE,
+    });
+    rememberLibraryItems(page.items);
+    populateSelects(selectSourceItems(page.items));
+    const totalPages = Math.max(1, Math.ceil((page.total || 0) / PICKER_PER_PAGE));
+    if (page.total && pickerPage > totalPages - 1) {
+      pickerPage = Math.max(0, totalPages - 1);
+      return renderPickerList();
     }
-    populateSelects(compareState.allLibraryItems.length
-      ? compareState.allLibraryItems
-      : items);
-  } catch (err) {
-    list.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
-    return;
-  }
-
-  if (!items.length) {
-    list.innerHTML = '<p class="dim">No images in library. Add files under library_sources/YEAR/ and refresh.</p>';
-  } else {
-    list.innerHTML = items.map((img) => {
+    if (!page.items.length) {
+      list.innerHTML = '<p class="dim">No images in library. Add files under library_sources/YEAR/ and refresh.</p>';
+      document.getElementById('dda-picker-pagination')?.replaceChildren();
+      return;
+    }
+    list.innerHTML = page.items.map((img) => {
       const enc = encodePath(img.path);
       return `
       <button type="button" class="dda-picker-item" data-path="${enc}">
@@ -595,7 +640,29 @@ async function openPicker(slotKey) {
         closePicker();
       });
     });
+    if (typeof renderPaginationControls === 'function') {
+      renderPaginationControls(document.getElementById('dda-picker-pagination'), pickerPage, totalPages, (p) => {
+        pickerPage = p;
+        renderPickerList();
+      });
+    }
+  } catch (err) {
+    list.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
   }
+}
+
+async function openPicker(slotKey) {
+  compareState.pickingSlot = slotKey;
+  const modal = document.getElementById('dda-picker-modal');
+  const title = document.getElementById('dda-picker-title');
+  if (!modal) return;
+
+  if (title) {
+    title.textContent = slotKey === 't1' ? 'Select Old Image (T1)' : 'Select New Image (T2)';
+  }
+  pickerPage = 0;
+  modal.classList.remove('hidden');
+  await renderPickerList();
 }
 
 function closePicker() {
@@ -977,11 +1044,8 @@ function initCompareTab() {
     compareInitialized = true;
   }
   updateRunButton();
-  if (typeof loadTree === 'function') {
-    loadTree().then(() => loadCompareLibraryGrid()).catch(() => loadCompareLibraryGrid());
-  } else {
-    loadCompareLibraryGrid();
-  }
+  loadCompareLibraryGrid();
+  if (typeof loadTree === 'function') loadTree().catch(() => {});
 }
 
 window.loadCompareLibraryGrid = loadCompareLibraryGrid;

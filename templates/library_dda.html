@@ -6,7 +6,7 @@
   <title>Image Library — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=35" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=49" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=55" />
 </head>
 <body>
   <div class="app dda-app">
@@ -51,6 +51,18 @@
                     <select id="upload-node" required><option value="">— Select folder —</option></select>
                   </div>
                   <div class="form-group">
+                    <label for="upload-zone">Zone / District</label>
+                    <select id="upload-zone" aria-label="Select zone or district">
+                      <option value="">— Select zone —</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-village">Village / Location</label>
+                    <select id="upload-village" aria-label="Select village or location">
+                      <option value="">— Select village —</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
                     <label for="upload-image-type">Image type</label>
                     <select id="upload-image-type">
                       <option>GeoTIFF</option><option>Satellite</option><option>Drone</option>
@@ -67,6 +79,7 @@
                     <input type="text" id="upload-manual-bounds" placeholder="optional, e.g. 77.5,12.9,77.6,13.0" />
                   </div>
                 </div>
+                <p class="sub dim">Choose a <strong>zone</strong> and/or a <strong>village</strong> for this upload. Pairing uses that location together with folder, capture date, filename, and map overlap. The folder name is used as a hint when you leave these blank.</p>
                 <div id="dda-upload-dropzone" class="dda-dropzone" tabindex="0">
                   <p class="dda-dropzone-title">Drag &amp; drop files or a folder</p>
                   <p class="dim">GeoTIFF, PNG, or JPEG. Multiple files and nested folders are supported.</p>
@@ -96,7 +109,7 @@
                 <h3>Same-area pairs</h3>
                 <span class="dim" id="dda-area-pairs-hint"></span>
               </div>
-              <p class="sub">Images that cover the same place are grouped automatically. The oldest is <strong>Before</strong> and the newest is <strong>After</strong>.</p>
+              <p class="sub">Each pair is exactly <strong>two images</strong>, never reused. Matching uses location, folder, capture date, filename, and geographic overlap. Oldest is <strong>Before</strong>, newest is <strong>After</strong>.</p>
               <div id="dda-area-pairs" class="dda-area-pairs"><p class="dim">Loading pairs…</p></div>
             </div>
           <div class="card">
@@ -244,11 +257,11 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/static/js/dda/shared.js?v=7"></script>
-  <script src="/static/js/dda/app.js?v=29"></script>
-  <script src="/static/js/dda/tree.js?v=6"></script>
+  <script src="/static/js/dda/app.js?v=31"></script>
+  <script src="/static/js/dda/tree.js?v=8"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
   <script src="/static/js/dda/library.js?v=20"></script>
-  <script src="/static/js/dda/pairs.js?v=9"></script>
+  <script src="/static/js/dda/pairs.js?v=12"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>
 </html>

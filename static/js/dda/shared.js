@@ -34,6 +34,28 @@ async function ddaApi(method, path, options = {}) {
   return data;
 }
 
+function unwrapImagePage(data) {
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, offset: 0, limit: data.length };
+  }
+  const items = (data && data.items) || [];
+  return {
+    items,
+    total: Number(data && data.total != null ? data.total : items.length),
+    offset: Number((data && data.offset) || 0),
+    limit: Number((data && data.limit) || items.length),
+  };
+}
+
+function deferIdle(fn, timeoutMs) {
+  const run = () => { try { fn(); } catch (_) { /* page teardown */ } };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: timeoutMs || 1200 });
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 function showDdaError(msg) {
   const el = document.getElementById('dda-error');
   if (!el) return;
@@ -67,6 +89,7 @@ function buildImageMetaHtml(img) {
     return filled.length ? `<div class="dda-viewer-meta-row">${filled.join(' <span class="dda-meta-sep">·</span> ')}</div>` : '';
   };
   const path = img.breadcrumb || img.nodePath || '';
+  const place = [img.villageName, img.zoneName].filter(Boolean).join(', ');
   const size = typeof formatBytes === 'function' ? formatBytes(img.fileSizeBytes) : '';
   const dims = img.width && img.height ? `${img.width}×${img.height}px` : '';
   const captureDate = img.captureDate && typeof formatDateIst === 'function'
@@ -77,6 +100,7 @@ function buildImageMetaHtml(img) {
 
   return [
     row([path ? esc(path) : '']),
+    row([place ? esc(place) : '']),
     row([
       img.imageType ? esc(img.imageType) : '',
       img.format ? esc(img.format) : '',

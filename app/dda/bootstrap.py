@@ -110,6 +110,8 @@ def init_dda_database():
                 "ALTER TABLE dda_roles ADD COLUMN is_active BOOLEAN DEFAULT 1",
                 "ALTER TABLE dda_audit_logs ADD COLUMN role VARCHAR(64) DEFAULT ''",
                 "ALTER TABLE dda_audit_logs ADD COLUMN module VARCHAR(64) DEFAULT ''",
+                "ALTER TABLE dda_image_library ADD COLUMN zone_id INTEGER DEFAULT NULL",
+                "ALTER TABLE dda_image_library ADD COLUMN village_id INTEGER DEFAULT NULL",
             ):
                 try:
                     conn.execute(sa_text(stmt))
@@ -131,6 +133,17 @@ def init_dda_database():
                 conn.commit()
             except Exception:
                 conn.rollback()
+            for stmt in (
+                "CREATE INDEX IF NOT EXISTS ix_dda_image_library_zone_id "
+                "ON dda_image_library (zone_id)",
+                "CREATE INDEX IF NOT EXISTS ix_dda_image_library_village_id "
+                "ON dda_image_library (village_id)",
+            ):
+                try:
+                    conn.execute(sa_text(stmt))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
             _migrate_detection_jobs_nullable()
     except Exception as exc:
         logger.warning("DDA schema migration skipped: %s", exc)
@@ -163,27 +176,6 @@ def init_dda_database():
         from .tree.migration import run_tree_migration
         mig = run_tree_migration(db)
         logger.info("Tree migration: %s", mig)
-        try:
-            import threading
-
-            def _background_fs_sync() -> None:
-                from ..database import SessionLocal as _SessionLocal
-                from .tree.sync_service import sync_from_filesystem
-                sync_db = _SessionLocal()
-                try:
-                    sync_stats = sync_from_filesystem(sync_db)
-                    logger.info("Filesystem sync (background): %s", sync_stats)
-                except Exception as exc:
-                    logger.warning("Background filesystem sync failed: %s", exc)
-                finally:
-                    sync_db.close()
-
-            threading.Thread(
-                target=_background_fs_sync, name="dda-fs-sync", daemon=True
-            ).start()
-            logger.info("Filesystem sync moved to background thread")
-        except Exception as exc:
-            logger.warning("Could not start background filesystem sync: %s", exc)
         from .auto_detect import reset_schedule_on_process_start
         reset_schedule_on_process_start()
         from .job_runner import reconcile_stale_jobs
@@ -191,22 +183,33 @@ def init_dda_database():
     finally:
         db.close()
 
-    try:
-        from .tree.image_service import list_all_images
+    def _fs_sync_worker():
         from ..database import SessionLocal as SL
+        from .tree.image_service import count_library_images
+        from .tree.sync_service import sync_from_filesystem
+
         sdb = SL()
         try:
-            total = len(list_all_images(sdb))
+            try:
+                sync_stats = sync_from_filesystem(sdb, check_orphans=False)
+                logger.info("Filesystem sync at startup: %s", sync_stats)
+            except Exception as exc:
+                logger.warning("Filesystem sync at startup failed: %s", exc)
+            try:
+                total = count_library_images(sdb)
+                logger.info(
+                    "DDA tree library ready (hosted=%s): %d images, storage=%s",
+                    is_hf_hosted(),
+                    total,
+                    get_storage_root(),
+                )
+            except Exception as exc:
+                logger.warning("Tree library scan at startup failed: %s", exc)
         finally:
             sdb.close()
-        logger.info(
-            "DDA tree library ready (hosted=%s): %d images, storage=%s",
-            is_hf_hosted(),
-            total,
-            get_storage_root(),
-        )
-    except Exception as exc:
-        logger.warning("Tree library scan at startup failed: %s", exc)
+
+    import threading
+    threading.Thread(target=_fs_sync_worker, daemon=True, name="dda-fs-sync").start()
 
 
 def setup_dda(app: FastAPI) -> None:

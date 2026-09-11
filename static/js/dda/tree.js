@@ -48,6 +48,14 @@ function getSidebars() {
   return list;
 }
 
+function nodeMatchesFilter(node, filter) {
+  if (!filter) return true;
+  const name = (node.name || node.nodeName || '').toLowerCase();
+  const path = (node.nodePath || '').toLowerCase();
+  if (name.includes(filter) || path.includes(filter)) return true;
+  return (node.children || []).some((c) => nodeMatchesFilter(c, filter));
+}
+
 function renderTreeNodes(nodes, sidebar, depth = 0) {
   if (!nodes || !nodes.length) return '';
   const filter = (document.getElementById(sidebar.searchId)?.value || '').toLowerCase();
@@ -56,12 +64,7 @@ function renderTreeNodes(nodes, sidebar, depth = 0) {
   return nodes.map((node) => {
     const name = node.name || node.nodeName;
     const children = node.children || [];
-    const matches = !filter ||
-      name.toLowerCase().includes(filter) ||
-      (node.nodePath || '').toLowerCase().includes(filter) ||
-      children.some((c) => JSON.stringify(c).toLowerCase().includes(filter));
-
-    if (!matches && filter) return '';
+    if (filter && !nodeMatchesFilter(node, filter)) return '';
 
     const active = sel?.id === node.id;
     const hasKids = children.length > 0;
@@ -217,7 +220,10 @@ function populateNodeSelects(tree) {
 function syncUploadNodeSelect() {
   const sel = document.getElementById('upload-node');
   const node = window.ddaState?.selectedNode;
-  if (sel && node?.id) sel.value = String(node.id);
+  if (sel && node?.id) {
+    sel.value = String(node.id);
+    sel.dispatchEvent(new Event('change'));
+  }
 }
 
 /* Manage modal */
