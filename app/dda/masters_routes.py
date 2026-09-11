@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User
 from .models import DdaVillage, DdaZone, ImageAsset
+from .tree.models import ImageLibrary
 from .rbac.permissions import require_module_permission
 from .seed import seed_delhi_hierarchy
 
@@ -64,6 +65,28 @@ def _village_dict(village: DdaVillage, zone: Optional[DdaZone] = None) -> dict:
         "zoneId": village.zone_id,
         "zoneName": z.name if z else "",
         "createdAt": village.created_at.isoformat() if village.created_at else None,
+    }
+
+
+@router.get("/masters/options")
+def masters_options(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_module_permission("library", "view")),
+):
+    """Zone + village lists for pickers (upload form).
+
+    Separate from /masters/zones because choosing a location while uploading
+    only needs to read the masters, not manage them.
+    """
+    _require_dda()
+    seed_delhi_hierarchy(db)
+    zones = db.query(DdaZone).order_by(DdaZone.name).all()
+    villages = db.query(DdaVillage).order_by(DdaVillage.name).all()
+    return {
+        "zones": [{"id": z.id, "name": z.name} for z in zones],
+        "villages": [
+            {"id": v.id, "name": v.name, "zoneId": v.zone_id} for v in villages
+        ],
     }
 
 
@@ -132,7 +155,10 @@ def delete_zone(
     zone = db.query(DdaZone).filter(DdaZone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
-    in_use = db.query(ImageAsset).filter(ImageAsset.zone_id == zone_id).count()
+    in_use = (
+        db.query(ImageAsset).filter(ImageAsset.zone_id == zone_id).count()
+        + db.query(ImageLibrary).filter(ImageLibrary.zone_id == zone_id).count()
+    )
     if in_use:
         raise HTTPException(status_code=409, detail="This zone is used by library images and cannot be deleted.")
     zone_name = zone.name
@@ -231,7 +257,10 @@ def delete_village(
     village = db.query(DdaVillage).filter(DdaVillage.id == village_id).first()
     if not village:
         raise HTTPException(status_code=404, detail="Location not found")
-    in_use = db.query(ImageAsset).filter(ImageAsset.village_id == village_id).count()
+    in_use = (
+        db.query(ImageAsset).filter(ImageAsset.village_id == village_id).count()
+        + db.query(ImageLibrary).filter(ImageLibrary.village_id == village_id).count()
+    )
     if in_use:
         raise HTTPException(status_code=409, detail="This location is used by library images and cannot be deleted.")
     village_name = village.name

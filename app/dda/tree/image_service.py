@@ -89,12 +89,48 @@ def _as_iso(value) -> Optional[str]:
     return text
 
 
+def resolve_location(
+    db: Session,
+    zone_id: Optional[int],
+    village_id: Optional[int],
+) -> tuple[Optional[int], Optional[int]]:
+    """Validate an optional zone/village choice; a village implies its zone."""
+    from ..models import DdaVillage, DdaZone
+
+    zid = int(zone_id) if zone_id else None
+    vid = int(village_id) if village_id else None
+    if vid:
+        village = db.query(DdaVillage).filter(DdaVillage.id == vid).first()
+        if not village:
+            raise HTTPException(status_code=404, detail="Location (village) not found")
+        if zid and village.zone_id != zid:
+            raise HTTPException(
+                status_code=400,
+                detail="The selected location does not belong to the selected zone.",
+            )
+        return village.zone_id, village.id
+    if zid and not db.query(DdaZone).filter(DdaZone.id == zid).first():
+        raise HTTPException(status_code=404, detail="Zone not found")
+    return zid, None
+
+
+def location_names(db: Session) -> tuple[dict[int, str], dict[int, str]]:
+    """id → name lookups for zones and villages (both tables are small)."""
+    from ..models import DdaVillage, DdaZone
+
+    zones = {z.id: z.name for z in db.query(DdaZone.id, DdaZone.name).all()}
+    villages = {v.id: v.name for v in db.query(DdaVillage.id, DdaVillage.name).all()}
+    return zones, villages
+
+
 def image_to_dict(
     img: ImageLibrary,
     node: Optional[TreeNode] = None,
     *,
     include_bounds: bool = True,
     slim: bool = False,
+    zone_names: Optional[dict] = None,
+    village_names: Optional[dict] = None,
 ) -> dict:
     rel = (img.file_path or "").replace("\\", "/")
     encoded = quote(rel, safe="/")
@@ -120,7 +156,13 @@ def image_to_dict(
         "hasGeoref": bool(img.has_georef),
         "width": img.width,
         "height": img.height,
+        "zoneId": img.zone_id,
+        "villageId": img.village_id,
     }
+    if zone_names is not None:
+        payload["zoneName"] = zone_names.get(img.zone_id, "") if img.zone_id else ""
+    if village_names is not None:
+        payload["villageName"] = village_names.get(img.village_id, "") if img.village_id else ""
     if include_bounds:
         payload["bounds"] = bounds
     if slim:
@@ -160,8 +202,11 @@ async def upload_image(
     capture_date: Optional[str],
     uploaded_by: str,
     manual_bounds: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
 ) -> ImageLibrary:
     node = get_node_or_404(db, node_id)
+    zone_id, village_id = resolve_location(db, zone_id, village_id)
     itype = image_type.strip() or "GeoTIFF"
     if itype not in IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=f"image_type must be one of: {', '.join(sorted(IMAGE_TYPES))}")
@@ -177,6 +222,19 @@ async def upload_image(
         .first()
     )
     if existing is not None:
+        # Re-uploading the same file is a no-op, but it is still the natural way
+        # to fill in a location that was left blank the first time.
+        backfilled = False
+        if zone_id and not existing.zone_id:
+            existing.zone_id = zone_id
+            backfilled = True
+        if village_id and not existing.village_id:
+            existing.village_id = village_id
+            backfilled = True
+        if backfilled:
+            db.commit()
+            db.refresh(existing)
+            invalidate_library_caches()
         logger.info("Skipped duplicate upload %s -> node %s (already exists as image id %s)",
                     original, node.id, existing.id)
         return existing
@@ -218,6 +276,8 @@ async def upload_image(
         image_type=itype,
         file_path=rel,
         capture_date=cap,
+        zone_id=zone_id,
+        village_id=village_id,
         uploaded_by=uploaded_by or "",
         file_size_bytes=size,
         thumb_cache_key=hashlib.sha256(rel.encode()).hexdigest()[:32],
@@ -228,7 +288,11 @@ async def upload_image(
         format=meta.format,
     )
     db.add(img)
-    log_action(db, "upload", node_id=node.id, new_value={"file": rel, "type": itype}, action_by=uploaded_by, module="library")
+    log_action(
+        db, "upload", node_id=node.id,
+        new_value={"file": rel, "type": itype, "zoneId": zone_id, "villageId": village_id},
+        action_by=uploaded_by, module="library",
+    )
     db.commit()
     db.refresh(img)
     invalidate_library_caches()
@@ -239,7 +303,8 @@ async def upload_image(
 def list_images_for_node(db: Session, node_id: int) -> List[dict]:
     node = get_node_or_404(db, node_id)
     rows = db.query(ImageLibrary).filter(ImageLibrary.node_id == node_id).order_by(ImageLibrary.uploaded_on.desc()).all()
-    return [image_to_dict(r, node) for r in rows]
+    zones, villages = location_names(db)
+    return [image_to_dict(r, node, zone_names=zones, village_names=villages) for r in rows]
 
 
 def get_image_by_file_path(db: Session, relative_path: str) -> Optional[ImageLibrary]:
@@ -311,17 +376,20 @@ def list_all_images(
 ):
     q = _images_query(db, node_id=node_id, query=query)
     ordered = q.order_by(ImageLibrary.uploaded_on.desc())
+    zones, villages = location_names(db)
     if limit is not None:
         total = q.count()
         rows = ordered.offset(offset).limit(limit).all()
         items = [
-            image_to_dict(img, node, include_bounds=include_bounds, slim=slim)
+            image_to_dict(img, node, include_bounds=include_bounds, slim=slim,
+                          zone_names=zones, village_names=villages)
             for img, node in rows
         ]
         return {"items": items, "total": total, "offset": offset, "limit": limit}
     rows = ordered.all()
     return [
-        image_to_dict(img, node, include_bounds=include_bounds, slim=slim)
+        image_to_dict(img, node, include_bounds=include_bounds, slim=slim,
+                      zone_names=zones, village_names=villages)
         for img, node in rows
     ]
 

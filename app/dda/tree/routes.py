@@ -18,6 +18,7 @@ from .image_service import (
     image_to_dict,
     list_all_images,
     list_images_for_node,
+    location_names,
     upload_image,
 )
 from .tree_service import (
@@ -36,6 +37,17 @@ router = APIRouter()
 def _require_dda():
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="DDA mode is not enabled")
+
+
+def _optional_int(raw: str, field: str) -> Optional[int]:
+    """Multipart form fields arrive as strings; '' means 'not selected'."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field} must be a number")
 
 
 class NodeCreateBody(BaseModel):
@@ -198,6 +210,8 @@ async def api_upload_image(
     image_type: str = Form("GeoTIFF"),
     capture_date: str = Form(""),
     manual_bounds: str = Form(""),
+    zone_id: str = Form(""),
+    village_id: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_module_permission("library", "create")),
 ):
@@ -208,9 +222,16 @@ async def api_upload_image(
         capture_date=capture_date or None,
         uploaded_by=user.email or str(user.id),
         manual_bounds=manual_bounds or None,
+        zone_id=_optional_int(zone_id, "zone_id"),
+        village_id=_optional_int(village_id, "village_id"),
     )
     node = get_node_or_404(db, node_id)
-    return {"status": True, "message": "Image Uploaded Successfully", "image": image_to_dict(img, node)}
+    zones, villages = location_names(db)
+    return {
+        "status": True,
+        "message": "Image Uploaded Successfully",
+        "image": image_to_dict(img, node, zone_names=zones, village_names=villages),
+    }
 
 
 @router.delete("/tree/images/{image_id}")

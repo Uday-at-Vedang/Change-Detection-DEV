@@ -43,6 +43,11 @@ class ImageLibrary(Base):
     # path. Works unchanged on SQLite/PostgreSQL too.
     file_path = Column(String(500), nullable=False, unique=True)  # relative to storage root
     capture_date = Column(DateTime, nullable=True)
+    # Administrative location picked on upload. Independent of the folder tree:
+    # the same zone/village can appear under several folders, and pairing uses
+    # it as a strong "same place" signal.
+    zone_id = Column(Integer, ForeignKey("dda_zones.id"), nullable=True, index=True)
+    village_id = Column(Integer, ForeignKey("dda_villages.id"), nullable=True, index=True)
     uploaded_by = Column(String(100), default="")
     uploaded_on = Column(DateTime, default=_utcnow)
     # BigInteger, not Integer: this project's GeoTIFFs regularly exceed 2GB

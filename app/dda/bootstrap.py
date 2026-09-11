@@ -107,6 +107,8 @@ def init_dda_database():
                 "ALTER TABLE dda_roles ADD COLUMN is_active BOOLEAN DEFAULT 1",
                 "ALTER TABLE dda_audit_logs ADD COLUMN role VARCHAR(64) DEFAULT ''",
                 "ALTER TABLE dda_audit_logs ADD COLUMN module VARCHAR(64) DEFAULT ''",
+                "ALTER TABLE dda_image_library ADD COLUMN zone_id INTEGER DEFAULT NULL",
+                "ALTER TABLE dda_image_library ADD COLUMN village_id INTEGER DEFAULT NULL",
             ):
                 try:
                     conn.execute(sa_text(stmt))
@@ -128,6 +130,17 @@ def init_dda_database():
                 conn.commit()
             except Exception:
                 conn.rollback()
+            for stmt in (
+                "CREATE INDEX IF NOT EXISTS ix_dda_image_library_zone_id "
+                "ON dda_image_library (zone_id)",
+                "CREATE INDEX IF NOT EXISTS ix_dda_image_library_village_id "
+                "ON dda_image_library (village_id)",
+            ):
+                try:
+                    conn.execute(sa_text(stmt))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
             _migrate_detection_jobs_nullable()
     except Exception as exc:
         logger.warning("DDA schema migration skipped: %s", exc)

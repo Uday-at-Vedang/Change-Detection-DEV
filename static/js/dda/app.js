@@ -109,6 +109,7 @@ function renderLibGrid() {
   grid.innerHTML = items.map((img) => {
     const thumb = img.thumbUrl || '';
     const crumb = img.breadcrumb || img.nodePath || img.filename;
+    const place = [img.villageName, img.zoneName].filter(Boolean).join(', ');
     const encPath = encodeURIComponent(img.path);
     return `
     <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
@@ -116,6 +117,7 @@ function renderLibGrid() {
       ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
       <div class="meta">
         <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
+        ${place ? `<span class="dim dda-crumb">${escapeHtml(place)}</span><br/>` : ''}
         <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}</span>
       </div>
     </div>`;

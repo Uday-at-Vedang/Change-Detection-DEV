@@ -171,7 +171,10 @@ function populateNodeSelects(tree) {
 function syncUploadNodeSelect() {
   const sel = document.getElementById('upload-node');
   const node = window.ddaState?.selectedNode;
-  if (sel && node?.id) sel.value = String(node.id);
+  if (sel && node?.id) {
+    sel.value = String(node.id);
+    sel.dispatchEvent(new Event('change'));
+  }
 }
 
 /* Manage modal */
