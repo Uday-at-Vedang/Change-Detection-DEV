@@ -21,12 +21,37 @@ function formatApiError(detail) {
   return String(detail);
 }
 
+/** `options.timeoutMs` is opt-in (default: none, i.e. today's unlimited-wait
+ * behavior) — only pass it for calls that should normally be fast (a single
+ * PATCH, a small GET), never for long-running work like running a detection,
+ * which can legitimately take minutes. Without it, a stalled network/DB
+ * connection leaves the caller's await pending forever, which is what made
+ * the region-review buttons look like a frozen page instead of a clear
+ * "request failed" error. */
 async function ddaApi(method, path, options = {}) {
-  const headers = { ...options.headers };
-  if (options.body && !(options.body instanceof FormData)) {
+  const { timeoutMs, ...rest } = options;
+  const headers = { ...rest.headers };
+  if (rest.body && !(rest.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(API + path, { method, headers, credentials: 'include', ...options });
+  let signal = rest.signal;
+  let timer = null;
+  if (timeoutMs) {
+    const controller = new AbortController();
+    signal = controller.signal;
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  }
+  let res;
+  try {
+    res = await fetch(API + path, { method, headers, credentials: 'include', ...rest, signal });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out — the server took too long to respond. Please try again.');
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch (_) {}

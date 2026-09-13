@@ -941,6 +941,41 @@ async function pollJobUntilDone(jobId) {
   }
 }
 
+/** If this user already has a job running/queued (e.g. they navigated away
+ * from /detect and came back, or reloaded the page) resume showing its live
+ * progress instead of silently presenting the idle "Ready to detect?" form
+ * — that blank state is exactly what makes a still-running job look dead
+ * and tempts a server restart, which actually does kill it. */
+async function resumeActiveJobIfAny() {
+  let jobs;
+  try {
+    const data = await ddaApi('GET', '/api/dda/jobs?limit=20');
+    jobs = data.jobs || [];
+  } catch (_) {
+    return;
+  }
+  const active = jobs.find((j) => j.status === 'running' || j.status === 'queued');
+  if (!active) return;
+
+  if (typeof showDdaSuccess === 'function') {
+    showDdaSuccess('Resuming progress for a detection already in progress…');
+  }
+  forEachRunButton((btn) => { btn.disabled = true; });
+  showDetectProgress();
+  try {
+    const job = await pollJobUntilDone(active.id);
+    if (job.jobId && typeof window.markDdaJobSeen === 'function') window.markDdaJobSeen(job.jobId);
+    showDetectResult(job.result);
+    if (typeof showDdaSuccess === 'function') showDdaSuccess('Detection complete.');
+    if (typeof loadReportsList === 'function') loadReportsList();
+  } catch (err) {
+    if (typeof showDdaError === 'function') showDdaError(err.message || 'Detection failed');
+  } finally {
+    updateRunButton();
+    hideDetectProgress(2000);
+  }
+}
+
 async function runLibraryDetection() {
   if (!compareState.t1 || !compareState.t2) {
     if (typeof showDdaError === 'function') showDdaError(
@@ -1046,6 +1081,7 @@ function initCompareTab() {
   updateRunButton();
   loadCompareLibraryGrid();
   if (typeof loadTree === 'function') loadTree().catch(() => {});
+  resumeActiveJobIfAny();
 }
 
 window.loadCompareLibraryGrid = loadCompareLibraryGrid;

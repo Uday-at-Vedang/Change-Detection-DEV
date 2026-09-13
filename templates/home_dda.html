@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=55" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=60" />
 </head>
 <body>
   <div class="app dda-app">
@@ -27,15 +27,18 @@
               <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-refresh">Refresh</button>
             </div>
           </div>
-          <div class="dda-reports-toolbar dda-dash-filter-row">
-            <label class="dda-filter-field">From
-              <input type="date" id="dash-filter-from" class="dda-date-input" />
-            </label>
-            <label class="dda-filter-field">To
-              <input type="date" id="dash-filter-to" class="dda-date-input" />
-            </label>
-            <button type="button" class="btn btn-primary btn-sm" id="btn-dash-filter-apply">Search</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-filter-clear">Clear dates</button>
+          <div class="dda-dash-filter-bar">
+            <span class="dda-dash-filter-bar-label">Filter by date range</span>
+            <div class="dda-dash-filter-bar-controls">
+              <label class="dda-filter-field">From
+                <input type="date" id="dash-filter-from" class="dda-date-input" />
+              </label>
+              <label class="dda-filter-field">To
+                <input type="date" id="dash-filter-to" class="dda-date-input" />
+              </label>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-dash-filter-apply">Search</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-filter-clear">Clear dates</button>
+            </div>
           </div>
         </div>
 
@@ -88,6 +91,10 @@
                   <h4>Detected vs Unclassified Changes</h4>
                   <canvas id="dda-chart-status" height="220"></canvas>
                 </div>
+                <div class="dda-dash-chart-box dda-dash-chart-box-wide">
+                  <h4>Change Types by Region</h4>
+                  <canvas id="dda-chart-change-types-region" height="220"></canvas>
+                </div>
               </div>
             </div>
           </section>
@@ -128,14 +135,39 @@
           </section>
 
         </div>
+
+        <section class="dda-dash-section">
+          <h2 class="dda-dash-section-title">Image Library</h2>
+          <div class="dda-dash-overview-grid">
+            <div class="card">
+              <div class="card-header"><h3>Library Overview</h3></div>
+              <p class="sub dim">Every image currently stored, independent of any detection run.</p>
+              <div class="dda-dash-kpi-grid" id="dda-dash-lib-kpis">
+                <p class="dim">Loading library stats…</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="dda-dash-chart-box" style="margin:0;">
+                <h4>Images by Format</h4>
+                <canvas id="dda-chart-lib-format" height="180"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Images by Region &amp; Village</h3></div>
+            <p class="sub dim">Zone/village comes from each image's own tag in the Image Library, not from detection history.</p>
+            <div id="dda-dash-lib-locations"><p class="dim">Loading…</p></div>
+          </div>
+        </section>
+
       </section>
     </div>
   </div>
 
   <script src="https://unpkg.com/chart.js@4/dist/chart.umd.js" crossorigin=""></script>
-  <script src="/static/js/dda/shared.js?v=7"></script>
+  <script src="/static/js/dda/shared.js?v=8"></script>
   <script src="/static/js/dda/app.js?v=31"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
-  <script src="/static/js/dda/home.js?v=10"></script>
+  <script src="/static/js/dda/home.js?v=15"></script>
 </body>
 </html>

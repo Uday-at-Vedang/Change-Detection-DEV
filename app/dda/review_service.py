@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models import DetectionRun
@@ -62,7 +63,24 @@ def get_or_create_review(db: Session, run_id: int, region_id: int) -> RegionRevi
         return row
     row = RegionReview(run_id=run_id, region_id=region_id, status="pending")
     db.add(row)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two overlapping requests for the same region both found no existing
+        # row and raced to create one — the (run_id, region_id) unique index
+        # lets exactly one insert win; fall back to the row it created
+        # instead of duplicating (previously unconstrained, this silently
+        # produced duplicate RegionReview rows and inflated classification
+        # counts past regions_count).
+        db.rollback()
+        row = (
+            db.query(RegionReview)
+            .filter(RegionReview.run_id == run_id, RegionReview.region_id == region_id)
+            .first()
+        )
+        if row:
+            return row
+        raise
     db.refresh(row)
     return row
 

@@ -29,6 +29,12 @@ router = APIRouter()
 UNASSIGNED = "Unassigned"
 DEFAULT_ROLE = "analyst"
 
+# Fixed taxonomy every region is already classified into — see
+# app/dda/change_type_map.py::map_to_dda_change_type. Kept here (not
+# imported) purely to pin a stable display order across every chart/table
+# that breaks a count down by change type.
+CHANGE_TYPE_ORDER = ["New Construction", "Demolition", "Extension", "Vegetation Change", "Other"]
+
 # Matches DEFAULT_ROLES rank order in app/dda/rbac/seed.py — keeps the role
 # breakdown in a stable, meaningful order instead of alphabetical/count order.
 ROLE_ORDER = ["viewer", "uploader", "analyst", "admin"]
@@ -63,6 +69,17 @@ def _run_thumbs(run: DetectionRun) -> dict:
     }
 
 
+def _confirmed_rate(confirmed: int, false_positive: int) -> Optional[float]:
+    """'Accuracy' for a detection: of the regions a human has actually
+    adjudicated as real-or-not, what share were real? None (not 0%) when
+    nothing's been reviewed yet, so the UI can show "not yet reviewed"
+    instead of a misleading 0%."""
+    denom = confirmed + false_positive
+    if denom == 0:
+        return None
+    return round(100 * confirmed / denom, 1)
+
+
 def _run_summary(row: dict) -> dict:
     run = row["run"]
     return {
@@ -77,9 +94,47 @@ def _run_summary(row: dict) -> dict:
         "unclassified": row["unclassified"],
         "confirmed": row["confirmed"],
         "falsePositive": row["falsePositive"],
+        "submitted": row["submitted"],
+        "confirmedRate": _confirmed_rate(row["confirmed"], row["falsePositive"]),
+        "changeTypes": row["changeTypes"],
         "createdAt": _isoformat_ist(run.created_at),
         **_run_thumbs(run),
     }
+
+
+def _image_counts_by_location(db: Session) -> tuple[dict[str, int], dict[tuple[str, str], int]]:
+    """Image Library counts grouped by zone name and by (zone, village) name
+    — joined through the same DdaZone/DdaVillage masters the dashboard's
+    zone/village strings already come from, so the names line up exactly
+    with what dashboard_regions()/dashboard_villages() group by."""
+    from sqlalchemy import func as sa_func
+
+    from .models import DdaVillage, DdaZone
+    from .tree.models import ImageLibrary
+
+    by_zone: dict[str, int] = defaultdict(int)
+    by_village: dict[tuple[str, str], int] = defaultdict(int)
+
+    zone_rows = (
+        db.query(DdaZone.name, sa_func.count(ImageLibrary.id))
+        .join(ImageLibrary, ImageLibrary.zone_id == DdaZone.id)
+        .group_by(DdaZone.name)
+        .all()
+    )
+    for name, cnt in zone_rows:
+        by_zone[name] = cnt
+
+    village_rows = (
+        db.query(DdaZone.name, DdaVillage.name, sa_func.count(ImageLibrary.id))
+        .join(DdaVillage, DdaVillage.zone_id == DdaZone.id)
+        .join(ImageLibrary, ImageLibrary.village_id == DdaVillage.id)
+        .group_by(DdaZone.name, DdaVillage.name)
+        .all()
+    )
+    for zone_name, village_name, cnt in village_rows:
+        by_village[(zone_name, village_name)] = cnt
+
+    return by_zone, by_village
 
 
 def _accessible_run_filter(db: Session, user: User):
@@ -144,6 +199,36 @@ def _live_locations_for(db: Session, run_ids: list[int]) -> dict[int, tuple[str,
     return out
 
 
+def _run_change_type_counts(run: DetectionRun) -> dict[str, int]:
+    """How many of this run's regions fall into each fixed change-type
+    category (New Construction/Demolition/Extension/Vegetation Change/
+    Other) — already computed per region at detection time (see
+    change_type_map.py) and stored in regions_json; this just tallies it."""
+    try:
+        regions = json.loads(run.regions_json or "[]")
+    except json.JSONDecodeError:
+        return {}
+    counts: dict[str, int] = defaultdict(int)
+    for region in regions:
+        if region.get("suppressed"):
+            continue
+        ctype = region.get("ddaChangeType") or "Other"
+        counts[ctype] += 1
+    return dict(counts)
+
+
+def _merge_change_type_counts(items: list[dict]) -> dict[str, int]:
+    """Sum per-run changeTypes dicts into one, ordered per CHANGE_TYPE_ORDER
+    with any unrecognized label appended at the end rather than dropped."""
+    total: dict[str, int] = defaultdict(int)
+    for i in items:
+        for ctype, cnt in i["changeTypes"].items():
+            total[ctype] += cnt
+    ordered = {k: total[k] for k in CHANGE_TYPE_ORDER if k in total}
+    ordered.update({k: v for k, v in total.items() if k not in ordered})
+    return ordered
+
+
 def _load_dataset(
     db: Session,
     user: User,
@@ -195,6 +280,7 @@ def _load_dataset(
             "falsePositive": c.get("false_positive", 0),
             "submitted": c.get("submitted", 0),
             "unclassified": unclassified,
+            "changeTypes": _run_change_type_counts(run),
         })
     return rows
 
@@ -224,6 +310,7 @@ def dashboard_summary(
         "avgChangePercentage": round(sum(pct_values) / len(pct_values), 2) if pct_values else None,
         "totalRegions": len(zones),
         "totalVillages": len(villages),
+        "changeTypes": _merge_change_type_counts(rows),
         "jobsQueued": db.query(DetectionJob).filter(DetectionJob.status == "queued", DetectionJob.created_by == user.id).count(),
         "jobsRunning": db.query(DetectionJob).filter(DetectionJob.status == "running", DetectionJob.created_by == user.id).count(),
         "latestRun": _run_summary(rows[-1]) if rows else None,
@@ -242,19 +329,26 @@ def dashboard_regions(
     by_zone: dict[str, list] = defaultdict(list)
     for r in rows:
         by_zone[r["zone"]].append(r)
+    image_counts_by_zone, _ = _image_counts_by_location(db)
 
     out = []
     for zone, items in by_zone.items():
         pct_values = [i["run"].change_percentage for i in items if i["run"].change_percentage is not None]
+        confirmed = sum(i["confirmed"] for i in items)
+        false_positive = sum(i["falsePositive"] for i in items)
         out.append({
             "zone": zone,
             "runsCount": len(items),
             "detectedChanges": sum((i["run"].regions_count or 0) for i in items),
             "unclassified": sum(i["unclassified"] for i in items),
-            "confirmed": sum(i["confirmed"] for i in items),
-            "falsePositive": sum(i["falsePositive"] for i in items),
+            "confirmed": confirmed,
+            "falsePositive": false_positive,
+            "submitted": sum(i["submitted"] for i in items),
+            "confirmedRate": _confirmed_rate(confirmed, false_positive),
             "avgChangePercentage": round(sum(pct_values) / len(pct_values), 2) if pct_values else None,
             "villagesCount": len({i["village"] for i in items}),
+            "imageCount": image_counts_by_zone.get(zone, 0),
+            "changeTypes": _merge_change_type_counts(items),
             "lastDetectionAt": _isoformat_ist(max(i["run"].created_at for i in items)),
         })
     out.sort(key=lambda x: x["runsCount"], reverse=True)
@@ -311,19 +405,26 @@ def dashboard_villages(
     by_village: dict[tuple, list] = defaultdict(list)
     for r in rows:
         by_village[(r["zone"], r["village"])].append(r)
+    _, image_counts_by_village = _image_counts_by_location(db)
 
     out = []
     for (z, v), items in by_village.items():
         pct_values = [i["run"].change_percentage for i in items if i["run"].change_percentage is not None]
+        confirmed = sum(i["confirmed"] for i in items)
+        false_positive = sum(i["falsePositive"] for i in items)
         out.append({
             "zone": z,
             "village": v,
             "runsCount": len(items),
             "detectedChanges": sum((i["run"].regions_count or 0) for i in items),
             "unclassified": sum(i["unclassified"] for i in items),
-            "confirmed": sum(i["confirmed"] for i in items),
-            "falsePositive": sum(i["falsePositive"] for i in items),
+            "confirmed": confirmed,
+            "falsePositive": false_positive,
+            "submitted": sum(i["submitted"] for i in items),
+            "confirmedRate": _confirmed_rate(confirmed, false_positive),
             "avgChangePercentage": round(sum(pct_values) / len(pct_values), 2) if pct_values else None,
+            "imageCount": image_counts_by_village.get((z, v), 0),
+            "changeTypes": _merge_change_type_counts(items),
             "lastDetectionAt": _isoformat_ist(max(i["run"].created_at for i in items)),
         })
     out.sort(key=lambda x: x["runsCount"], reverse=True)
@@ -390,15 +491,28 @@ def dashboard_location(
     previous = history[-2] if len(history) > 1 else None
 
     comparison = None
+    summary = None
     if latest and previous:
+        change_delta = (
+            round(latest["changePercentage"] - previous["changePercentage"], 2)
+            if latest["changePercentage"] is not None and previous["changePercentage"] is not None
+            else None
+        )
+        regions_delta = latest["regionsCount"] - previous["regionsCount"]
+        rate_delta = (
+            round(latest["confirmedRate"] - previous["confirmedRate"], 1)
+            if latest["confirmedRate"] is not None and previous["confirmedRate"] is not None
+            else None
+        )
         comparison = {
-            "changePercentageDelta": (
-                round(latest["changePercentage"] - previous["changePercentage"], 2)
-                if latest["changePercentage"] is not None and previous["changePercentage"] is not None
-                else None
-            ),
-            "regionsCountDelta": latest["regionsCount"] - previous["regionsCount"],
+            "changePercentageDelta": change_delta,
+            "regionsCountDelta": regions_delta,
+            "confirmedDelta": latest["confirmed"] - previous["confirmed"],
+            "falsePositiveDelta": latest["falsePositive"] - previous["falsePositive"],
+            "unclassifiedDelta": latest["unclassified"] - previous["unclassified"],
+            "confirmedRateDelta": rate_delta,
         }
+        summary = _build_comparison_summary(latest, previous, comparison)
 
     return {
         "zone": zone,
@@ -407,8 +521,53 @@ def dashboard_location(
         "latest": latest,
         "previous": previous,
         "comparison": comparison,
+        "summary": summary,
         "history": list(reversed(history)),
     }
+
+
+def _build_comparison_summary(latest: dict, previous: dict, comparison: dict) -> str:
+    """Plain-English recap of how the latest run compares to the previous
+    one at this location — change area, region count, and review accuracy
+    (confirmed rate) all in one sentence set, so the dashboard doesn't make
+    someone read four numbers to know if things got better or worse."""
+    parts = []
+
+    cd = comparison["changePercentageDelta"]
+    if cd is not None:
+        if abs(cd) < 0.01:
+            parts.append("Change area is essentially unchanged from the previous run.")
+        else:
+            direction = "up" if cd > 0 else "down"
+            parts.append(
+                f"Change area is {direction} {abs(cd):.2f} percentage points "
+                f"({previous['changePercentage']:.2f}% → {latest['changePercentage']:.2f}%)."
+            )
+
+    rd = comparison["regionsCountDelta"]
+    if rd != 0:
+        parts.append(f"{abs(rd)} {'more' if rd > 0 else 'fewer'} region(s) detected than last time.")
+    else:
+        parts.append("Same number of regions detected as last time.")
+
+    rate_delta = comparison["confirmedRateDelta"]
+    if rate_delta is not None:
+        if abs(rate_delta) < 0.1:
+            parts.append(f"Confirmed rate held steady at {latest['confirmedRate']:.1f}%.")
+        else:
+            direction = "improved" if rate_delta > 0 else "dropped"
+            parts.append(
+                f"Confirmed rate {direction} {abs(rate_delta):.1f} points "
+                f"({previous['confirmedRate']:.1f}% → {latest['confirmedRate']:.1f}%)."
+            )
+    elif latest["confirmedRate"] is not None:
+        parts.append(f"Confirmed rate is {latest['confirmedRate']:.1f}% (previous run not yet reviewed).")
+
+    fpd = comparison["falsePositiveDelta"]
+    if fpd != 0:
+        parts.append(f"{abs(fpd)} {'more' if fpd > 0 else 'fewer'} false positive(s) flagged.")
+
+    return " ".join(parts)
 
 
 @router.get("/dashboard/recent-reports")
@@ -423,3 +582,51 @@ def dashboard_recent_reports(
     rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
     rows.sort(key=lambda r: r["run"].created_at, reverse=True)
     return {"reports": [_run_summary(r) for r in rows[:limit]]}
+
+
+@router.get("/dashboard/library-stats")
+def dashboard_library_stats(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
+    """Image Library summary for the dashboard — total images, zone/village
+    breakdown, format mix, and how many still have no zone/village assigned.
+    Independent of detection history and not scoped per-user: the library
+    itself isn't user-scoped anywhere else in the app (matches
+    local_routes.py's image listing), so this reflects the whole library as
+    it stands right now, for every viewer.
+    """
+    _require_dda()
+    from sqlalchemy import func as sa_func
+
+    from .tree.models import ImageLibrary
+
+    total = db.query(ImageLibrary).count()
+    by_zone, by_village = _image_counts_by_location(db)
+    unassigned = db.query(ImageLibrary).filter(ImageLibrary.zone_id.is_(None)).count()
+
+    format_rows = (
+        db.query(ImageLibrary.format, sa_func.count(ImageLibrary.id))
+        .group_by(ImageLibrary.format)
+        .all()
+    )
+    by_format = sorted(
+        ({"format": fmt or "Unknown", "count": cnt} for fmt, cnt in format_rows),
+        key=lambda x: -x["count"],
+    )
+    zones_out = sorted(
+        ({"zone": z, "imageCount": c} for z, c in by_zone.items()),
+        key=lambda x: -x["imageCount"],
+    )
+    villages_out = sorted(
+        ({"zone": z, "village": v, "imageCount": c} for (z, v), c in by_village.items()),
+        key=lambda x: -x["imageCount"],
+    )
+
+    return {
+        "totalImages": total,
+        "assignedImages": total - unassigned,
+        "unassignedImages": unassigned,
+        "zonesCovered": len(by_zone),
+        "villagesCovered": len(by_village),
+        "byZone": zones_out,
+        "byVillage": villages_out,
+        "byFormat": by_format,
+    }

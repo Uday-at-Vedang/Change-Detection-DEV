@@ -164,6 +164,7 @@ function setupTrainingPackButton(runId, geo) {
 async function patchRegionReview(runId, regionId, reviewStatus) {
   const res = await ddaApi('PATCH', `/api/dda/reports/${runId}/regions/${regionId}`, {
     body: JSON.stringify({ reviewStatus }),
+    timeoutMs: 15000,
   });
   return res.region;
 }
@@ -415,28 +416,49 @@ function setupDdaReviewButtons(tbody, regions) {
   if (!runId) return;
 
   tbody.querySelectorAll('tr[data-region-id]').forEach((tr) => {
-    tr.querySelector('.btn-review-ok')?.addEventListener('click', async (e) => {
+    const okBtn = tr.querySelector('.btn-review-ok');
+    const fpBtn = tr.querySelector('.btn-review-fp');
+    // Guards against a double-click (or a slow/retried request) firing two
+    // overlapping PATCHes for the same region — previously each could create
+    // its own RegionReview row and inflate the confirmed/false-positive
+    // counts past the actual region count.
+    let inFlight = false;
+    const setRowBusy = (busy) => {
+      inFlight = busy;
+      if (okBtn) okBtn.disabled = busy;
+      if (fpBtn) fpBtn.disabled = busy;
+    };
+
+    okBtn?.addEventListener('click', async (e) => {
       e.stopPropagation();
+      if (inFlight) return;
       const id = parseInt(tr.dataset.regionId, 10);
       const prev = applyRegionReviewLocally(id, 'confirmed');
+      setRowBusy(true);
       try {
         const updated = await patchRegionReview(runId, id, 'confirmed');
         applyRegionReviewLocally(id, updated?.reviewStatus || 'confirmed', updated || {});
       } catch (err) {
         if (prev) applyRegionReviewLocally(id, prev.reviewStatus || 'pending', prev);
         if (typeof showDdaError === 'function') showDdaError(err.message);
+      } finally {
+        setRowBusy(false);
       }
     });
-    tr.querySelector('.btn-review-fp')?.addEventListener('click', async (e) => {
+    fpBtn?.addEventListener('click', async (e) => {
       e.stopPropagation();
+      if (inFlight) return;
       const id = parseInt(tr.dataset.regionId, 10);
       const prev = applyRegionReviewLocally(id, 'false_positive');
+      setRowBusy(true);
       try {
         const updated = await patchRegionReview(runId, id, 'false_positive');
         applyRegionReviewLocally(id, updated?.reviewStatus || 'false_positive', updated || {});
       } catch (err) {
         if (prev) applyRegionReviewLocally(id, prev.reviewStatus || 'pending', prev);
         if (typeof showDdaError === 'function') showDdaError(err.message);
+      } finally {
+        setRowBusy(false);
       }
     });
     tr.querySelector('.btn-review-locate')?.addEventListener('click', (e) => {

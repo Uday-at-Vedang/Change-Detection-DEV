@@ -28,15 +28,28 @@ if DATABASE_URL.startswith("sqlite"):
     # timeout = busy wait while another connection holds the write lock
     # (progress updates vs the long-running detection worker).
     connect_args = {"check_same_thread": False, "timeout": 60.0}
+elif DATABASE_URL.startswith("mysql"):
+    # connect_timeout: fail a broken/unreachable connection attempt in 10s
+    # instead of hanging the request (and the page) indefinitely — matters
+    # for a remote MySQL host reached over the network.
+    connect_args = {"connect_timeout": 10}
+
+_is_sqlite = DATABASE_URL.startswith("sqlite")
 
 # pool_pre_ping: checks each connection before use and transparently reconnects
 # if it's gone stale — matters for a remote DB (MySQL/Postgres) reached over
 # the network, where idle connections can be dropped by the server or a
 # firewall; irrelevant (and skipped) for local SQLite.
+# pool_recycle: proactively discard and replace any pooled connection older
+# than 280s — shorter than the "wait_timeout" most managed MySQL hosts use to
+# silently drop idle connections server-side, so the pool never hands out a
+# connection the server has already closed (seen in production as
+# "OperationalError 2013: Lost connection to MySQL server during query").
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=not DATABASE_URL.startswith("sqlite"),
+    pool_pre_ping=not _is_sqlite,
+    pool_recycle=280 if not _is_sqlite else -1,
 )
 
 
