@@ -6,7 +6,7 @@ let ddaRegionList = [];
 let ddaRegionPage = 0;
 let ddaSelectedRegionId = null;
 let ddaViewMode = 'slider';
-let ddaViewUrls = { before: '', after: '', overlay: '' };
+let ddaViewUrls = { before: '', after: '', overlay: '', beforeFallback: '', afterFallback: '' };
 const DDA_REGIONS_PER_PAGE = 10;
 let ddaZoom = 1;
 const DDA_ZOOM_MIN = 0.5;
@@ -23,6 +23,27 @@ function formatCompact(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
   if (n >= 10_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
   return n.toLocaleString();
+}
+
+/** Prefer small thumbs so the viewer paints immediately; full URLs are downscaled. */
+function ddaViewerSrc(url) {
+  if (!url || String(url).startsWith('data:')) return url || '';
+  const sep = String(url).includes('?') ? '&' : '?';
+  return `${url}${sep}max_side=1600`;
+}
+
+function ddaSetImgSrc(img, primary, fallback) {
+  if (!img) return;
+  const next = primary || fallback || '';
+  img.onerror = null;
+  if (primary && fallback && primary !== fallback) {
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = fallback;
+    };
+  }
+  if (next) img.src = next;
+  else img.removeAttribute('src');
 }
 
 function reviewBadgeClass(status) {
@@ -61,23 +82,23 @@ function setDdaViewMode(mode) {
   const afterSrc = ddaViewUrls.after || overlaySrc;
 
   if (mode === 'slider') {
-    beforeImg.src = beforeSrc;
-    afterImg.src = overlaySrc;
+    ddaSetImgSrc(beforeImg, beforeSrc, ddaViewUrls.beforeFallback);
+    ddaSetImgSrc(afterImg, overlaySrc, ddaViewUrls.afterFallback || overlaySrc);
     if (afterClip) afterClip.style.clipPath = 'inset(0 0 0 50%)';
     if (handle) { handle.style.display = ''; handle.style.left = '50%'; }
   } else if (mode === 't1') {
-    beforeImg.src = beforeSrc;
-    afterImg.src = overlaySrc;
+    ddaSetImgSrc(beforeImg, beforeSrc, ddaViewUrls.beforeFallback);
+    ddaSetImgSrc(afterImg, overlaySrc, ddaViewUrls.afterFallback || overlaySrc);
     if (afterClip) afterClip.style.clipPath = 'inset(0 0 0 100%)';
     if (handle) handle.style.display = 'none';
   } else if (mode === 't2') {
-    beforeImg.src = beforeSrc;
-    afterImg.src = afterSrc;
+    ddaSetImgSrc(beforeImg, beforeSrc, ddaViewUrls.beforeFallback);
+    ddaSetImgSrc(afterImg, afterSrc, ddaViewUrls.afterFallback || afterSrc);
     if (afterClip) afterClip.style.clipPath = 'inset(0 0 0 0%)';
     if (handle) handle.style.display = 'none';
   } else if (mode === 'overlay') {
-    beforeImg.src = beforeSrc;
-    afterImg.src = overlaySrc;
+    ddaSetImgSrc(beforeImg, beforeSrc, ddaViewUrls.beforeFallback);
+    ddaSetImgSrc(afterImg, overlaySrc, ddaViewUrls.afterFallback || overlaySrc);
     if (afterClip) afterClip.style.clipPath = 'inset(0 0 0 0%)';
     if (handle) handle.style.display = 'none';
   }
@@ -332,13 +353,23 @@ function showDdaResult(data) {
     ${tileSkipHtml}
   `;
 
-  const overlaySrc = data.overlayBase64Png
-    ? 'data:image/png;base64,' + data.overlayBase64Png
-    : (data.overlayUrl || '');
-  const beforeSrc = data.beforeFullUrl || data.beforeThumbUrl || '';
-  const afterSrc = data.afterFullUrl || data.afterThumbUrl || beforeSrc;
+  const beforeThumb = data.beforeThumbUrl || '';
+  const afterThumb = data.afterThumbUrl || '';
+  // Thumb first (instant); downscaled full as upgrade path / overlay source.
+  const beforeSrc = beforeThumb || ddaViewerSrc(data.beforeFullUrl) || '';
+  const afterSrc = afterThumb || ddaViewerSrc(data.afterFullUrl) || beforeSrc;
+  const overlaySrc = ddaViewerSrc(data.overlayUrl)
+    || (data.overlayBase64Png ? 'data:image/png;base64,' + data.overlayBase64Png : '')
+    || afterSrc;
 
-  ddaViewUrls = { before: beforeSrc, after: afterSrc, overlay: overlaySrc };
+  openDdaResultModal();
+  ddaViewUrls = {
+    before: beforeSrc,
+    after: afterSrc,
+    overlay: overlaySrc,
+    beforeFallback: ddaViewerSrc(data.beforeFullUrl) || beforeThumb,
+    afterFallback: afterThumb || beforeThumb,
+  };
   setDdaViewMode('slider');
 
   const beforeImg = document.getElementById('compare-before-img');
@@ -382,7 +413,6 @@ function showDdaResult(data) {
     window._ddaPolyResizeBound = true;
     window.addEventListener('resize', () => renderRegionPolygons(ddaRegionList));
   }
-  openDdaResultModal();
 }
 
 function renderDdaRegionPage() {
@@ -640,18 +670,28 @@ function locateRegionOnViewer(r) {
   if (!beforeImg || !wrapper) return;
 
   const runLocate = () => {
-    const m0 = getCompareImageMetrics();
-    if (!m0) return;
-    // Size region to ~40% of the shorter viewport edge (natural→display at zoom 1).
-    const basePx = Math.max(r.bbox.w, r.bbox.h) * (wrapper.clientWidth / m0.imgW);
-    const desired = Math.min(wrapper.clientWidth, wrapper.clientHeight) * 0.4;
-    const nextZoom = desired / Math.max(basePx, 1);
-    ddaZoom = Math.min(DDA_ZOOM_MAX, Math.max(1.25, nextZoom));
-    applyDdaZoom();
-    requestAnimationFrame(() => {
-      placeRegionHighlight(r, { pulse: true });
-      scrollViewerToRegion(r);
-    });
+    // Wait one layout frame so new-tab / fresh modal has real wrapper size.
+    let tries = 0;
+    const attempt = () => {
+      const m0 = getCompareImageMetrics();
+      if ((!m0 || !wrapper.clientWidth) && tries < 20) {
+        tries += 1;
+        requestAnimationFrame(attempt);
+        return;
+      }
+      if (!m0) return;
+      // Size region to ~40% of the shorter viewport edge (natural→display at zoom 1).
+      const basePx = Math.max(r.bbox.w, r.bbox.h) * (wrapper.clientWidth / m0.imgW);
+      const desired = Math.min(wrapper.clientWidth, wrapper.clientHeight) * 0.4;
+      const nextZoom = desired / Math.max(basePx, 1);
+      ddaZoom = Math.min(DDA_ZOOM_MAX, Math.max(1.25, nextZoom));
+      applyDdaZoom();
+      requestAnimationFrame(() => {
+        placeRegionHighlight(r, { pulse: true });
+        scrollViewerToRegion(r);
+      });
+    };
+    requestAnimationFrame(attempt);
   };
 
   if (!beforeImg.naturalWidth) {
@@ -692,8 +732,20 @@ function setupDdaRegionHover(tbody, regions) {
 function openDdaResultModal() {
   const modal = document.getElementById('result-modal');
   if (!modal) return;
+  const onReportPage = document.body.id === 'page-report-detail';
+  // On Detect/Reports-list, pin modal to <body> so ancestors cannot clip it.
+  if (!onReportPage && modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
   modal.classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+  // Never freeze scroll on the standalone report page — that cuts the screen.
+  if (!onReportPage) {
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.documentElement.style.overflow = '';
+    document.body.style.overflow = '';
+  }
 }
 
 function resultMapPaths(data) {
@@ -808,9 +860,11 @@ async function loadDdaResultMap() {
 function closeDdaResultModal() {
   const modal = document.getElementById('result-modal');
   if (!modal) return;
+  if (document.body.id === 'page-report-detail') return;
   modal.classList.add('hidden');
   const picker = document.getElementById('dda-picker-modal');
   if (!picker || picker.classList.contains('hidden')) {
+    document.documentElement.style.overflow = '';
     document.body.style.overflow = '';
   }
   if (ddaResultMap) {

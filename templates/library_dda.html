@@ -45,12 +45,34 @@
                   <button type="submit" form="form-tree-upload" class="btn btn-primary" id="btn-tree-upload" data-requires-permission="library:create" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to upload images.">Upload</button>
                 </div>
               </div>
-              <p class="sub" id="upload-limit-hint">Select a folder, then drop files here or browse. Folders keep their subfolder names.</p>
+              <p class="sub" id="upload-limit-hint">Select a folder and image type, then drop files here or browse. Only extensions allowed for the selected type are accepted.</p>
               <form id="form-tree-upload" class="dda-upload-form">
                 <div class="location-row dda-upload-row">
                   <div class="form-group">
                     <label for="upload-node">Destination folder</label>
                     <select id="upload-node" required><option value="">— Select folder —</option></select>
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-image-type">Image type</label>
+                    <select id="upload-image-type">
+                      <option>GeoTIFF</option>
+                      <option>PNG</option>
+                      <option>JPEG</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-year">Year</label>
+                    <select id="upload-year">
+                      <option value="">— Select year —</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="upload-source">Source</label>
+                    <select id="upload-source">
+                      <option value="">— Select source —</option>
+                      <option value="satellite">Satellite</option>
+                      <option value="drone">Drone</option>
+                    </select>
                   </div>
                   <div class="form-group">
                     <label for="upload-zone">Zone / District</label>
@@ -65,14 +87,6 @@
                     </select>
                   </div>
                   <div class="form-group">
-                    <label for="upload-image-type">Image type</label>
-                    <select id="upload-image-type">
-                      <option>GeoTIFF</option><option>Satellite</option><option>Drone</option>
-                      <option>Orthomosaic</option><option>DEM</option><option>Raster</option>
-                      <option>PNG</option><option>JPEG</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
                     <label for="upload-capture-date">Capture date</label>
                     <input type="date" id="upload-capture-date" class="dda-date-input" />
                   </div>
@@ -84,7 +98,7 @@
                 <p class="sub dim">Choose a <strong>zone</strong> and/or a <strong>village</strong> for this upload. Pairing uses that location together with folder, capture date, filename, and map overlap. The folder name is used as a hint when you leave these blank.</p>
                 <div id="dda-upload-dropzone" class="dda-dropzone" tabindex="0">
                   <p class="dda-dropzone-title">Drag &amp; drop files or a folder</p>
-                  <p class="dim">GeoTIFF, PNG, or JPEG. Multiple files and nested folders are supported.</p>
+                  <p class="dim" id="upload-accept-hint">GeoTIFF, PNG, or JPEG. Multiple files and nested folders are supported.</p>
                   <div class="dda-dropzone-actions">
                     <label class="btn btn-secondary btn-sm dda-file-btn">Choose images
                       <input type="file" id="upload-file" accept=".tif,.tiff,.png,.jpg,.jpeg" multiple />
@@ -94,6 +108,21 @@
                     </label>
                   </div>
                   <p id="upload-file-summary" class="dim dda-upload-summary">No files selected.</p>
+                  <p id="upload-type-error" class="dda-upload-type-error hidden" role="alert"></p>
+                </div>
+                <div id="upload-file-list-wrap" class="dda-upload-file-list-wrap hidden">
+                  <table class="dda-upload-file-table" id="upload-file-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th>Original name</th>
+                        <th>Server filename</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                      </tr>
+                    </thead>
+                    <tbody id="upload-file-tbody"></tbody>
+                  </table>
                 </div>
                 <div id="upload-progress" class="dda-upload-progress hidden">
                   <div class="dda-progress-bar"><div id="upload-progress-fill" class="dda-progress-fill"></div></div>
@@ -117,7 +146,39 @@
           <div class="card">
             <div class="card-header">
               <h3 id="lib-grid-title">Images</h3>
-              <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
+              <div class="dda-lib-grid-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-lib-select-all">Select all</button>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-lib-delete-selected" data-requires-permission="library:delete" disabled>Delete selected</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-lib-export-csv" data-requires-permission="library:view">Export CSV</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-lib-export-xlsx" data-requires-permission="library:view">Export Excel</button>
+                <input type="search" id="lib-filter" class="dda-search" placeholder="Search filenames…" />
+              </div>
+            </div>
+            <div class="dda-filter-bar" id="lib-filter-bar">
+              <label class="dda-filter-field">Year
+                <select id="lib-filter-year"><option value="">All</option></select>
+              </label>
+              <label class="dda-filter-field">Type
+                <select id="lib-filter-type">
+                  <option value="">All</option>
+                  <option>GeoTIFF</option>
+                  <option>PNG</option>
+                  <option>JPEG</option>
+                </select>
+              </label>
+              <label class="dda-filter-field">Zone
+                <select id="lib-filter-zone"><option value="">All</option></select>
+              </label>
+              <label class="dda-filter-field">Village
+                <select id="lib-filter-village"><option value="">All</option></select>
+              </label>
+              <label class="dda-filter-field">From
+                <input type="date" id="lib-filter-from" class="dda-date-input" />
+              </label>
+              <label class="dda-filter-field">To
+                <input type="date" id="lib-filter-to" class="dda-date-input" />
+              </label>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-lib-filter-clear">Clear</button>
             </div>
             <div id="lib-grid" class="dda-grid"><p class="dim">Select a node in the tree.</p></div>
             <div class="pagination" id="lib-grid-pagination"></div>
@@ -262,7 +323,7 @@
   <script src="/static/js/dda/app.js?v=31"></script>
   <script src="/static/js/dda/tree.js?v=8"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=20"></script>
+  <script src="/static/js/dda/library.js?v=22"></script>
   <script src="/static/js/dda/pairs.js?v=12"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>

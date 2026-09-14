@@ -34,6 +34,7 @@ def _entry_dict(entry: ExceptionLog, *, with_traceback: bool = False) -> dict:
         "statusCode": entry.status_code,
         "handled": bool(entry.handled),
         "userEmail": entry.user_email or "",
+        "userRole": getattr(entry, "user_role", None) or "",
     }
     if with_traceback:
         d["traceback"] = entry.traceback or ""

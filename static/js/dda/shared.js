@@ -128,6 +128,8 @@ function buildImageMetaHtml(img) {
     row([place ? esc(place) : '']),
     row([
       img.imageType ? esc(img.imageType) : '',
+      img.source ? esc(img.source) : '',
+      img.year != null ? `Year ${esc(img.year)}` : '',
       img.format ? esc(img.format) : '',
       size,
       dims,

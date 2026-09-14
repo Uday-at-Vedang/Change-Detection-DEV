@@ -1097,7 +1097,7 @@ input:focus, select:focus, textarea:focus {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
   transition: grid-template-columns var(--transition);
 }
 .result-modal-layout.report-hidden {
@@ -1110,18 +1110,41 @@ input:focus, select:focus, textarea:focus {
   min-width: 0;
   border-left: 1px solid var(--border);
   padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(100vh - 12rem);
 }
 .result-modal-side .dda-review-bar {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
+  flex: 0 0 auto;
 }
 .result-modal-side .regions-table-wrap {
-  max-height: 68vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
+  overscroll-behavior: contain;
+  margin-top: 0.5rem;
 }
 .result-modal-side .regions-table {
-  min-width: 860px;
+  min-width: 960px;
+  /* sticky thead + collapse clips mid-row in Chromium */
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.result-modal-side .regions-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-elevated, #f5f5f5);
+  box-shadow: 0 1px 0 var(--border);
+}
+.result-modal-side > .pagination {
+  flex: 0 0 auto;
+  padding-top: 0.5rem;
 }
 .btn-close-modal {
   background: none;
@@ -1155,9 +1178,10 @@ input:focus, select:focus, textarea:focus {
     border-top: 1px solid var(--border);
     padding-left: 0;
     padding-top: 0.75rem;
+    max-height: none;
   }
   .result-modal-side .regions-table-wrap {
-    max-height: none;
+    max-height: min(50vh, 420px);
   }
 }
 

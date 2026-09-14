@@ -54,6 +54,7 @@ def log_exception(
     status_code: int = 500,
     handled: bool = False,
     user_email: Optional[str] = None,
+    user_role: Optional[str] = None,
 ) -> None:
     entry = ExceptionLog(
         exception_type=type(exc).__name__,
@@ -64,6 +65,7 @@ def log_exception(
         handled=handled,
         traceback="".join(traceback_module.format_exception(type(exc), exc, exc.__traceback__))[:8000],
         user_email=user_email,
+        user_role=user_role,
     )
     db.add(entry)
     db.commit()

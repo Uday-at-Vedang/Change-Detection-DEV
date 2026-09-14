@@ -358,6 +358,7 @@ function bindLibraryTreeExtras(el) {
           ? await window.readDroppedEntries(e.dataTransfer)
           : Array.from(e.dataTransfer.files || []);
         if (!files.length) return;
+        if (typeof setPendingUploadFiles === 'function') setPendingUploadFiles(files);
         if (typeof uploadLibraryFiles === 'function') {
           await uploadLibraryFiles(files, { nodeId, preserveFolders: true });
         }

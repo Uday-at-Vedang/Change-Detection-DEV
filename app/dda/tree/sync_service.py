@@ -173,7 +173,7 @@ def _image_type_for(file_path: Path) -> str:
         return "JPEG"
     if ext == ".png":
         return "PNG"
-    return "Raster"
+    return "GeoTIFF"
 
 
 def _index_image_file(

@@ -115,7 +115,17 @@ function openLibraryImageViewer(img) {
   revokeViewerObjectUrl();
   libraryViewerState.image = img;
   title.textContent = img.filename || img.imageName || 'Image';
-  meta.innerHTML = buildImageMetaHtml(img);
+  meta.innerHTML = typeof buildImageMetaHtml === 'function'
+    ? buildImageMetaHtml(img)
+    : [
+        img.breadcrumb || img.nodePath || '',
+        [img.villageName, img.zoneName].filter(Boolean).join(', '),
+        img.captureDate ? `Capture ${String(img.captureDate).slice(0, 10)}` : '',
+        img.year != null ? `Year ${img.year}` : '',
+        img.imageType || '',
+        img.source || '',
+        typeof formatBytes === 'function' ? formatBytes(img.fileSizeBytes) : '',
+      ].filter(Boolean).join(' · ');
   imageEl.alt = img.filename || 'Library image';
   imageEl.removeAttribute('src');
   setViewerStatus('Loading preview…', false);
@@ -267,22 +277,116 @@ function uploadWithProgress(url, formData, onProgress) {
   });
 }
 
-const LIBRARY_IMAGE_EXTS = ['.tif', '.tiff', '.png', '.jpg', '.jpeg'];
+const IMAGE_TYPE_EXTENSIONS = {
+  GeoTIFF: ['.tif', '.tiff'],
+  PNG: ['.png'],
+  JPEG: ['.jpg', '.jpeg'],
+};
+
 let pendingUploadFiles = [];
+/** @type {{file: File, serverName: string, selected: boolean}[]} */
+let pendingUploadEntries = [];
+
+function currentUploadImageType() {
+  return document.getElementById('upload-image-type')?.value || 'GeoTIFF';
+}
+
+function allowedExtsForType(imageType) {
+  return IMAGE_TYPE_EXTENSIONS[imageType] || IMAGE_TYPE_EXTENSIONS.GeoTIFF;
+}
+
+function fileExtension(name) {
+  const n = String(name || '');
+  const i = n.lastIndexOf('.');
+  if (i < 0) return '';
+  return n.slice(i).toLowerCase();
+}
+
+function formatAllowedExts(exts) {
+  if (exts.length === 1) return exts[0];
+  if (exts.length === 2) return `${exts[0]} or ${exts[1]}`;
+  return `${exts.slice(0, -1).join(', ')} or ${exts[exts.length - 1]}`;
+}
+
+function formatRejectedNames(names) {
+  const list = names.slice(0, 3);
+  const more = names.length - list.length;
+  const joined = list.map((n) => `"${n}"`).join(', ');
+  return more > 0 ? `${joined}, and ${more} more` : joined;
+}
+
+function setUploadTypeError(msg) {
+  const el = document.getElementById('upload-type-error');
+  if (el) {
+    el.textContent = msg || '';
+    el.classList.toggle('hidden', !msg);
+  }
+  if (msg) showDdaError?.(msg);
+  else hideDdaError?.();
+}
+
+function clearUploadTypeError() {
+  setUploadTypeError('');
+}
+
+function splitFilesForImageType(files, imageType) {
+  const allowed = allowedExtsForType(imageType);
+  const accepted = [];
+  const rejected = [];
+  Array.from(files || []).forEach((file) => {
+    const name = file.name || '';
+    if (!name || name.startsWith('.') || name.toLowerCase() === '.ds_store') {
+      rejected.push(file);
+      return;
+    }
+    if ((file._relativePath || file.webkitRelativePath || '').toLowerCase().includes('__macosx')) {
+      rejected.push(file);
+      return;
+    }
+    const ext = fileExtension(name);
+    if (!ext || !allowed.includes(ext)) rejected.push(file);
+    else accepted.push(file);
+  });
+  return { accepted, rejected };
+}
+
+function rejectMessage(imageType, rejected, { typeChanged = false } = {}) {
+  const allowed = allowedExtsForType(imageType);
+  const names = rejected.map((f) => f.name || 'file');
+  const named = formatRejectedNames(names);
+  const allow = formatAllowedExts(allowed);
+  if (typeChanged) {
+    return `Image type changed to ${imageType}. ${rejected.length} selected file${rejected.length === 1 ? ' is' : 's are'} not ${allow} and ${rejected.length === 1 ? 'was' : 'were'} removed: ${named}.`;
+  }
+  if (rejected.length === 1) {
+    const ext = fileExtension(rejected[0].name);
+    if (!ext) {
+      return `Image type ${imageType} only allows ${allow}. "${rejected[0].name}" has no supported extension and was not added.`;
+    }
+    return `Image type ${imageType} only allows ${allow}. "${rejected[0].name}" was not added.`;
+  }
+  return `Image type ${imageType} only allows ${allow}. ${rejected.length} files were not added: ${named}.`;
+}
+
+function syncUploadAcceptAttribute() {
+  const type = currentUploadImageType();
+  const accept = allowedExtsForType(type).join(',');
+  const fileInput = document.getElementById('upload-file');
+  const folderInput = document.getElementById('upload-folder');
+  if (fileInput) fileInput.accept = accept;
+  if (folderInput) folderInput.accept = accept;
+  const hint = document.getElementById('upload-accept-hint');
+  if (hint) {
+    hint.textContent = `${type} only: ${formatAllowedExts(allowedExtsForType(type))}. Multiple files and nested folders are supported.`;
+  }
+}
 
 function isLibraryImageFile(file) {
   const name = (file.name || '').toLowerCase();
   if (!name || name.startsWith('.') || name === '.ds_store') return false;
   if ((file._relativePath || file.webkitRelativePath || '').includes('__macosx')) return false;
-  return LIBRARY_IMAGE_EXTS.some((ext) => name.endsWith(ext));
-}
-
-function guessImageType(file) {
-  const ext = (file.name.split('.').pop() || '').toLowerCase();
-  if (ext === 'tif' || ext === 'tiff') return 'GeoTIFF';
-  if (ext === 'png') return 'PNG';
-  if (ext === 'jpg' || ext === 'jpeg') return 'JPEG';
-  return document.getElementById('upload-image-type')?.value || 'GeoTIFF';
+  const allowed = allowedExtsForType(currentUploadImageType());
+  return allowed.includes(fileExtension(name));
 }
 
 function relativeUploadPath(file) {
@@ -305,19 +409,119 @@ function fileTooLarge(file) {
 function updateUploadSummary() {
   const el = document.getElementById('upload-file-summary');
   if (!el) return;
-  const images = pendingUploadFiles.filter(isLibraryImageFile);
-  const skipped = pendingUploadFiles.length - images.length;
-  if (!pendingUploadFiles.length) {
+  const n = pendingUploadEntries.length;
+  if (!n) {
     el.textContent = 'No files selected.';
     return;
   }
-  el.textContent = `${images.length} image${images.length === 1 ? '' : 's'} ready` +
-    (skipped ? ` · ${skipped} skipped` : '');
+  el.textContent = `${n} image${n === 1 ? '' : 's'} ready for ${currentUploadImageType()}.`;
 }
 
-function setPendingUploadFiles(files) {
-  pendingUploadFiles = Array.from(files || []);
+function renderUploadFileList() {
+  const wrap = document.getElementById('upload-file-list-wrap');
+  const tbody = document.getElementById('upload-file-tbody');
+  if (!wrap || !tbody) return;
+  if (!pendingUploadEntries.length) {
+    wrap.classList.add('hidden');
+    tbody.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  const type = currentUploadImageType();
+  tbody.innerHTML = pendingUploadEntries.map((entry, idx) => `
+    <tr data-idx="${idx}">
+      <td><input type="checkbox" class="upload-file-check" ${entry.selected ? 'checked' : ''} /></td>
+      <td class="dda-upload-orig">${escapeHtml(entry.file.name)}</td>
+      <td><input type="text" class="upload-server-name" value="${escapeHtml(entry.serverName)}" aria-label="Server filename" /></td>
+      <td>${escapeHtml(type)}</td>
+      <td>${typeof formatBytes === 'function' ? formatBytes(entry.file.size) : entry.file.size}</td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('.upload-file-check').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const idx = parseInt(cb.closest('tr').dataset.idx, 10);
+      if (pendingUploadEntries[idx]) pendingUploadEntries[idx].selected = cb.checked;
+    });
+  });
+  tbody.querySelectorAll('.upload-server-name').forEach((input) => {
+    input.addEventListener('change', () => {
+      const idx = parseInt(input.closest('tr').dataset.idx, 10);
+      if (pendingUploadEntries[idx]) {
+        const name = (input.value || '').trim() || pendingUploadEntries[idx].file.name;
+        pendingUploadEntries[idx].serverName = name.split(/[/\\]/).pop();
+        input.value = pendingUploadEntries[idx].serverName;
+      }
+    });
+  });
+}
+
+function setPendingUploadFiles(files, { append = false } = {}) {
+  const type = currentUploadImageType();
+  const { accepted, rejected } = splitFilesForImageType(files, type);
+  if (rejected.length) setUploadTypeError(rejectMessage(type, rejected));
+  else clearUploadTypeError();
+
+  const entries = accepted.map((file) => ({
+    file,
+    serverName: (file.name || 'upload').split(/[/\\]/).pop(),
+    selected: true,
+  }));
+  pendingUploadEntries = append ? pendingUploadEntries.concat(entries) : entries;
+  pendingUploadFiles = pendingUploadEntries.map((e) => e.file);
   updateUploadSummary();
+  renderUploadFileList();
+}
+
+function revalidatePendingForImageType({ typeChanged = false } = {}) {
+  const type = currentUploadImageType();
+  syncUploadAcceptAttribute();
+  if (!pendingUploadEntries.length) {
+    clearUploadTypeError();
+    updateUploadSummary();
+    renderUploadFileList();
+    suggestSourceFromType();
+    return;
+  }
+  const files = pendingUploadEntries.map((e) => e.file);
+  const { accepted, rejected } = splitFilesForImageType(files, type);
+  if (rejected.length) {
+    const keepNames = new Set(accepted.map((f) => f));
+    pendingUploadEntries = pendingUploadEntries.filter((e) => keepNames.has(e.file));
+    pendingUploadFiles = pendingUploadEntries.map((e) => e.file);
+    setUploadTypeError(rejectMessage(type, rejected, { typeChanged: true }));
+  } else {
+    clearUploadTypeError();
+  }
+  updateUploadSummary();
+  renderUploadFileList();
+  suggestSourceFromType();
+}
+
+function suggestSourceFromType() {
+  const sourceSel = document.getElementById('upload-source');
+  if (!sourceSel || sourceSel.dataset.userPicked === '1') return;
+  const type = currentUploadImageType();
+  if (type === 'Satellite') sourceSel.value = 'satellite';
+  else if (type === 'Drone') sourceSel.value = 'drone';
+}
+
+function populateUploadYearOptions() {
+  const sel = document.getElementById('upload-year');
+  const filterSel = document.getElementById('lib-filter-year');
+  if (!sel) return;
+  const current = new Date().getFullYear();
+  const years = [];
+  for (let y = current; y >= current - 15; y--) years.push(y);
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— Select year —</option>' +
+    years.map((y) => `<option value="${y}">${y}</option>`).join('');
+  if (prev) sel.value = prev;
+  if (filterSel) {
+    const fprev = filterSel.value;
+    filterSel.innerHTML = '<option value="">All</option>' +
+      years.map((y) => `<option value="${y}">${y}</option>`).join('');
+    if (fprev) filterSel.value = fprev;
+  }
 }
 
 const uploadLocations = { zones: [], villages: [] };
@@ -336,6 +540,27 @@ function renderUploadVillageOptions() {
     return `<option value="${v.id}">${escapeHtml(label)}</option>`;
   }).join('');
   if (previous && list.some((v) => String(v.id) === String(previous))) villageSel.value = previous;
+}
+
+function renderLibFilterLocationOptions() {
+  const zoneSel = document.getElementById('lib-filter-zone');
+  const villageSel = document.getElementById('lib-filter-village');
+  if (zoneSel) {
+    const prev = zoneSel.value;
+    zoneSel.innerHTML = '<option value="">All</option>' + uploadLocations.zones
+      .map((z) => `<option value="${z.id}">${escapeHtml(z.name)}</option>`).join('');
+    if (prev) zoneSel.value = prev;
+  }
+  if (villageSel) {
+    const zoneId = zoneSel?.value || '';
+    const prev = villageSel.value;
+    const list = zoneId
+      ? uploadLocations.villages.filter((v) => String(v.zoneId) === String(zoneId))
+      : uploadLocations.villages;
+    villageSel.innerHTML = '<option value="">All</option>' + list
+      .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+    if (prev) villageSel.value = prev;
+  }
 }
 
 function markUploadLocationPicked() {
@@ -363,6 +588,12 @@ function suggestUploadLocationFromFolder() {
     renderUploadVillageOptions();
     villageSel.value = String(matches[0].id);
   }
+  // Suggest year from folder path segments
+  const yearSel = document.getElementById('upload-year');
+  if (yearSel && !yearSel.value) {
+    const yearSeg = segments.find((s) => /^\d{4}$/.test(s) && (s.startsWith('19') || s.startsWith('20')));
+    if (yearSeg) yearSel.value = yearSeg;
+  }
 }
 
 async function loadUploadLocations() {
@@ -376,19 +607,15 @@ async function loadUploadLocations() {
       ...v, zoneName: zoneNames.get(v.zoneId) || '',
     }));
   } catch (_) {
-    // Masters are optional metadata — leave the pickers empty rather than
-    // blocking uploads when the user's role can't read them.
     return;
   }
   const previousZone = zoneSel.value;
   zoneSel.innerHTML = '<option value="">— Select zone —</option>' + uploadLocations.zones
-    .map((z) => `<option value="${z.id}">${escapeHtml(z.name)}</option>`)
-    .join('');
-  if (previousZone && uploadLocations.zones.some((z) => String(z.id) === String(previousZone))) {
-    zoneSel.value = previousZone;
-  }
+    .map((z) => `<option value="${z.id}">${escapeHtml(z.name)}</option>`).join('');
+  if (previousZone) zoneSel.value = previousZone;
   renderUploadVillageOptions();
-  suggestUploadLocationFromFolder();
+  renderLibFilterLocationOptions();
+
   if (!zoneSel.dataset.bound) {
     zoneSel.dataset.bound = '1';
     zoneSel.addEventListener('change', () => {
@@ -428,12 +655,8 @@ async function ensureFolderPath(parentId, segments) {
   return current;
 }
 
-async function uploadOneLibraryFile(nodeId, file, { onProgress } = {}) {
-  const oversized = fileTooLarge(file);
-  if (oversized) throw new Error(oversized);
-  const form = new FormData();
-  form.append('file', file);
-  form.append('image_type', document.getElementById('upload-image-type')?.value || guessImageType(file));
+function appendSharedUploadFields(form) {
+  form.append('image_type', currentUploadImageType());
   form.append('capture_date', document.getElementById('upload-capture-date')?.value || '');
   const manualBounds = document.getElementById('upload-manual-bounds')?.value?.trim();
   if (manualBounds) form.append('manual_bounds', manualBounds);
@@ -441,15 +664,61 @@ async function uploadOneLibraryFile(nodeId, file, { onProgress } = {}) {
   const villageId = document.getElementById('upload-village')?.value || '';
   if (zoneId) form.append('zone_id', zoneId);
   if (villageId) form.append('village_id', villageId);
+  const year = document.getElementById('upload-year')?.value || '';
+  if (year) form.append('year', year);
+  const source = document.getElementById('upload-source')?.value || '';
+  if (source) form.append('source', source);
+}
+
+async function uploadOneLibraryFile(nodeId, file, serverName, { onProgress } = {}) {
+  const oversized = fileTooLarge(file);
+  if (oversized) throw new Error(oversized);
+  const form = new FormData();
+  form.append('file', file, serverName || file.name);
+  form.append('server_filename', serverName || file.name);
+  appendSharedUploadFields(form);
   return uploadWithProgress(`/api/dda/tree/nodes/${nodeId}/images/upload`, form, onProgress);
 }
 
-async function uploadLibraryFiles(files, { nodeId, preserveFolders = true } = {}) {
+async function uploadBulkLibraryFiles(nodeId, entries, { onProgress } = {}) {
+  const form = new FormData();
+  entries.forEach((entry) => {
+    form.append('files', entry.file, entry.serverName || entry.file.name);
+    form.append('filenames', entry.serverName || entry.file.name);
+  });
+  appendSharedUploadFields(form);
+  return uploadWithProgress(`/api/dda/tree/nodes/${nodeId}/images/upload-bulk`, form, onProgress);
+}
+
+async function uploadLibraryFiles(files, { nodeId, preserveFolders = true, entries = null } = {}) {
   if (uploadLibraryFiles._busy) return 0;
-  const list = Array.from(files || []).filter(isLibraryImageFile);
-  if (!list.length) throw new Error('No GeoTIFF, PNG, or JPEG files to upload.');
+  const type = currentUploadImageType();
+  let workEntries = entries;
+  if (!workEntries) {
+    const { accepted, rejected } = splitFilesForImageType(files, type);
+    if (rejected.length) {
+      setUploadTypeError(rejectMessage(type, rejected));
+      if (!accepted.length) throw new Error(rejectMessage(type, rejected));
+    }
+    workEntries = accepted.map((file) => ({
+      file,
+      serverName: (file.name || 'upload').split(/[/\\]/).pop(),
+      selected: true,
+    }));
+  }
+  workEntries = workEntries.filter((e) => e.selected !== false);
+  if (!workEntries.length) throw new Error(`No ${type} files to upload.`);
+
+  // Final gate before POST
+  const recheck = splitFilesForImageType(workEntries.map((e) => e.file), type);
+  if (recheck.rejected.length) {
+    const msg = `Cannot upload. Image type ${type} only allows ${formatAllowedExts(allowedExtsForType(type))}.`;
+    setUploadTypeError(msg);
+    throw new Error(msg);
+  }
+
   const dest = nodeId || document.getElementById('upload-node')?.value;
-  const needsFolders = preserveFolders && list.some((f) => relativeUploadPath(f).includes('/'));
+  const needsFolders = preserveFolders && workEntries.some((e) => relativeUploadPath(e.file).includes('/'));
   const canCreateFolders = typeof hasPermission === 'function'
     ? hasPermission(window.ddaPermissions, 'library', 'create')
     : window.ddaState?.userRole === 'admin';
@@ -469,10 +738,12 @@ async function uploadLibraryFiles(files, { nodeId, preserveFolders = true } = {}
   const folderCache = new Map();
   let ok = 0;
   const errors = [];
+  const storedNames = [];
   try {
-    for (let i = 0; i < list.length; i++) {
-      const file = list[i];
-      const rel = relativeUploadPath(file);
+    // Group by destination folder for bulk when no nested folders, or multiple files same dest
+    const byTarget = new Map();
+    for (const entry of workEntries) {
+      const rel = relativeUploadPath(entry.file);
       const parts = rel.split('/').filter(Boolean);
       const dirParts = parts.length > 1 ? parts.slice(0, -1) : [];
       let targetId = dest ? Number(dest) : null;
@@ -484,33 +755,65 @@ async function uploadLibraryFiles(files, { nodeId, preserveFolders = true } = {}
         targetId = folderCache.get(key);
       }
       if (!targetId) throw new Error('Select a destination folder.');
-      if (progLabel) {
-        progLabel.textContent = `Uploading ${i + 1} of ${list.length}: ${file.name}`;
-      }
-      if (progFill) progFill.style.width = `${Math.round((i / list.length) * 100)}%`;
-      try {
-        await uploadOneLibraryFile(targetId, file, {
-          onProgress: (loaded, total) => {
-            const filePct = total ? loaded / total : 1;
-            const overall = ((i + filePct) / list.length) * 100;
-            if (progFill) progFill.style.width = `${Math.round(overall)}%`;
-          },
-        });
-        ok += 1;
-      } catch (err) {
-        errors.push(`${file.name}: ${err.message || 'failed'}`);
+      if (!byTarget.has(targetId)) byTarget.set(targetId, []);
+      byTarget.get(targetId).push(entry);
+    }
+
+    let done = 0;
+    const total = workEntries.length;
+    for (const [targetId, group] of byTarget.entries()) {
+      if (group.length === 1) {
+        const entry = group[0];
+        if (progLabel) progLabel.textContent = `Uploading ${done + 1} of ${total}: ${entry.serverName}`;
+        try {
+          const res = await uploadOneLibraryFile(targetId, entry.file, entry.serverName, {
+            onProgress: (loaded, tot) => {
+              const filePct = tot ? loaded / tot : 1;
+              if (progFill) progFill.style.width = `${Math.round(((done + filePct) / total) * 100)}%`;
+            },
+          });
+          ok += 1;
+          if (res?.image?.filename) storedNames.push(res.image.filename);
+        } catch (err) {
+          errors.push(`${entry.serverName}: ${err.message || 'failed'}`);
+        }
+        done += 1;
+      } else {
+        if (progLabel) progLabel.textContent = `Uploading ${group.length} files…`;
+        try {
+          const res = await uploadBulkLibraryFiles(targetId, group, {
+            onProgress: (loaded, tot) => {
+              const filePct = tot ? loaded / tot : 1;
+              if (progFill) progFill.style.width = `${Math.round(((done + filePct * group.length) / total) * 100)}%`;
+            },
+          });
+          ok += (res.uploaded || []).length;
+          (res.uploaded || []).forEach((img) => {
+            if (img.filename) storedNames.push(img.filename);
+          });
+          (res.failed || []).forEach((f) => errors.push(`${f.filename}: ${f.error}`));
+        } catch (err) {
+          errors.push(err.message || 'Bulk upload failed');
+        }
+        done += group.length;
       }
     }
     if (progFill) progFill.style.width = '100%';
     if (ok && typeof window.ddaState?.rescan === 'function') await window.ddaState.rescan();
+    else if (ok && typeof loadLibraryImages === 'function') await loadLibraryImages({ resetPage: true });
     if (errors.length && ok) {
       showDdaError?.(`${ok} uploaded, ${errors.length} failed. ${errors[0]}`);
     } else if (errors.length) {
       throw new Error(errors[0]);
     } else {
-      showDdaSuccess?.(`Uploaded ${ok} image${ok === 1 ? '' : 's'}.`);
+      const nameHint = storedNames.length === 1 ? ` Saved as ${storedNames[0]}.` : '';
+      showDdaSuccess?.(`Uploaded ${ok} image${ok === 1 ? '' : 's'}.${nameHint}`);
+      clearUploadTypeError();
     }
-    setPendingUploadFiles([]);
+    pendingUploadEntries = [];
+    pendingUploadFiles = [];
+    updateUploadSummary();
+    renderUploadFileList();
     const fileInput = document.getElementById('upload-file');
     const folderInput = document.getElementById('upload-folder');
     if (fileInput) fileInput.value = '';
@@ -590,9 +893,14 @@ function initLibraryDropzone() {
     const files = await readDroppedEntries(e.dataTransfer);
     if (!files.length) return;
     setPendingUploadFiles(files);
+    if (!pendingUploadEntries.length) return;
     const dest = document.getElementById('upload-node')?.value;
     try {
-      await uploadLibraryFiles(files, { nodeId: dest, preserveFolders: true });
+      await uploadLibraryFiles(null, {
+        nodeId: dest,
+        preserveFolders: true,
+        entries: pendingUploadEntries.slice(),
+      });
     } catch (err) {
       showDdaError?.(err.message || 'Upload failed.');
     }
@@ -609,22 +917,107 @@ function initLibraryDropzone() {
 document.getElementById('form-tree-upload')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideDdaError?.();
-  const files = pendingUploadFiles.length
-    ? pendingUploadFiles
-    : [
-        ...Array.from(document.getElementById('upload-file')?.files || []),
-        ...Array.from(document.getElementById('upload-folder')?.files || []),
-      ];
   try {
-    await uploadLibraryFiles(files, {
+    await uploadLibraryFiles(null, {
       nodeId: document.getElementById('upload-node')?.value,
       preserveFolders: true,
+      entries: pendingUploadEntries.length ? pendingUploadEntries.slice() : null,
     });
   } catch (err) {
     showDdaError?.(err.message || 'Upload failed.');
   }
 });
 
+document.getElementById('upload-image-type')?.addEventListener('change', () => {
+  revalidatePendingForImageType({ typeChanged: true });
+});
+document.getElementById('upload-source')?.addEventListener('change', (e) => {
+  e.target.dataset.userPicked = '1';
+});
+
+function libFilterParams() {
+  const params = new URLSearchParams();
+  const year = document.getElementById('lib-filter-year')?.value || '';
+  const type = document.getElementById('lib-filter-type')?.value || '';
+  const zone = document.getElementById('lib-filter-zone')?.value || '';
+  const village = document.getElementById('lib-filter-village')?.value || '';
+  const from = document.getElementById('lib-filter-from')?.value || '';
+  const to = document.getElementById('lib-filter-to')?.value || '';
+  if (year) params.set('year', year);
+  if (type) params.set('image_type', type);
+  if (zone) params.set('zone_id', zone);
+  if (village) params.set('village_id', village);
+  if (from) params.set('capture_date_from', from);
+  if (to) params.set('capture_date_to', to);
+  return params;
+}
+
+function exportLibrary(format) {
+  const params = libFilterParams();
+  const q = document.getElementById('lib-filter')?.value?.trim() || '';
+  if (typeof selectedNode !== 'undefined' && selectedNode?.id) {
+    params.set('node_id', String(selectedNode.id));
+  }
+  if (q) params.set('q', q);
+  params.set('format', format);
+  window.location.href = `/api/dda/tree/images/export?${params.toString()}`;
+}
+
+document.getElementById('btn-lib-export-csv')?.addEventListener('click', () => exportLibrary('csv'));
+document.getElementById('btn-lib-export-xlsx')?.addEventListener('click', () => exportLibrary('xlsx'));
+
+document.getElementById('btn-lib-filter-clear')?.addEventListener('click', () => {
+  ['lib-filter-year', 'lib-filter-type', 'lib-filter-zone', 'lib-filter-village', 'lib-filter-from', 'lib-filter-to'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  if (typeof loadLibraryImages === 'function') loadLibraryImages({ resetPage: true });
+});
+
+['lib-filter-year', 'lib-filter-type', 'lib-filter-zone', 'lib-filter-village', 'lib-filter-from', 'lib-filter-to'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', () => {
+    if (id === 'lib-filter-zone') renderLibFilterLocationOptions();
+    if (typeof loadLibraryImages === 'function') loadLibraryImages({ resetPage: true });
+  });
+});
+
+document.getElementById('btn-lib-select-all')?.addEventListener('click', () => {
+  const checks = document.querySelectorAll('.dda-card-select');
+  const allOn = [...checks].every((c) => c.checked);
+  checks.forEach((c) => { c.checked = !allOn; });
+  updateLibDeleteSelectedBtn();
+});
+
+function updateLibDeleteSelectedBtn() {
+  const btn = document.getElementById('btn-lib-delete-selected');
+  if (!btn) return;
+  const n = document.querySelectorAll('.dda-card-select:checked').length;
+  btn.disabled = n === 0;
+  btn.textContent = n ? `Delete selected (${n})` : 'Delete selected';
+}
+
+document.getElementById('btn-lib-delete-selected')?.addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('.dda-card-select:checked')].map((c) => c.dataset.imageId).filter(Boolean);
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} selected image${ids.length === 1 ? '' : 's'}?`)) return;
+  let ok = 0;
+  const errors = [];
+  for (const id of ids) {
+    try {
+      await ddaApi('DELETE', `/api/dda/tree/images/${id}`);
+      ok += 1;
+    } catch (err) {
+      errors.push(err.message || 'failed');
+    }
+  }
+  if (ok && typeof loadLibraryImages === 'function') await loadLibraryImages();
+  if (errors.length) showDdaError?.(`${ok} deleted, ${errors.length} failed. ${errors[0]}`);
+  else showDdaSuccess?.(`Deleted ${ok} image${ok === 1 ? '' : 's'}.`);
+});
+
+populateUploadYearOptions();
+syncUploadAcceptAttribute();
+suggestSourceFromType();
 initLibraryDropzone();
 loadUploadLocations();
 window.loadUploadLocations = loadUploadLocations;
@@ -632,6 +1025,9 @@ window.uploadLibraryFiles = uploadLibraryFiles;
 window.setUploadTargetNode = setUploadTargetNode;
 window.setPendingUploadFiles = setPendingUploadFiles;
 window.readDroppedEntries = readDroppedEntries;
+window.splitFilesForImageType = splitFilesForImageType;
+window.libFilterParams = libFilterParams;
+window.updateLibDeleteSelectedBtn = updateLibDeleteSelectedBtn;
 
 // --- Bulk upload (Excel manifest + files) ---------------------------------
 

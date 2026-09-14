@@ -7,8 +7,8 @@
 
   // ------------------------------------------------------------- Tabs ----
   const TITLES = {
-    exceptions: ['💥 Exception Log', 'System errors captured by the global exception handler'],
-    applogs: ['📝 Application Logs', 'Live view of recent server events. Filter, download, or clear the buffer.'],
+    exceptions: ['Exception Log', 'System errors captured by the global exception handler'],
+    applogs: ['Application Logs', 'Live view of recent server events. Filter, download, or clear the buffer.'],
   };
 
   function activateTab(tab) {
@@ -106,7 +106,7 @@
       wrap.innerHTML = `
         <table class="dda-logs-table">
           <thead>
-            <tr><th>Timestamp (IST)</th><th>Type</th><th>Message</th><th>Path</th><th>Code</th><th>Handled</th><th>Details</th></tr>
+            <tr><th>Timestamp (IST)</th><th>Type</th><th>Message</th><th>Path</th><th>Code</th><th>User</th><th>Role</th><th>Handled</th><th>Details</th></tr>
           </thead>
           <tbody>
             ${rows.map((r) => `
@@ -116,6 +116,8 @@
                 <td class="dda-log-msg">${escapeHtml(r.message || '')}</td>
                 <td class="dda-action-cell">${escapeHtml(r.method || '')} ${escapeHtml(r.path || '')}</td>
                 <td>${escapeHtml(String(r.statusCode ?? ''))}</td>
+                <td>${escapeHtml(r.userEmail || '—')}</td>
+                <td>${escapeHtml(r.userRole || '—')}</td>
                 <td><span class="dda-badge ${r.handled ? 'is-ok' : 'is-danger'}">${r.handled ? '✓ Yes' : '✗ No'}</span></td>
                 <td><button type="button" class="btn btn-secondary btn-sm exception-view-btn" data-id="${r.id}">View</button></td>
               </tr>`).join('')}
@@ -141,6 +143,7 @@
         `${entry.type} — ${entry.statusCode} (${entry.handled ? 'handled' : 'unhandled'})\n` +
         `${entry.method} ${entry.path}\n` +
         `User: ${entry.userEmail || '—'}\n` +
+        `Role: ${entry.userRole || '—'}\n` +
         `Time: ${entry.timestamp}\n\n${entry.message}\n\n${entry.traceback || ''}`;
     } catch (err) {
       content.textContent = err.message || 'Could not load exception details.';

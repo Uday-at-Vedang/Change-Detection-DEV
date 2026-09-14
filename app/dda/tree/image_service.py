@@ -25,8 +25,91 @@ from .tree_service import get_node_or_404
 
 logger = logging.getLogger(__name__)
 
-IMAGE_TYPES = {"Satellite", "Drone", "Orthomosaic", "DEM", "GeoTIFF", "Raster", "PNG", "JPEG"}
+IMAGE_TYPES = {"GeoTIFF", "PNG", "JPEG"}
 
+# Type-first: selected image_type only accepts these extensions.
+IMAGE_TYPE_EXTENSIONS = {
+    "GeoTIFF": {".tif", ".tiff"},
+    "PNG": {".png"},
+    "JPEG": {".jpg", ".jpeg"},
+}
+
+IMAGE_SOURCES = {"satellite", "drone", ""}
+
+
+def extensions_for_image_type(image_type: str) -> set[str]:
+    return IMAGE_TYPE_EXTENSIONS.get((image_type or "").strip(), set())
+
+
+def format_allowed_extensions(exts: set[str]) -> str:
+    return ", ".join(sorted(exts))
+
+
+def validate_image_type_extension(image_type: str, filename: str) -> str:
+    """Return lowercased extension or raise 400 if type/extension mismatch."""
+    itype = (image_type or "").strip() or "GeoTIFF"
+    if itype not in IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"image_type must be one of: {', '.join(sorted(IMAGE_TYPES))}",
+        )
+    allowed = IMAGE_TYPE_EXTENSIONS[itype]
+    ext = Path(filename or "").suffix.lower()
+    if not ext or ext not in allowed:
+        got = ext or "(none)"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"image_type {itype} only allows {format_allowed_extensions(allowed)} "
+                f"(got {got} for {Path(filename or 'upload').name})"
+            ),
+        )
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Allowed extensions: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+    return ext
+
+
+def _infer_year_from_node(node: TreeNode) -> Optional[int]:
+    for part in (node.node_path or "").split("/"):
+        part = part.strip()
+        if len(part) == 4 and part.isdigit() and part.startswith(("19", "20")):
+            return int(part)
+    if node.node_type == "Year":
+        name = (node.node_name or "").strip()
+        if len(name) == 4 and name.isdigit():
+            return int(name)
+    return None
+
+
+def _parse_year(raw: Optional[str]) -> Optional[int]:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        year = int(text)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="year must be a number")
+    if year < 1900 or year > 2100:
+        raise HTTPException(status_code=400, detail="year out of range")
+    return year
+
+
+def _parse_source(raw: Optional[str], image_type: str) -> str:
+    text = (raw or "").strip().lower()
+    if text in ("satellite", "drone"):
+        return text
+    if text:
+        raise HTTPException(status_code=400, detail="source must be satellite or drone")
+    if image_type == "Satellite":
+        return "satellite"
+    if image_type == "Drone":
+        return "drone"
+    return ""
 
 def _safe_basename(filename: str) -> str:
     name = Path(filename or "upload").name
@@ -187,6 +270,8 @@ def image_to_dict(
         "height": img.height,
         "zoneId": img.zone_id,
         "villageId": img.village_id,
+        "year": img.year,
+        "source": img.source or "",
     }
     if zone_names is not None:
         payload["zoneName"] = zone_names.get(img.zone_id, "") if img.zone_id else ""
@@ -201,7 +286,6 @@ def image_to_dict(
         "previewUrl": f"/api/dda/local/preview?path={encoded}",
         "mapInfoUrl": f"/api/dda/local/map-info?path={encoded}",
         "format": img.format,
-        "source": "tree_library",
     })
     return payload
 
@@ -233,17 +317,19 @@ async def upload_image(
     manual_bounds: Optional[str] = None,
     zone_id: Optional[int] = None,
     village_id: Optional[int] = None,
+    year: Optional[str] = None,
+    source: Optional[str] = None,
+    server_filename: Optional[str] = None,
 ) -> ImageLibrary:
     node = get_node_or_404(db, node_id)
     zone_id, village_id = resolve_location(db, zone_id, village_id)
     itype = image_type.strip() or "GeoTIFF"
-    if itype not in IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail=f"image_type must be one of: {', '.join(sorted(IMAGE_TYPES))}")
-
-    original = _safe_basename(file.filename or "upload")
-    ext = Path(original).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Allowed extensions: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+    original = _safe_basename(server_filename or file.filename or "upload")
+    ext = validate_image_type_extension(itype, original)
+    year_val = _parse_year(year)
+    if year_val is None:
+        year_val = _infer_year_from_node(node)
+    source_val = _parse_source(source, itype)
 
     existing = (
         db.query(ImageLibrary)
@@ -259,6 +345,12 @@ async def upload_image(
             backfilled = True
         if village_id and not existing.village_id:
             existing.village_id = village_id
+            backfilled = True
+        if year_val and not existing.year:
+            existing.year = year_val
+            backfilled = True
+        if source_val and not existing.source:
+            existing.source = source_val
             backfilled = True
         if backfilled:
             db.commit()
@@ -307,6 +399,8 @@ async def upload_image(
         capture_date=cap,
         zone_id=zone_id,
         village_id=village_id,
+        year=year_val,
+        source=source_val,
         uploaded_by=uploaded_by or "",
         file_size_bytes=size,
         thumb_cache_key=hashlib.sha256(rel.encode()).hexdigest()[:32],
@@ -319,7 +413,10 @@ async def upload_image(
     db.add(img)
     log_action(
         db, "upload", node_id=node.id,
-        new_value={"file": rel, "type": itype, "zoneId": zone_id, "villageId": village_id},
+        new_value={
+            "file": rel, "type": itype, "zoneId": zone_id, "villageId": village_id,
+            "year": year_val, "source": source_val,
+        },
         action_by=uploaded_by, module="library",
     )
     db.commit()
@@ -359,7 +456,19 @@ def _node_and_descendants_clause(node: TreeNode):
     return or_(*clauses)
 
 
-def _images_query(db: Session, *, node_id: Optional[int] = None, query: Optional[str] = None):
+def _images_query(
+    db: Session,
+    *,
+    node_id: Optional[int] = None,
+    query: Optional[str] = None,
+    year: Optional[int] = None,
+    image_type: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
+    capture_date_from: Optional[str] = None,
+    capture_date_to: Optional[str] = None,
+    source: Optional[str] = None,
+):
     q = (
         db.query(ImageLibrary, TreeNode)
         .outerjoin(TreeNode, ImageLibrary.node_id == TreeNode.id)
@@ -377,6 +486,28 @@ def _images_query(db: Session, *, node_id: Optional[int] = None, query: Optional
             func.lower(ImageLibrary.image_name).like(like),
             func.lower(func.coalesce(TreeNode.node_path, "")).like(like),
         ))
+    if year is not None:
+        q = q.filter(ImageLibrary.year == year)
+    if image_type:
+        q = q.filter(ImageLibrary.image_type == image_type.strip())
+    if zone_id is not None:
+        q = q.filter(ImageLibrary.zone_id == zone_id)
+    if village_id is not None:
+        q = q.filter(ImageLibrary.village_id == village_id)
+    if source:
+        q = q.filter(func.lower(ImageLibrary.source) == source.strip().lower())
+    if capture_date_from:
+        try:
+            start = date.fromisoformat(capture_date_from.strip())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="capture_date_from must be YYYY-MM-DD")
+        q = q.filter(ImageLibrary.capture_date >= datetime.combine(start, datetime.min.time()))
+    if capture_date_to:
+        try:
+            end = date.fromisoformat(capture_date_to.strip())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="capture_date_to must be YYYY-MM-DD")
+        q = q.filter(ImageLibrary.capture_date <= datetime.combine(end, datetime.max.time()))
     return q
 
 
@@ -398,12 +529,30 @@ def list_all_images(
     *,
     node_id: Optional[int] = None,
     query: Optional[str] = None,
+    year: Optional[int] = None,
+    image_type: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
+    capture_date_from: Optional[str] = None,
+    capture_date_to: Optional[str] = None,
+    source: Optional[str] = None,
     include_bounds: bool = False,
     slim: bool = True,
     limit: Optional[int] = None,
     offset: int = 0,
 ):
-    q = _images_query(db, node_id=node_id, query=query)
+    q = _images_query(
+        db,
+        node_id=node_id,
+        query=query,
+        year=year,
+        image_type=image_type,
+        zone_id=zone_id,
+        village_id=village_id,
+        capture_date_from=capture_date_from,
+        capture_date_to=capture_date_to,
+        source=source,
+    )
     ordered = q.order_by(ImageLibrary.uploaded_on.desc())
     zones, villages = location_names(db)
     if limit is not None:
@@ -422,6 +571,50 @@ def list_all_images(
         for img, node in rows
     ]
 
+
+def export_library_rows(
+    db: Session,
+    *,
+    node_id: Optional[int] = None,
+    query: Optional[str] = None,
+    year: Optional[int] = None,
+    image_type: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
+    capture_date_from: Optional[str] = None,
+    capture_date_to: Optional[str] = None,
+    source: Optional[str] = None,
+) -> list[dict]:
+    rows = list_all_images(
+        db,
+        node_id=node_id,
+        query=query,
+        year=year,
+        image_type=image_type,
+        zone_id=zone_id,
+        village_id=village_id,
+        capture_date_from=capture_date_from,
+        capture_date_to=capture_date_to,
+        source=source,
+        include_bounds=False,
+        slim=False,
+    )
+    out = []
+    for img in rows:
+        out.append({
+            "Image ID": img.get("id"),
+            "Server filename": img.get("filename") or img.get("imageName") or "",
+            "Image type": img.get("imageType") or "",
+            "Source": img.get("source") or "",
+            "Format": img.get("format") or "",
+            "Capture date": (str(img.get("captureDate") or "")[:10]),
+            "Year": img.get("year") or "",
+            "Zone": img.get("zoneName") or "",
+            "Village": img.get("villageName") or "",
+            "File size": img.get("fileSizeBytes") or 0,
+            "Uploaded on": img.get("uploadedOn") or "",
+        })
+    return out
 
 def get_or_build_thumb(relative_path: str, max_side: int = 256) -> Path:
     full = resolve_file(relative_path)

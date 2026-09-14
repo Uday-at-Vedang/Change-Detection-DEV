@@ -112,6 +112,9 @@ def init_dda_database():
                 "ALTER TABLE dda_audit_logs ADD COLUMN module VARCHAR(64) DEFAULT ''",
                 "ALTER TABLE dda_image_library ADD COLUMN zone_id INTEGER DEFAULT NULL",
                 "ALTER TABLE dda_image_library ADD COLUMN village_id INTEGER DEFAULT NULL",
+                "ALTER TABLE dda_image_library ADD COLUMN year INTEGER DEFAULT NULL",
+                "ALTER TABLE dda_image_library ADD COLUMN source VARCHAR(32) DEFAULT ''",
+                "ALTER TABLE dda_exception_logs ADD COLUMN user_role VARCHAR(64) DEFAULT NULL",
             ):
                 try:
                     conn.execute(sa_text(stmt))
@@ -138,6 +141,8 @@ def init_dda_database():
                 "ON dda_image_library (zone_id)",
                 "CREATE INDEX IF NOT EXISTS ix_dda_image_library_village_id "
                 "ON dda_image_library (village_id)",
+                "CREATE INDEX IF NOT EXISTS ix_dda_image_library_year "
+                "ON dda_image_library (year)",
             ):
                 try:
                     conn.execute(sa_text(stmt))

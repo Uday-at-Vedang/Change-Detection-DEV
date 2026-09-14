@@ -48,6 +48,8 @@ class ImageLibrary(Base):
     # it as a strong "same place" signal.
     zone_id = Column(Integer, ForeignKey("dda_zones.id"), nullable=True, index=True)
     village_id = Column(Integer, ForeignKey("dda_villages.id"), nullable=True, index=True)
+    year = Column(Integer, nullable=True, index=True)
+    source = Column(String(32), default="")  # satellite | drone | ""
     uploaded_by = Column(String(100), default="")
     uploaded_on = Column(DateTime, default=_utcnow)
     # BigInteger, not Integer: this project's GeoTIFFs regularly exceed 2GB
@@ -91,4 +93,5 @@ class ExceptionLog(Base):
     handled = Column(Boolean, default=False)
     traceback = Column(Text, default="")
     user_email = Column(String(100), nullable=True)
+    user_role = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=_utcnow, index=True)

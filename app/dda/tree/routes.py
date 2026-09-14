@@ -1,13 +1,14 @@
 """FastAPI routes for unlimited-depth tree library."""
 from __future__ import annotations
 
-from typing import Optional
+import csv
+import io
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from typing import List
 
 from ...database import get_db
 from ...models import User
@@ -16,8 +17,10 @@ from ..dda_auth import current_dda_user, get_user_role
 from ..rbac.permissions import require_module_permission
 from .bulk_upload_service import build_bulk_upload_template, bulk_upload_images, parse_bulk_manifest
 from .image_service import (
+    IMAGE_TYPE_EXTENSIONS,
     IMAGE_TYPES,
     delete_library_image,
+    export_library_rows,
     image_to_dict,
     list_all_images,
     list_images_for_node,
@@ -81,7 +84,11 @@ def tree_me(user: User = Depends(current_dda_user), db: Session = Depends(get_db
 @router.get("/tree")
 def get_tree(db: Session = Depends(get_db), user: User = Depends(current_dda_user)):
     _require_dda()
-    return {"tree": build_tree(db), "imageTypes": sorted(IMAGE_TYPES)}
+    return {
+        "tree": build_tree(db),
+        "imageTypes": sorted(IMAGE_TYPES),
+        "imageTypeExtensions": {k: sorted(v) for k, v in IMAGE_TYPE_EXTENSIONS.items()},
+    }
 
 
 @router.post("/tree/nodes")
@@ -199,11 +206,92 @@ def api_list_node_images(node_id: int, db: Session = Depends(get_db), user: User
 def api_list_images(
     node_id: Optional[int] = None,
     q: Optional[str] = None,
+    year: Optional[int] = None,
+    image_type: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
+    capture_date_from: Optional[str] = None,
+    capture_date_to: Optional[str] = None,
+    source: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
     _require_dda()
-    return list_all_images(db, node_id=node_id, query=q)
+    return list_all_images(
+        db,
+        node_id=node_id,
+        query=q,
+        year=year,
+        image_type=image_type,
+        zone_id=zone_id,
+        village_id=village_id,
+        capture_date_from=capture_date_from,
+        capture_date_to=capture_date_to,
+        source=source,
+    )
+
+
+@router.get("/tree/images/export")
+def api_export_images(
+    node_id: Optional[int] = None,
+    q: Optional[str] = None,
+    year: Optional[int] = None,
+    image_type: Optional[str] = None,
+    zone_id: Optional[int] = None,
+    village_id: Optional[int] = None,
+    capture_date_from: Optional[str] = None,
+    capture_date_to: Optional[str] = None,
+    source: Optional[str] = None,
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_module_permission("library", "view")),
+):
+    _require_dda()
+    rows = export_library_rows(
+        db,
+        node_id=node_id,
+        query=q,
+        year=year,
+        image_type=image_type,
+        zone_id=zone_id,
+        village_id=village_id,
+        capture_date_from=capture_date_from,
+        capture_date_to=capture_date_to,
+        source=source,
+    )
+    headers = [
+        "Image ID", "Server filename", "Image type", "Source", "Format",
+        "Capture date", "Year", "Zone", "Village", "File size", "Uploaded on",
+    ]
+    if format == "xlsx":
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Library"
+        ws.append(headers)
+        for row in rows:
+            ws.append([row.get(h, "") for h in headers])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="library_export.xlsx"'},
+        )
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    data = buf.getvalue().encode("utf-8-sig")
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="library_export.csv"'},
+    )
 
 
 @router.post("/tree/nodes/{node_id}/images/upload")
@@ -215,6 +303,9 @@ async def api_upload_image(
     manual_bounds: str = Form(""),
     zone_id: str = Form(""),
     village_id: str = Form(""),
+    year: str = Form(""),
+    source: str = Form(""),
+    server_filename: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_module_permission("library", "create")),
 ):
@@ -227,6 +318,9 @@ async def api_upload_image(
         manual_bounds=manual_bounds or None,
         zone_id=_optional_int(zone_id, "zone_id"),
         village_id=_optional_int(village_id, "village_id"),
+        year=year or None,
+        source=source or None,
+        server_filename=server_filename or None,
     )
     node = get_node_or_404(db, node_id)
     zones, villages = location_names(db)
@@ -274,6 +368,59 @@ async def api_bulk_upload(
             "errors": len(result.errors),
             "unmatchedFiles": len(result.unmatched_files),
         },
+    }
+
+
+@router.post("/tree/nodes/{node_id}/images/upload-bulk")
+async def api_upload_images_bulk(
+    node_id: int,
+    files: List[UploadFile] = File(...),
+    image_type: str = Form("GeoTIFF"),
+    capture_date: str = Form(""),
+    manual_bounds: str = Form(""),
+    zone_id: str = Form(""),
+    village_id: str = Form(""),
+    year: str = Form(""),
+    source: str = Form(""),
+    filenames: Optional[List[str]] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_module_permission("library", "create")),
+):
+    """Upload many files in one request; loops the single-file upload path."""
+    _require_dda()
+    node = get_node_or_404(db, node_id)
+    zones, villages = location_names(db)
+    uploaded = []
+    failed = []
+    if isinstance(filenames, str):
+        name_list = [filenames]
+    else:
+        name_list = list(filenames or [])
+    for i, file in enumerate(files):
+        server_name = name_list[i] if i < len(name_list) else (file.filename or "upload")
+        try:
+            img = await upload_image(
+                db, node_id, file,
+                image_type=image_type,
+                capture_date=capture_date or None,
+                uploaded_by=user.email or str(user.id),
+                manual_bounds=manual_bounds or None,
+                zone_id=_optional_int(zone_id, "zone_id"),
+                village_id=_optional_int(village_id, "village_id"),
+                year=year or None,
+                source=source or None,
+                server_filename=server_name,
+            )
+            uploaded.append(image_to_dict(img, node, zone_names=zones, village_names=villages))
+        except HTTPException as exc:
+            failed.append({"filename": server_name, "error": str(exc.detail)})
+        except Exception as exc:
+            failed.append({"filename": server_name, "error": str(exc)})
+    return {
+        "status": True,
+        "message": f"Uploaded {len(uploaded)} image(s)" + (f", {len(failed)} failed" if failed else ""),
+        "uploaded": uploaded,
+        "failed": failed,
     }
 
 

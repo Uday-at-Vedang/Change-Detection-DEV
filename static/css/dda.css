@@ -1057,8 +1057,112 @@
 .dda-report-actions-cell { white-space: nowrap; }
 .dda-report-actions-cell .btn, .dda-report-actions-cell a.btn { margin-right: 0.25rem; margin-bottom: 0.25rem; }
 
-/* Standalone report page has no sidebar nav — override the sidebar-shell flex layout. */
-.dda-report-page { display: block; max-width: 960px; margin: 0 auto; padding: 1rem; }
+/* Standalone report page has no sidebar nav — full viewport interactive viewer. */
+.dda-report-page.dda-app,
+#page-report-detail .dda-report-page {
+  display: block;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+  background: var(--dm-bg, #f3f2f2);
+}
+.dda-report-page .dda-report-header {
+  padding: 0.75rem 1rem;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+.dda-report-page #result-modal.result-modal-backdrop {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 1 !important;
+  display: block !important;
+  background: var(--dm-bg, #f3f2f2) !important;
+  backdrop-filter: none !important;
+  overflow: visible !important;
+  min-height: 0;
+  height: auto;
+}
+.dda-report-page #result-modal .result-modal {
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+  box-shadow: none;
+}
+.dda-report-page #result-modal-close {
+  display: none;
+}
+.dda-report-page #report-loading.hidden { display: none !important; }
+
+.table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+.dda-upload-type-error {
+  color: var(--danger, #b91c1c);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+.dda-upload-type-error.hidden { display: none; }
+.dda-upload-file-list-wrap {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+  max-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.dda-upload-file-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.dda-upload-file-table th,
+.dda-upload-file-table td {
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+.dda-upload-file-table .upload-server-name {
+  width: 100%;
+  min-width: 140px;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.4rem;
+}
+.dda-lib-grid-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.dda-card-img { position: relative; }
+.dda-card-select-wrap {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  z-index: 2;
+  background: rgba(255,255,255,0.9);
+  border-radius: 4px;
+  padding: 0.1rem 0.2rem;
+  line-height: 1;
+}
+.dda-card-filename {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.dda-card-capture {
+  font-size: 0.8rem;
+  color: var(--text, #222);
+}
+.dda-upload-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.65rem 0.75rem;
+  align-items: end;
+}
 .dda-header {
   display: flex;
   flex-wrap: wrap;
@@ -1150,6 +1254,10 @@
   max-width: 100%;
 }
 .regions-table-wrap .regions-table {
+  min-width: 960px;
+}
+/* Modal side panel owns its own scroll; don't force a second min-width fight. */
+.result-modal-side .regions-table-wrap .regions-table {
   min-width: 960px;
 }
 

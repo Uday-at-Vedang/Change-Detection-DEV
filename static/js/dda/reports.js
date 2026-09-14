@@ -113,7 +113,7 @@ function renderReportsTable(rows) {
               <td>${r.regions ?? '—'}</td>
               <td class="dda-report-actions-cell">
                 ${r.status === 'completed' && r.runId
-                  ? `<button type="button" class="btn btn-secondary btn-sm" data-view-run="${r.runId}">View</button>
+                  ? `<a class="btn btn-secondary btn-sm" href="/dda/reports/${r.runId}">View</a>
                      <a class="btn btn-secondary btn-sm" href="/dda/reports/${r.runId}" target="_blank" rel="noopener">Report</a>
                      <a class="btn btn-secondary btn-sm" href="/api/dda/reports/${r.runId}/pdf" download>PDF</a>`
                   : (r.error ? `<span class="dim" title="${String(r.error).replace(/"/g, '')}">Error</span>` : '—')}
@@ -123,14 +123,10 @@ function renderReportsTable(rows) {
       </table>`;
 
   el.querySelectorAll('[data-view-run]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const runId = btn.dataset.viewRun;
-      try {
-        const data = await ddaApi('GET', `/api/history/${runId}`);
-        if (typeof showDdaResult === 'function') showDdaResult(data);
-      } catch (err) {
-        if (typeof showDdaError === 'function') showDdaError(err.message);
-      }
+      if (!runId) return;
+      window.location.href = `/dda/reports/${runId}`;
     });
   });
 
@@ -235,19 +231,6 @@ document.getElementById('btn-reports-clear')?.addEventListener('click', clearRep
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  try {
-    const openRun = sessionStorage.getItem('dda_open_run');
-    if (openRun) {
-      sessionStorage.removeItem('dda_open_run');
-      setTimeout(async () => {
-        try {
-          const data = await ddaApi('GET', `/api/history/${openRun}`);
-          if (typeof showDdaResult === 'function') showDdaResult(data);
-        } catch (_) {}
-      }, 300);
-    }
-  } catch (_) {}
-
   if (document.getElementById('tab-reports')?.classList.contains('active')) {
     loadReportsList();
   }

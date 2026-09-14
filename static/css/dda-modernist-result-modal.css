@@ -1,21 +1,31 @@
 /* ============================================================
    Modernist theme for the interactive Result modal (#result-modal)
    — shared by the Change Detection page (shown right after a run)
-   and the Reports page ("View" button). Scoped entirely to
-   #result-modal so nothing else is affected. Reuses the shared
-   --dm-* tokens declared once at :root in dda.css: flat surfaces,
-   hairline dividers, sharp corners, one accent color, Archivo for
-   headings/numbers. Pure visual restyle — no ids/classes that
-   result.js/map.js select on are renamed, no functionality changed.
+   and the standalone report page. Scoped entirely to
+   #result-modal so nothing else is affected.
    ============================================================ */
 
-#result-modal {
-  background: rgba(32, 30, 29, 0.55);
+#result-modal.result-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  /* Solid — never let the page underneath bleed through. */
+  background: var(--dm-bg, #f3f2f2) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow-y: auto;
 }
 #result-modal .result-modal {
-  background: var(--dm-bg);
+  background: var(--dm-bg, #f3f2f2);
   border-radius: 0;
   box-shadow: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* --- Header --- */
@@ -39,8 +49,7 @@
 #result-modal .result-modal-header-actions .btn-secondary:hover { background: var(--dm-surface); }
 #result-modal .btn-close-modal:hover { background: var(--dm-accent-100); color: var(--dm-accent); border-radius: 0; }
 
-/* --- Stat grid — flat hairline cells instead of a loose row with
-   gradient-clipped numbers --- */
+/* --- Stat grid --- */
 #result-modal .result-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -70,7 +79,7 @@
   font-weight: 600;
 }
 
-/* --- View toolbar (Slider / T1 / T2 / Overlay / Map) --- */
+/* --- View toolbar --- */
 #result-modal .dda-view-toolbar {
   border: 1px solid var(--dm-line);
   padding: 0.3rem;
@@ -80,62 +89,58 @@
 }
 #result-modal .dda-view-label { color: var(--dm-ink-muted); margin: 0 0.5rem 0 0.15rem; }
 #result-modal .dda-view-btn {
-  border: none;
   border-radius: 0;
   font-family: var(--dm-font);
-  font-weight: 600;
-  color: var(--dm-ink);
+  font-weight: 700;
 }
 #result-modal .dda-view-btn:hover { background: var(--dm-bg); }
 #result-modal .dda-view-btn.active {
-  background: var(--dm-ink);
+  background: var(--dm-accent);
   color: #fff;
-  border-color: transparent;
 }
 #result-modal #dda-locate-btn.btn-secondary {
   border-radius: 0;
-  border-color: var(--dm-line);
-  color: var(--dm-ink);
-  margin-left: 0.5rem;
+  font-family: var(--dm-font);
+  font-weight: 700;
 }
-
-/* --- Zoom controls --- */
 #result-modal .btn-zoom {
   border-radius: 0;
-  border-color: var(--dm-line);
-  background: var(--dm-surface);
-  color: var(--dm-ink);
+  font-family: var(--dm-font);
 }
 #result-modal .zoom-level { font-family: var(--dm-font); font-weight: 700; color: var(--dm-ink); }
 
-/* --- Compare slider frame + labels --- */
 #result-modal .compare-slider { border: 1px solid var(--dm-line); border-radius: 0; }
 #result-modal .compare-label {
+  border-radius: 0;
   font-family: var(--dm-font);
   font-weight: 700;
-  border-radius: 0;
-  letter-spacing: 0.02em;
 }
 #result-modal .compare-label-left { background: var(--dm-ink); color: #fff; }
 #result-modal .compare-label-right { background: var(--dm-accent); color: #fff; }
 #result-modal .compare-handle-knob { border-radius: 0; background: var(--dm-ink); color: #fff; }
 
-/* --- Map pane toolbar --- */
 #result-modal .dda-map-toolbar {
-  background: var(--dm-surface);
   border: 1px solid var(--dm-line);
   border-radius: 0;
 }
 #result-modal .dda-map-toolbar select,
 #result-modal .dda-map-xyz {
   border-radius: 0;
-  border-color: var(--dm-line);
 }
 #result-modal .dda-map-toolbar .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
 #result-modal .dda-map-canvas { border: 1px solid var(--dm-line); border-radius: 0; }
 
-/* --- Side panel: review bar + regions table --- */
-#result-modal .result-modal-side { border-left-color: var(--dm-line); }
+#result-modal .result-modal-layout {
+  align-items: stretch;
+}
+#result-modal .result-modal-side {
+  border-left-color: var(--dm-line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(100vh - 12rem);
+  max-height: calc(100dvh - 12rem);
+}
 #result-modal .dda-review-summary { color: var(--dm-ink-muted); }
 #result-modal .dda-review-summary strong { color: var(--dm-ink); }
 #result-modal .dda-review-actions .btn {
@@ -152,27 +157,106 @@
 #result-modal .dda-review-actions .btn-primary { background: var(--dm-accent); }
 #result-modal .dda-review-actions .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
 
+#result-modal .regions-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
 #result-modal .regions-table th {
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
+  font-family: var(--dm-font);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.68rem;
   color: var(--dm-ink-muted);
-  background: var(--dm-surface);
-  border-bottom: 2px solid var(--dm-line);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--dm-surface, #fff);
+  box-shadow: 0 1px 0 var(--dm-line);
 }
 #result-modal .regions-table td {
-  border-bottom: 1px solid var(--dm-line);
-  color: var(--dm-ink-muted);
+  border-color: var(--dm-line);
+  background: var(--dm-surface, #fff);
 }
 #result-modal .regions-table td:nth-child(2) { color: var(--dm-ink); }
 #result-modal .regions-table tr:hover td { background: var(--dm-bg); }
 #result-modal .regions-table tr.region-hover td { background: var(--dm-accent-100); }
-#result-modal .regions-table tr.region-selected { background: var(--dm-accent-100); }
+#result-modal .regions-table tr.region-selected td { background: var(--dm-accent-100); }
 #result-modal .severity-badge,
 #result-modal .review-badge {
   border-radius: 2px;
-  font-family: var(--dm-font);
 }
 #result-modal .dda-review-btns .btn { border-radius: 0; }
-
 #result-modal .pagination { font-family: var(--dm-font); }
+
+#result-modal .result-modal-side .regions-table-wrap {
+  flex: 1 1 auto;
+  min-height: 12rem;
+  max-height: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+#result-modal .result-modal-side .regions-table {
+  min-width: 960px;
+}
+#result-modal .result-modal-side > .pagination {
+  flex: 0 0 auto;
+}
+
+/* ---- Standalone report page: never clip the viewport ----
+   The report page embeds the result UI in-flow (not a fixed overlay).
+   Cap-heights + body overflow:hidden were cutting the bottom of the screen. */
+#page-report-detail {
+  overflow: auto !important;
+  height: auto !important;
+  min-height: 100vh;
+}
+#page-report-detail .dda-report-page {
+  overflow: visible !important;
+  height: auto !important;
+}
+#page-report-detail #result-modal.result-modal-backdrop,
+.dda-report-page #result-modal.result-modal-backdrop {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 1 !important;
+  display: block !important;
+  overflow: visible !important;
+  min-height: 0 !important;
+  height: auto !important;
+  background: var(--dm-bg, #f3f2f2) !important;
+  backdrop-filter: none !important;
+}
+#page-report-detail #result-modal .result-modal,
+.dda-report-page #result-modal .result-modal {
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+#page-report-detail #result-modal .result-modal-layout,
+.dda-report-page #result-modal .result-modal-layout {
+  align-items: start;
+}
+#page-report-detail #result-modal .result-modal-side,
+.dda-report-page #result-modal .result-modal-side {
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+#page-report-detail #result-modal .result-modal-side .regions-table-wrap,
+.dda-report-page #result-modal .result-modal-side .regions-table-wrap {
+  flex: none !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  /* Only horizontal scroll for wide columns; vertical uses the page. */
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+#page-report-detail #result-modal .regions-table th,
+.dda-report-page #result-modal .regions-table th {
+  position: static;
+  box-shadow: none;
+}
+#page-report-detail .dda-header.dda-report-header {
+  margin: 0 !important;
+}

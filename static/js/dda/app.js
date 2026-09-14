@@ -109,20 +109,33 @@ function renderLibGrid() {
     const crumb = img.breadcrumb || img.nodePath || img.filename;
     const place = [img.villageName, img.zoneName].filter(Boolean).join(', ');
     const encPath = encodeURIComponent(img.path);
+    const capture = img.captureDate ? String(img.captureDate).slice(0, 10) : '';
+    const year = img.year != null ? String(img.year) : '';
     return `
     <div class="dda-card-img" draggable="true" data-image-path="${encPath}" data-image-id="${img.id}" title="Click to view — ${escapeHtml(img.filename)}">
+      <label class="dda-card-select-wrap" onclick="event.stopPropagation()">
+        <input type="checkbox" class="dda-card-select" data-image-id="${img.id}" />
+      </label>
       <button type="button" class="dda-card-delete-btn" title="Delete image" aria-label="Delete image" data-requires-permission="library:delete">×</button>
       ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : '<div class="meta">No preview</div>'}
       <div class="meta">
+        <strong class="dda-card-filename">${escapeHtml(img.filename || img.imageName || '')}</strong><br/>
         <span class="dim dda-crumb">${escapeHtml(crumb)}</span><br/>
         ${place ? `<span class="dim dda-crumb">${escapeHtml(place)}</span><br/>` : ''}
-        <span class="dim">${img.captureDate ? String(img.captureDate).slice(0, 10) + ' · ' : ''}${img.imageType || ''} · ${formatBytes(img.fileSizeBytes)}${img.width && img.height ? ` · ${img.width}×${img.height}` : ''}</span><br/>
+        ${capture ? `<span class="dda-card-capture">Capture: ${escapeHtml(capture)}</span><br/>` : ''}
+        <span class="dim">${year ? escapeHtml(year) + ' · ' : ''}${escapeHtml(img.imageType || '')}${img.source ? ' · ' + escapeHtml(img.source) : ''} · ${formatBytes(img.fileSizeBytes)}${img.width && img.height ? ` · ${img.width}×${img.height}` : ''}</span><br/>
         <span class="dim dda-card-uploaded">Uploaded ${typeof formatDateIst === 'function' ? formatDateIst(img.uploadedOn) : (img.uploadedOn || '—')}</span>
       </div>
     </div>`;
   }).join('');
   if (typeof bindLibraryGridCards === 'function') bindLibraryGridCards(grid);
   if (typeof applyPermissionGating === 'function') applyPermissionGating(window.ddaPermissions || {}, grid);
+  grid.querySelectorAll('.dda-card-select').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (typeof updateLibDeleteSelectedBtn === 'function') updateLibDeleteSelectedBtn();
+    });
+  });
+  if (typeof updateLibDeleteSelectedBtn === 'function') updateLibDeleteSelectedBtn();
 
   if (typeof renderPaginationControls === 'function') {
     renderPaginationControls(document.getElementById('lib-grid-pagination'), libGridPage, totalPages, (p) => {
@@ -138,7 +151,7 @@ async function loadLibraryImages(opts) {
   if (!grid) return;
   if (opts && opts.resetPage) libGridPage = 0;
   const q = document.getElementById('lib-filter')?.value?.trim() || '';
-  const params = new URLSearchParams();
+  const params = typeof libFilterParams === 'function' ? libFilterParams() : new URLSearchParams();
   if (selectedNode.id) params.set('node_id', String(selectedNode.id));
   if (q) params.set('q', q);
   params.set('limit', String(LIB_GRID_PER_PAGE));

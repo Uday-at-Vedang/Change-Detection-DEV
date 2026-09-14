@@ -16,7 +16,7 @@ except ImportError:
 from jose import JWTError, jwt
 from sqlalchemy import text as sa_text
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.exception_handlers import http_exception_handler as starlette_http_exception_handler
@@ -116,21 +116,26 @@ app = FastAPI(title="AI Change Detection", version="2.4.0-dda" if IS_DDA_MODE el
 setup_dda(app)
 
 
-def _exception_log_user_email(request: Request) -> str | None:
-    """Best-effort user lookup for the exception log — never raises."""
+def _exception_log_user(request: Request) -> tuple[str | None, str | None]:
+    """Best-effort user email + role for the exception log — never raises."""
     try:
         from .database import SessionLocal
+        from .dda.dda_auth import get_user_role
         token = request.cookies.get("access_token") or request.cookies.get(COOKIE_NAME)
         if not token:
-            return None
+            return None, None
         db = SessionLocal()
         try:
             user = get_user_from_token(token, db)
-            return user.email if user else None
+            if not user:
+                return None, None
+            email = user.email if user else None
+            role = get_user_role(db, user) if user else None
+            return email, role
         finally:
             db.close()
     except Exception:
-        return None
+        return None, None
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -142,10 +147,11 @@ async def _dda_http_exception_handler(request: Request, exc: StarletteHTTPExcept
             from .dda.tree.audit_service import log_exception
             db = SessionLocal()
             try:
+                email, role = _exception_log_user(request)
                 log_exception(
                     db, exc=exc, path=request.url.path, method=request.method,
                     status_code=exc.status_code, handled=True,
-                    user_email=_exception_log_user_email(request),
+                    user_email=email, user_role=role,
                 )
             finally:
                 db.close()
@@ -164,10 +170,11 @@ async def _dda_unhandled_exception_handler(request: Request, exc: Exception):
             from .dda.tree.audit_service import log_exception
             db = SessionLocal()
             try:
+                email, role = _exception_log_user(request)
                 log_exception(
                     db, exc=exc, path=request.url.path, method=request.method,
                     status_code=500, handled=False,
-                    user_email=_exception_log_user_email(request),
+                    user_email=email, user_role=role,
                 )
             finally:
                 db.close()
@@ -968,7 +975,12 @@ def notify_test(
 
 
 @app.get("/api/overlay/{path:path}")
-def serve_overlay(path: str, request: Request, db: Session = Depends(get_db)):
+def serve_overlay(
+    path: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    max_side: int | None = Query(None, ge=64, le=4096),
+):
     # Restrict to overlays directory
     full = (OVERLAYS_DIR.parent / path).resolve()
     base = OVERLAYS_DIR.parent.resolve()
@@ -1015,6 +1027,32 @@ def serve_overlay(path: str, request: Request, db: Session = Depends(get_db)):
         owner_id_str = Path(path).name.split("_", 1)[0]
         if owner_id_str.isdigit() and int(owner_id_str) != user.id:
             raise HTTPException(404)
+
+    # Browser viewers choke on ~50MB full overlays; downscale + cache when requested.
+    if max_side:
+        cache = full.with_name(f"{full.stem}_ms{max_side}{full.suffix}")
+        try:
+            if cache.exists() and cache.stat().st_mtime >= full.stat().st_mtime:
+                return FileResponse(cache, media_type="image/png")
+            from PIL import Image
+            with Image.open(full) as im:
+                if im.mode not in ("RGB", "RGBA"):
+                    im = im.convert("RGBA")
+                w, h = im.size
+                longest = max(w, h)
+                if longest > max_side:
+                    scale = max_side / float(longest)
+                    im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, format="PNG", optimize=True)
+                payload = buf.getvalue()
+            try:
+                cache.write_bytes(payload)
+            except Exception:
+                pass
+            return Response(content=payload, media_type="image/png")
+        except Exception:
+            pass
 
     return FileResponse(full, media_type="image/png")
 
@@ -1206,16 +1244,18 @@ def delete_run(
 # --- Serve SPA ---
 @app.get("/dda/reports/{run_id}", response_class=HTMLResponse)
 def dda_report_page(run_id: int, request: Request, db: Session = Depends(get_db)):
-    """Standalone browser report (FR-05)."""
+    """Standalone browser report (FR-05) with interactive viewer."""
     if not IS_DDA_MODE:
         raise HTTPException(status_code=404, detail="Not found")
     _user, redirect = _dda_session_or_redirect(request, db)
     if redirect:
         return redirect
-    report_file = TEMPLATES_DIR / "report_dda.html"
-    if not report_file.exists():
-        raise HTTPException(status_code=404, detail="Report template missing")
-    return FileResponse(report_file)
+    return templates.TemplateResponse(
+        request,
+        "report_dda.html",
+        {"run_id": run_id, "active_page": "reports", "menu_items": []},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # no-store on every auth page below: FileResponse otherwise sends
