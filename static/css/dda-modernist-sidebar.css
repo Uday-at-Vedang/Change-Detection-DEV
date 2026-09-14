@@ -1,0 +1,76 @@
+/* ============================================================
+   Modernist theme for the main left sidebar (navbar_dda.html) —
+   shared, identical partial injected into every page, so this
+   reskin applies globally rather than being scoped to one page.
+   Reuses the shared --dm-* tokens declared once at :root in
+   dda.css: flat surfaces, hairline dividers, sharp corners, one
+   accent color, Archivo for the brand/nav. Pure visual restyle —
+   the DB-driven menu structure, RBAC, and every id/class app.js/
+   notifications.js select on are untouched.
+   ============================================================ */
+
+.dda-sidebar-nav {
+  background: var(--dm-bg);
+  border-right: 2px solid var(--dm-line);
+}
+
+/* --- Brand --- */
+.dda-sidebar-brand > svg { color: var(--dm-accent); }
+.dda-sidebar-brand-name {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--dm-ink);
+}
+.dda-sidebar-brand-sub { color: var(--dm-ink-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.68rem; }
+.dda-sidebar-toggle { border-color: var(--dm-line); border-radius: 0; color: var(--dm-ink-muted); }
+.dda-sidebar-toggle:hover { background: var(--dm-accent-100); color: var(--dm-accent); }
+
+/* --- Nav tabs --- */
+.dda-tab {
+  border-radius: 0;
+  border-left: 2px solid transparent;
+  color: var(--dm-ink);
+  font-weight: 500;
+}
+.dda-tab:hover { background: var(--dm-bg); color: var(--dm-ink); }
+.dda-tab.active {
+  background: var(--dm-accent-100);
+  border-left-color: var(--dm-accent);
+  color: var(--dm-accent);
+  font-weight: 700;
+}
+.dda-subtab { color: var(--dm-ink); font-weight: 500; }
+.dda-subtab.active {
+  background: var(--dm-accent-100);
+  border-left-color: var(--dm-accent);
+  color: var(--dm-accent);
+  font-weight: 700;
+}
+.dda-sidebar-submenu { border-left-color: var(--dm-line); }
+.dda-sidebar-group > summary.dda-tab-group { border-radius: 0; }
+
+/* --- Footer: notifications + user menu --- */
+.dda-sidebar-footer { border-top-color: var(--dm-line); }
+.dda-notify-btn { border-color: var(--dm-line); border-radius: 0; color: var(--dm-ink); }
+.dda-notify-btn:hover { background: var(--dm-accent-100); color: var(--dm-accent); }
+.dda-notify-badge { background: var(--dm-accent); border-radius: 0; }
+.dda-notify-panel { border-radius: 0; border-color: var(--dm-line); background: var(--dm-surface); }
+.dda-notify-item { border-radius: 0; }
+.dda-notify-item:hover { background: var(--dm-bg); }
+.dda-notify-item.unread { background: var(--dm-accent-100); }
+
+.dda-user-avatar {
+  border-radius: 0;
+  background: var(--dm-ink);
+}
+.dda-user-wrap #dda-user-email { color: var(--dm-ink); }
+.dda-user-menu-panel { border-top-color: var(--dm-line); }
+.dda-user-menu-link { border-radius: 0; color: var(--dm-ink); }
+.dda-user-menu-link:hover { background: var(--dm-accent-100); color: var(--dm-accent); }
+.dda-user-menu-link.active { color: var(--dm-accent); font-weight: 700; }
+.dda-sidebar-nav.collapsed .dda-user-menu-panel { border-radius: 0; border-color: var(--dm-line); background: var(--dm-surface); box-shadow: none; }

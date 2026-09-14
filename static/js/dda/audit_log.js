@@ -9,6 +9,13 @@
 
   let auditPage = 0;
 
+  function actionBadgeClass(action) {
+    const a = (action || '').toLowerCase();
+    if (a.includes('delete') || a.includes('remove') || a.includes('clear')) return 'is-danger';
+    if (a.includes('create') || a.includes('add') || a.includes('upload') || a.includes('login')) return 'is-ok';
+    return 'is-neutral';
+  }
+
   function fillSelect(select, values, current) {
     if (!select) return;
     const placeholder = select.options[0];
@@ -70,7 +77,7 @@
                 <td><time class="dda-date">${typeof formatDateIst === 'function' ? formatDateIst(r.timestamp) : escapeHtml(r.timestamp || '')}</time></td>
                 <td>${escapeHtml(r.user || '—')}</td>
                 <td>${escapeHtml(r.role || '—')}</td>
-                <td class="dda-action-cell">${escapeHtml(r.action)}</td>
+                <td class="dda-action-cell"><span class="dda-badge ${actionBadgeClass(r.action)}">${escapeHtml(r.action)}</span></td>
                 <td>${escapeHtml(r.module || '—')}</td>
                 <td class="dda-log-msg">${escapeHtml(r.newValue || r.oldValue || '')}</td>
               </tr>`).join('')}

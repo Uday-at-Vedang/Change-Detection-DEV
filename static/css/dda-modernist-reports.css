@@ -1,0 +1,284 @@
+/* ============================================================
+   Modernist Reports theme (from the Claude Design redesign).
+   Covers two screens:
+     - Reports list        -> scoped under #tab-reports
+     - Report Detail page  -> scoped under #page-report-detail
+   Same visual language as the Dashboard theme already shipped in
+   dda.css (search "#tab-home" there): flat surfaces, hairline
+   dividers, sharp corners, one accent color, Archivo for headings
+   and numbers. Reuses the shared --dm-* tokens declared once at
+   :root in dda.css — nothing is redeclared here. Every selector
+   below is scoped to one of the two pages above, so no other
+   screen (including the shared result modal used elsewhere) is
+   affected by this file.
+   ============================================================ */
+
+/* ================= Reports list (#tab-reports) ================= */
+
+#tab-reports h1,
+#tab-reports .card-title,
+#tab-reports h3 {
+  font-family: var(--dm-font);
+}
+#tab-reports h1 {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.35rem;
+  color: var(--dm-ink);
+}
+#tab-reports .dda-reports-hero .sub {
+  margin: 0;
+  color: var(--dm-ink-muted);
+}
+#tab-reports .dda-dash-hero-actions { align-items: center; }
+
+/* Flat, hairline-bordered surfaces instead of soft shadow cards */
+#tab-reports .card {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+#tab-reports .dda-reports-filter-card { padding: 1rem 1.1rem; }
+#tab-reports .dda-filter-bar {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+#tab-reports .dda-filter-field { color: var(--dm-ink-muted); }
+#tab-reports .dda-filter-meta { color: var(--dm-ink-muted); }
+
+/* Buttons — flat accent instead of the app-wide purple gradient,
+   scoped to this page only so other pages are untouched. */
+#tab-reports .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#tab-reports .btn-primary { background: var(--dm-accent); }
+#tab-reports .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+#tab-reports .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#tab-reports .btn-secondary:hover { background: var(--dm-bg); border-color: var(--dm-line); }
+#tab-reports .btn-ghost { color: var(--dm-accent); }
+#tab-reports .btn-ghost:hover { background: var(--dm-accent-100); color: var(--dm-accent-hover); }
+
+/* Table — uppercase hairline header, row-hover, no per-cell boxes */
+#tab-reports .dda-reports-table {
+  font-family: var(--font-sans);
+}
+#tab-reports .dda-reports-table th {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  font-family: var(--dm-font);
+  border: none;
+  border-bottom: 2px solid var(--dm-line);
+  background: transparent;
+}
+#tab-reports .dda-reports-table td {
+  border: none;
+  border-bottom: 1px solid var(--dm-line);
+}
+#tab-reports .dda-reports-table tbody tr:hover { background: var(--dm-bg); }
+
+/* Change-type / status colors are semantic (CHANGE_TYPE_COLORS) and are
+   left untouched here — only the pill shape follows the flat theme. */
+#tab-reports .dda-changetype-pill { border-radius: 2px; }
+
+/* Pagination */
+#tab-reports .pagination button {
+  border-radius: 0;
+  font-family: var(--dm-font);
+}
+#tab-reports .pagination button:hover:not(:disabled) {
+  background: var(--dm-accent-100);
+  border-color: var(--dm-line);
+  color: var(--dm-ink);
+}
+#tab-reports .pagination button.active {
+  background: var(--dm-accent);
+  border-color: var(--dm-accent);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  #tab-reports .dda-dash-hero-actions { width: 100%; justify-content: space-between; }
+}
+
+/* ================= Report Detail (#page-report-detail) ================= */
+
+#page-report-detail {
+  background: var(--dm-bg);
+  font-family: var(--font-sans);
+}
+#page-report-detail .dda-report-page {
+  max-width: 1100px;
+  padding: 1.5rem 1.5rem 3rem;
+}
+
+/* Header bar — flat surface, hairline bottom border, Archivo brand type */
+#page-report-detail .dda-header.dda-report-header {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-bottom: 2px solid var(--dm-line);
+  margin: -0.5rem -0.5rem 1.5rem;
+  padding: 1rem 1.25rem;
+}
+#page-report-detail .app-brand span {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--dm-ink);
+}
+#page-report-detail .dda-report-actions .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#page-report-detail .dda-report-actions .btn-primary { background: var(--dm-accent); }
+#page-report-detail .dda-report-actions .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+#page-report-detail .dda-report-actions .btn-primary:disabled { background: var(--dm-line); color: var(--dm-ink-dim); }
+#page-report-detail .dda-report-actions .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#page-report-detail .dda-report-actions .btn-secondary:hover { background: var(--dm-bg); border-color: var(--dm-line); }
+
+/* Cards — flat, hairline-bordered, sharp corners */
+#page-report-detail .card {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1.4rem 1.5rem;
+}
+#page-report-detail .card + .card { margin-top: 1.25rem; }
+#page-report-detail .card h1,
+#page-report-detail .card h3 {
+  font-family: var(--dm-font);
+  color: var(--dm-ink);
+}
+#page-report-detail #report-title { font-weight: 800; letter-spacing: -0.01em; font-size: 1.5rem; margin: 0 0 0.35rem; }
+#page-report-detail .card h3 { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.9rem; }
+#page-report-detail #report-meta { color: var(--dm-ink-muted); }
+
+/* Summary stats — hairline grid of flat cells instead of a loose flex row */
+#page-report-detail .dda-report-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--dm-line);
+  border: 1px solid var(--dm-line);
+  margin-top: 1rem;
+}
+#page-report-detail .dda-stat {
+  background: var(--dm-surface);
+  padding: 0.85rem 0.9rem;
+}
+#page-report-detail .dda-stat .label {
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+}
+#page-report-detail .dda-stat .value {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  font-size: 1.35rem;
+  color: var(--dm-ink);
+}
+
+#page-report-detail .dda-report-review-summary {
+  margin: 0.85rem 0 0;
+  font-size: 0.85rem;
+}
+#page-report-detail .dda-report-review-summary strong { color: var(--dm-ink); }
+#page-report-detail .dda-report-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+}
+#page-report-detail .dda-report-actions-row .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#page-report-detail .dda-report-actions-row .btn-primary { background: var(--dm-accent); }
+#page-report-detail .dda-report-actions-row .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+#page-report-detail .dda-report-actions-row .btn-primary:disabled { background: var(--dm-line); color: var(--dm-ink-dim); }
+#page-report-detail .dda-report-actions-row .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#page-report-detail .dda-report-actions-row .btn-secondary:hover { background: var(--dm-bg); border-color: var(--dm-line); }
+#page-report-detail #report-submit-msg { margin-top: 0.5rem; font-size: 0.8rem; }
+
+/* Overlay image — flat bordered frame with a small labeled chip,
+   same treatment as the Before/After panel in the design mockup. */
+#page-report-detail .dda-report-overlay-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+#page-report-detail .dda-report-overlay-chip {
+  position: absolute;
+  top: 0.65rem;
+  left: 0.65rem;
+  z-index: 1;
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  color: var(--dm-ink);
+  font-family: var(--dm-font);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.6rem;
+}
+#page-report-detail .dda-report-overlay {
+  border-radius: 0;
+  border: 1px solid var(--dm-line);
+  background: var(--dm-bg);
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Detected regions table */
+#page-report-detail .table-wrap { overflow-x: auto; }
+#page-report-detail .dda-report-regions {
+  width: 100%;
+  border-collapse: collapse;
+}
+#page-report-detail .dda-report-regions th {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  font-family: var(--dm-font);
+  border: none;
+  border-bottom: 2px solid var(--dm-line);
+  background: transparent;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+}
+#page-report-detail .dda-report-regions td {
+  border: none;
+  border-bottom: 1px solid var(--dm-line);
+  padding: 0.5rem 0.6rem;
+}
+#page-report-detail .dda-report-regions tbody tr:hover { background: var(--dm-bg); }
+#page-report-detail .dda-report-regions .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#page-report-detail .dda-report-regions .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#page-report-detail .dda-report-regions .btn-secondary:hover { background: var(--dm-bg); border-color: var(--dm-line); }
+
+/* Email this report */
+#page-report-detail .dda-report-email input[type="email"] {
+  border-radius: 0;
+  border: 1px solid var(--dm-line);
+  background: var(--dm-surface);
+}
+#page-report-detail .dda-report-email input[type="email"]:focus {
+  border-color: var(--dm-accent);
+  box-shadow: none;
+}
+#page-report-detail .dda-report-email .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#page-report-detail .dda-report-email .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#page-report-detail .dda-report-email .btn-secondary:hover { background: var(--dm-bg); border-color: var(--dm-line); }
+#page-report-detail .dda-report-email .btn-secondary:disabled { color: var(--dm-ink-dim); border-color: var(--dm-line); }
+
+/* Loading / error states */
+#page-report-detail #report-loading { border-radius: 0; }
+#page-report-detail .alert-error { border-radius: 0; }
+
+@media (max-width: 720px) {
+  #page-report-detail .dda-report-header { flex-direction: column; align-items: stretch; }
+  #page-report-detail .dda-report-stats { grid-template-columns: repeat(2, 1fr); }
+}

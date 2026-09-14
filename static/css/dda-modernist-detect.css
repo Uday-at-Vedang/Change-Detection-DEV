@@ -1,0 +1,197 @@
+/* ============================================================
+   Modernist Change Detection theme (from the Claude Design
+   redesign). Scoped entirely to #tab-detect so the rest of the
+   app keeps its existing look until/unless it gets redesigned
+   too: flat surfaces, hairline dividers, sharp corners, one
+   accent color, Archivo for headings. Tokens (--dm-*) are
+   shared, declared once at :root in dda.css — reused here, not
+   redeclared. Pure visual/layout reskin: no ids/classes that
+   compare.js/tree.js/pairs.js/result.js/map.js select on are
+   renamed, and no RBAC (`data-requires-permission`) attributes
+   are touched.
+   ============================================================ */
+
+/* --- Page header (mirrors the mockup's title + subtitle) --------------- */
+#tab-detect .dda-detect-hero { margin-bottom: 1.25rem; }
+#tab-detect .dda-detect-hero h1 { margin: 0 0 0.2rem; font-weight: 800; letter-spacing: -0.01em; }
+#tab-detect .dda-detect-hero .sub { margin: 0; color: var(--dm-ink-muted); }
+
+/* --- Typography -------------------------------------------------------- */
+#tab-detect h1,
+#tab-detect .card-title,
+#tab-detect .card-header h3,
+#tab-detect .dda-run-bar-title {
+  font-family: var(--dm-font);
+}
+#tab-detect .card-header h3 { font-weight: 800; letter-spacing: -0.005em; }
+
+/* --- Flat, hairline-bordered surfaces instead of soft shadow cards ----- */
+#tab-detect .card,
+#tab-detect .dda-modal-panel,
+#tab-detect .dda-slot,
+#tab-detect .dda-roi-controls,
+#tab-detect .dda-upload-progress .dda-progress-bar {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+#tab-detect .dda-slot { border-style: dashed; }
+#tab-detect .dda-slot.filled { border-style: solid; border-color: var(--dm-accent); }
+#tab-detect .dda-slot.drag-over { border-color: var(--dm-accent); background: var(--dm-accent-100); }
+
+/* --- Buttons — flat accent instead of the app-wide purple gradient ----- */
+#tab-detect .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#tab-detect .btn-primary { background: var(--dm-accent); border-color: var(--dm-accent); }
+#tab-detect .btn-primary:hover:not(:disabled) { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+#tab-detect .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#tab-detect .btn-secondary:hover:not(:disabled) { background: var(--dm-bg); border-color: var(--dm-line); }
+#tab-detect .btn-ghost { color: var(--dm-accent); }
+#tab-detect .btn-ghost:hover:not(:disabled) { background: var(--dm-accent-100); color: var(--dm-accent-hover); }
+
+/* --- Layout breathing room (mirrors the mockup's 20px card gaps) ------- */
+#tab-detect.dda-panel { display: flex; flex-direction: column; gap: 0; }
+#tab-detect .dda-layout { gap: 1.25rem; }
+#tab-detect .dda-main { display: flex; flex-direction: column; gap: 1.25rem; }
+#tab-detect .card { padding: 1.25rem; }
+#tab-detect .dda-sidebar.card { padding: 1rem; }
+
+/* --- Folder tree sidebar ------------------------------------------------ */
+#tab-detect .dda-folder-path { color: var(--dm-ink-muted); }
+#tab-detect .dda-search {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  background: var(--dm-bg);
+  color: var(--dm-ink);
+}
+#tab-detect .dda-search:focus { outline: none; border-color: var(--dm-accent); }
+#tab-detect .dda-tree-all,
+#tab-detect .dda-tree-node-btn,
+#tab-detect .dda-tree-year,
+#tab-detect .dda-tree-village {
+  border-radius: 0;
+  color: var(--dm-ink-muted);
+}
+#tab-detect .dda-tree-all:hover, #tab-detect .dda-tree-all.active,
+#tab-detect .dda-tree-node-btn:hover, #tab-detect .dda-tree-node-btn.active,
+#tab-detect .dda-tree-year:hover, #tab-detect .dda-tree-year.active,
+#tab-detect .dda-tree-village:hover, #tab-detect .dda-tree-village.active {
+  background: var(--dm-accent-100);
+  color: var(--dm-accent-hover);
+}
+#tab-detect .dda-tree-zone > button { border-radius: 0; color: var(--dm-ink); }
+#tab-detect .dda-tree-zone > button:hover { background: var(--dm-accent-100); }
+#tab-detect .dda-tree-children { border-left-color: var(--dm-line); }
+
+/* --- Detection options form -------------------------------------------- */
+#tab-detect .dda-detect-options select,
+#tab-detect .dda-auto-compare select,
+#tab-detect .dda-image-select {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  background: var(--dm-surface);
+  color: var(--dm-ink);
+}
+#tab-detect .dda-detect-options select:focus,
+#tab-detect .dda-auto-compare select:focus,
+#tab-detect .dda-image-select:focus { outline: none; border-color: var(--dm-accent); box-shadow: none; }
+
+#tab-detect .dda-sensitivity-field em { color: var(--dm-accent); font-weight: 700; }
+#tab-detect .dda-sensitivity-field input[type="range"] { accent-color: var(--dm-accent); }
+
+#tab-detect .dda-stepper-wrap {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  background: var(--dm-surface);
+}
+#tab-detect .dda-stepper-wrap:focus-within { border-color: var(--dm-accent); box-shadow: none; }
+#tab-detect .dda-stepper-btn:first-child { border-right-color: var(--dm-line); }
+#tab-detect .dda-stepper-btn:last-child { border-left-color: var(--dm-line); }
+#tab-detect .dda-stepper-btn:hover:not(:disabled) { background: var(--dm-accent-100); color: var(--dm-accent-hover); }
+#tab-detect .dda-input-suffix { color: var(--dm-ink-dim); }
+#tab-detect .dda-input-suffix-wrap input[type="number"]:focus + .dda-input-suffix { color: var(--dm-accent); }
+
+#tab-detect .dda-check { color: var(--dm-ink-muted); }
+#tab-detect .dda-check input[type="checkbox"] { accent-color: var(--dm-accent); }
+#tab-detect .dda-notify-email {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  background: var(--dm-surface);
+  color: var(--dm-ink);
+}
+#tab-detect .dda-field-hint { color: var(--dm-accent); }
+
+/* Region-shape segmented toggle — flat, dark-ink active state (matches
+   the mockup's "seg"/"seg-opt" control) instead of the app-wide blue. */
+#tab-detect .dda-shape-toggle,
+#tab-detect .dda-mode-toggle {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  overflow: hidden;
+}
+#tab-detect .dda-shape-btn,
+#tab-detect .dda-mode-btn {
+  border-radius: 0;
+  color: var(--dm-ink);
+  font-family: var(--dm-font);
+  font-weight: 600;
+}
+#tab-detect .dda-shape-btn + .dda-shape-btn,
+#tab-detect .dda-mode-btn + .dda-mode-btn { border-left-color: var(--dm-line); }
+#tab-detect .dda-shape-btn:hover,
+#tab-detect .dda-mode-btn:hover { background: var(--dm-bg); }
+#tab-detect .dda-shape-btn.is-active,
+#tab-detect .dda-mode-btn.is-active { background: var(--dm-ink); color: #fff; }
+
+#tab-detect .dda-roi-controls { padding: 0.6rem 0.85rem; color: var(--dm-ink-muted); }
+
+#tab-detect .dda-progress-fill { background: var(--dm-accent); }
+
+/* --- Automatic-mode area picker + schedule ------------------------------ */
+#tab-detect .dda-auto-field input {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  background: var(--dm-surface);
+  color: var(--dm-ink);
+}
+#tab-detect .dda-auto-field input:focus { outline: none; border-color: var(--dm-accent); }
+#tab-detect .dda-auto-schedule { color: var(--dm-ink-muted); }
+
+/* --- Before/After compare slots ----------------------------------------- */
+#tab-detect .dda-slot-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dm-ink-muted);
+}
+#tab-detect .dda-slot-preview { border-radius: 0; background: var(--dm-bg); }
+#tab-detect .dda-slot-meta { color: var(--dm-ink-muted); }
+
+/* --- Same-area pairs + library grid -------------------------------------- */
+#tab-detect .dda-compare-card,
+#tab-detect .dda-picker-item {
+  border-radius: 0;
+  border-color: var(--dm-line);
+}
+#tab-detect .dda-compare-card.selected-t1 { border-color: var(--dm-accent); box-shadow: inset 0 0 0 1px var(--dm-accent); }
+#tab-detect .dda-compare-card.selected-t2 { border-color: var(--dm-ink); box-shadow: inset 0 0 0 1px var(--dm-ink); }
+#tab-detect .dda-compare-assign { border-top-color: var(--dm-line); }
+#tab-detect .dda-compare-assign .btn { border-radius: 0; }
+#tab-detect .pagination .btn,
+#tab-detect .pagination button { border-radius: 0; }
+
+/* --- Run bar — dark flat bar with the accent primary button ------------- */
+#tab-detect .dda-run-bar {
+  border-radius: 0;
+  background: var(--dm-ink);
+  color: #fff;
+  border: none;
+}
+#tab-detect .dda-run-bar .dim,
+#tab-detect .dda-run-bar #dda-run-bar-hint { color: rgba(255, 255, 255, 0.65); }
+
+/* --- Modals (preflight / image picker) ---------------------------------- */
+#tab-detect .dda-modal-panel { border-radius: 0; }
+#tab-detect .dda-picker-grid .dda-picker-item:hover { border-color: var(--dm-accent); }
+#tab-detect .dda-preflight-list li.fail { border-left: 3px solid var(--dm-accent); }

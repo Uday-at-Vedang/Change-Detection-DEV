@@ -1,0 +1,252 @@
+/* ============================================================
+   Modernist theme for Masters (Zones / Villages) and Profile.
+   Same visual language as the #tab-home redesign in dda.css
+   (flat surfaces, hairline dividers, sharp corners, one accent
+   color, Archivo for headings) — reuses the shared --dm-* tokens
+   declared at :root in dda.css. Purely visual: every rule below
+   is scoped under #tab-masters-zones, #tab-masters-villages or
+   #tab-profile, and no element id/behavior is touched.
+   ============================================================ */
+
+/* ---------- Shared: Masters (Zones + Villages) ---------- */
+
+#tab-masters-zones h1,
+#tab-masters-villages h1,
+#tab-masters-zones .card-header h3,
+#tab-masters-villages .card-header h3,
+#tab-masters-zones .dda-reports-table,
+#tab-masters-villages .dda-reports-table {
+  font-family: var(--dm-font);
+}
+#tab-masters-zones h1,
+#tab-masters-villages h1 {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Flat, hairline-bordered surfaces instead of soft shadow cards */
+#tab-masters-zones .card,
+#tab-masters-villages .card {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#tab-masters-zones .card-header,
+#tab-masters-villages .card-header {
+  border-bottom: 2px solid var(--dm-line);
+}
+#tab-masters-zones .card-header h3,
+#tab-masters-villages .card-header h3 {
+  font-weight: 700;
+  color: var(--dm-ink);
+}
+
+/* Title row: heading + primary action on one line */
+#tab-masters-zones .dda-hero.dda-hero-row,
+#tab-masters-villages .dda-hero.dda-hero-row {
+  align-items: center;
+}
+
+/* Compact standalone search bar, mirroring the mockup's search card */
+#tab-masters-zones .dda-masters-search-card,
+#tab-masters-villages .dda-masters-search-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+#tab-masters-zones .dda-masters-search-card .dda-search,
+#tab-masters-villages .dda-masters-search-card .dda-search {
+  max-width: 320px;
+  margin-bottom: 0;
+  border-radius: 0;
+  background: var(--dm-surface);
+  border-color: var(--dm-line);
+}
+#tab-masters-villages .dda-masters-search-card select#masters-zone-filter {
+  max-width: 220px;
+  border-radius: 0;
+  background: var(--dm-surface);
+  border-color: var(--dm-line);
+  padding: 0.45rem 0.65rem;
+}
+
+/* Buttons — flat accent instead of the app-wide purple gradient */
+#tab-masters-zones .btn,
+#tab-masters-villages .btn,
+#tab-masters-zones .dda-modal .btn,
+#tab-masters-villages .dda-modal .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#tab-masters-zones .btn-primary,
+#tab-masters-villages .btn-primary {
+  background: var(--dm-accent);
+}
+#tab-masters-zones .btn-primary:hover,
+#tab-masters-villages .btn-primary:hover {
+  background: var(--dm-accent-hover);
+  filter: none;
+  box-shadow: none;
+}
+#tab-masters-zones .btn-secondary,
+#tab-masters-villages .btn-secondary {
+  background: transparent;
+  border-color: var(--dm-line);
+  color: var(--dm-ink);
+}
+#tab-masters-zones .btn-secondary:hover,
+#tab-masters-villages .btn-secondary:hover {
+  background: var(--dm-bg);
+  border-color: var(--dm-line);
+}
+#tab-masters-zones .btn-danger,
+#tab-masters-villages .btn-danger {
+  box-shadow: none;
+}
+
+/* Table — uppercase hairline headers instead of boxed cells */
+#tab-masters-zones .dda-reports-table,
+#tab-masters-villages .dda-reports-table {
+  border-collapse: collapse;
+}
+#tab-masters-zones .dda-reports-table th,
+#tab-masters-villages .dda-reports-table th {
+  border: none;
+  border-bottom: 2px solid var(--dm-line);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  font-weight: 700;
+  background: transparent;
+  padding: 0.55rem 0.6rem;
+}
+#tab-masters-zones .dda-reports-table td,
+#tab-masters-villages .dda-reports-table td {
+  border: none;
+  border-bottom: 1px solid var(--dm-line);
+  padding: 0.55rem 0.6rem;
+  color: var(--dm-ink);
+}
+#tab-masters-zones .dda-reports-table tbody tr:hover,
+#tab-masters-villages .dda-reports-table tbody tr:hover {
+  background: var(--dm-bg);
+}
+
+/* Modal form fields — flat inputs/selects to match the rest of the page.
+   #masters-modal sits outside #tab-masters-zones/#tab-masters-villages in
+   the DOM (it's appended at body level so it can overlay the whole page),
+   so it's scoped via the body[data-masters] attribute each template already
+   sets instead — equivalent scoping, since each template only ever renders
+   its own single modal. */
+body[data-masters="zones"] #masters-modal input[type="text"],
+body[data-masters="villages"] #masters-modal input[type="text"],
+body[data-masters="zones"] #masters-modal select,
+body[data-masters="villages"] #masters-modal select,
+body[data-masters="zones"] #masters-modal .card,
+body[data-masters="villages"] #masters-modal .card,
+body[data-masters="zones"] #masters-modal .dda-modal-panel,
+body[data-masters="villages"] #masters-modal .dda-modal-panel {
+  border-radius: 0;
+  background: var(--dm-surface);
+  border-color: var(--dm-line);
+  box-shadow: none;
+}
+body[data-masters="zones"] #masters-modal .btn,
+body[data-masters="villages"] #masters-modal .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+body[data-masters="zones"] #masters-modal .btn-primary,
+body[data-masters="villages"] #masters-modal .btn-primary {
+  background: var(--dm-accent);
+}
+body[data-masters="zones"] #masters-modal .btn-primary:hover,
+body[data-masters="villages"] #masters-modal .btn-primary:hover {
+  background: var(--dm-accent-hover);
+  filter: none;
+  box-shadow: none;
+}
+body[data-masters="zones"] #masters-modal .card-header,
+body[data-masters="villages"] #masters-modal .card-header {
+  border-bottom: 2px solid var(--dm-line);
+}
+
+/* ---------- Profile ---------- */
+
+#tab-profile h1,
+#tab-profile .card-header h3,
+#tab-profile #profile-name,
+#tab-profile .dda-profile-avatar {
+  font-family: var(--dm-font);
+}
+#tab-profile h1 { font-weight: 800; letter-spacing: -0.01em; }
+
+#tab-profile .card {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+#tab-profile .card-header {
+  border-bottom: 2px solid var(--dm-line);
+}
+#tab-profile .card-header h3 {
+  font-weight: 700;
+  color: var(--dm-ink);
+}
+
+/* Narrower, fixed-width profile summary column like the mockup */
+#tab-profile .dda-admin-2col-roles {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+#tab-profile .dda-profile-avatar {
+  border-radius: 0;
+  background: var(--dm-ink);
+  font-weight: 800;
+}
+#tab-profile .dda-profile-badge {
+  border-radius: 0;
+  background: var(--dm-accent-100);
+  color: var(--dm-accent);
+  font-weight: 700;
+}
+#tab-profile .dda-profile-meta {
+  border-top: 1px solid var(--dm-line);
+}
+#tab-profile .dda-profile-meta-label { color: var(--dm-ink-muted); }
+#tab-profile .dda-profile-meta-value { color: var(--dm-ink); }
+
+/* Buttons — flat accent instead of the app-wide purple gradient */
+#tab-profile .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#tab-profile .btn-primary { background: var(--dm-accent); }
+#tab-profile .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+
+/* Flat inputs/selects inside both forms */
+#tab-profile input[type="text"],
+#tab-profile input[type="email"],
+#tab-profile input[type="tel"],
+#tab-profile input[type="password"],
+#tab-profile select {
+  border-radius: 0;
+  background: var(--dm-surface);
+  border-color: var(--dm-line);
+}
+#tab-profile .dda-phone-input {
+  border-radius: 0;
+  border-color: var(--dm-line);
+}
+
+#tab-profile .alert { border-radius: 0; }

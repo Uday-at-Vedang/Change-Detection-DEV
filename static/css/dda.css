@@ -1,4 +1,23 @@
 /* Vedangsoft dev UI — extends style.css */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap');
+
+/* Modernist design tokens (from the Claude Design redesign) — shared by
+   every screen that opts into the new look via its own scoped block below.
+   Global/additive: these names don't collide with anything style.css
+   already defines, so declaring them at :root can't affect pages that
+   don't reference them. */
+:root {
+  --dm-bg: #f3f2f2;
+  --dm-surface: #ffffff;
+  --dm-line: rgba(32, 30, 29, 0.14);
+  --dm-ink: #201e1d;
+  --dm-ink-muted: #7d7979;
+  --dm-ink-dim: #9b9797;
+  --dm-accent: #ec3013;
+  --dm-accent-hover: #dd2b0f;
+  --dm-accent-100: #fff2ef;
+  --dm-font: 'Archivo', system-ui, sans-serif;
+}
 
 .dda-app {
   max-width: 1600px;
@@ -1776,7 +1795,7 @@ a.stat-box.dda-dash-kpi:nth-child(6n+6) { border-top-color: var(--grad-end, var(
 .dda-class-seg { display: block; height: 100%; }
 .dda-class-confirmed { background: #16a34a; }
 .dda-class-fp { background: #dc2626; }
-.dda-class-submitted { background: #6358d4; }
+.dda-class-submitted { background: #2563eb; }
 .dda-class-unclassified { background: #ca8a04; }
 .dda-class-bar-caption {
   display: block;
@@ -1822,6 +1841,156 @@ a.stat-box.dda-dash-kpi:nth-child(6n+6) { border-top-color: var(--grad-end, var(
   .dda-dash-latest-row { flex-direction: column; }
   .dda-dash-latest-thumb { width: 100%; height: 160px; }
 }
+
+/* ============================================================
+   Modernist dashboard theme (from the Claude Design redesign).
+   Scoped entirely to #tab-home so the rest of the app keeps its
+   existing look until/unless it gets redesigned too: flat
+   surfaces, hairline dividers, sharp corners, one accent color,
+   Archivo for headings and numbers. Tokens (--dm-*) are shared,
+   declared once at :root above.
+   ============================================================ */
+
+#tab-home h1,
+#tab-home .dda-dash-section-title,
+#tab-home .card-title,
+#tab-home .dda-dash-chart-box h4,
+#tab-home .dda-dash-ranked-count,
+#tab-home .stat-box .value {
+  font-family: var(--dm-font);
+}
+#tab-home h1#dda-home-greeting { font-weight: 800; letter-spacing: -0.01em; }
+
+#tab-home .dda-dash-section-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  border-bottom: 2px solid var(--dm-line);
+  padding-bottom: 0.6rem;
+  color: var(--dm-ink);
+}
+
+/* Flat, hairline-bordered surfaces instead of soft shadow cards */
+#tab-home .card,
+#tab-home .dda-dash-chart-box,
+#tab-home .dda-dash-filter-bar,
+#tab-home .dda-dash-compare-grid {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+#tab-home .dda-dash-chart-box h4 { font-weight: 700; color: var(--dm-ink); }
+#tab-home .dda-dash-filter-bar-label { color: var(--dm-ink-muted); }
+#tab-home .dda-dash-latest-thumb { border-radius: 0; }
+#tab-home .dda-dash-summary { background: var(--dm-accent-100); border-left-color: var(--dm-accent); border-radius: 0; }
+
+/* Buttons — flat accent instead of the app-wide purple gradient,
+   scoped to this page only so other pages are untouched. */
+#tab-home .btn { border-radius: 0; font-family: var(--dm-font); font-weight: 700; }
+#tab-home .btn-primary { background: var(--dm-accent); }
+#tab-home .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+#tab-home .btn-secondary { background: transparent; border-color: var(--dm-line); color: var(--dm-ink); }
+#tab-home .btn-secondary:hover { background: var(--dm-bg); border-color: var(--dm-line); }
+#tab-home .btn-ghost { color: var(--dm-accent); }
+#tab-home .btn-ghost:hover { background: var(--dm-accent-100); color: var(--dm-accent-hover); }
+
+/* KPI grid — one shared hairline grid instead of individually
+   bordered/shadowed tiles, each cell a plain flat surface. */
+#tab-home .dda-dash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--dm-line);
+  border: 1px solid var(--dm-line);
+}
+#tab-home a.stat-box.dda-dash-kpi {
+  background: var(--dm-surface);
+  border: none !important;
+  border-radius: 0;
+  padding: 0.9rem 0.75rem;
+  text-align: left;
+  align-items: flex-start;
+  transform: none !important;
+  box-shadow: none !important;
+}
+#tab-home a.stat-box.dda-dash-kpi:hover { background: var(--dm-accent-100); }
+#tab-home .stat-box .value {
+  font-weight: 800;
+  font-size: 1.3rem;
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: var(--dm-ink);
+  color: var(--dm-ink);
+  white-space: normal;
+}
+#tab-home .stat-box .label { color: var(--dm-ink-muted); font-weight: 600; }
+@media (max-width: 900px) { #tab-home .dda-dash-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { #tab-home .dda-dash-kpi-grid { grid-template-columns: 1fr; } }
+
+/* Tables — uppercase hairline headers, no card wrapper needed per row */
+#tab-home .dda-reports-table th {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  border-bottom: 2px solid var(--dm-line);
+}
+#tab-home .dda-reports-table td { border-bottom: 1px solid var(--dm-line); }
+#tab-home .dda-reports-table tbody tr:hover { background: var(--dm-bg); }
+#tab-home .dda-dash-row-active { background: var(--dm-accent-100) !important; }
+
+#tab-home .dda-changetype-pill { border-radius: 2px; }
+
+/* Live detection-job banner — real job data (zone/village/method/
+   progress) from GET /api/dda/jobs, not a mockup placeholder. */
+.dda-dash-live-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1.25rem;
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-left: 3px solid var(--dm-accent);
+}
+.dda-dash-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dm-accent);
+  flex-shrink: 0;
+  animation: dda-dash-pulse 1.4s infinite;
+}
+@keyframes dda-dash-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.dda-dash-live-info { flex: 1; min-width: 220px; }
+.dda-dash-live-title { font-weight: 700; font-size: 0.9rem; color: var(--dm-ink); }
+.dda-dash-live-meta { font-size: 0.78rem; color: var(--dm-ink-muted); margin-top: 0.15rem; }
+.dda-dash-live-bar { width: 180px; height: 6px; background: var(--dm-line); flex-shrink: 0; }
+.dda-dash-live-bar-fill { height: 100%; background: var(--dm-accent); transition: width 0.6s ease; }
+.dda-dash-live-queued {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--dm-accent);
+  color: var(--dm-accent);
+  padding: 0.2rem 0.5rem;
+  white-space: nowrap;
+}
+@media (max-width: 640px) { .dda-dash-live-bar { width: 100%; } }
+
+/* Ranked change-types list — replaces a second duplicate chart with
+   the same totals the stacked "Change Types by Zone" bar already shows. */
+.dda-dash-ranked-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.dda-dash-ranked-row { display: flex; align-items: center; gap: 0.65rem; font-size: 0.85rem; }
+.dda-dash-ranked-swatch { width: 10px; height: 10px; flex-shrink: 0; }
+.dda-dash-ranked-label { flex: 1; color: var(--dm-ink); }
+.dda-dash-ranked-count { font-weight: 700; }
+.dda-dash-ranked-hint { font-size: 0.72rem; color: var(--dm-ink-dim); margin: -0.4rem 0 0.65rem; }
+
 /* Styled calendar date picker */
 .dda-datewrap {
   position: relative;

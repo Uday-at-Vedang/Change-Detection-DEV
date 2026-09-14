@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=60" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=61" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-sidebar.css?v=1" />
 </head>
 <body>
   <div class="app dda-app">
@@ -42,6 +43,8 @@
           </div>
         </div>
 
+        <div id="dda-dash-live-banner" class="dda-dash-live-banner hidden"></div>
+
         <div id="dda-dash-empty" class="card hidden">
           <div class="card-header"><h3>No detections yet</h3></div>
           <p class="sub dim">Run your first comparison to start populating the dashboard with detection statistics, region/village breakdowns, and reports.</p>
@@ -72,7 +75,7 @@
             <div class="card">
               <div class="dda-dash-chart-grid">
                 <div class="dda-dash-chart-box">
-                  <h4>Detections by Region</h4>
+                  <h4>Detections by Zone</h4>
                   <canvas id="dda-chart-regions" height="220"></canvas>
                 </div>
                 <div class="dda-dash-chart-box">
@@ -80,7 +83,7 @@
                   <canvas id="dda-chart-roles" height="220"></canvas>
                 </div>
                 <div class="dda-dash-chart-box">
-                  <h4>Detections by Village / Location</h4>
+                  <h4>Detections by Village</h4>
                   <canvas id="dda-chart-villages" height="220"></canvas>
                 </div>
                 <div class="dda-dash-chart-box">
@@ -91,8 +94,13 @@
                   <h4>Detected vs Unclassified Changes</h4>
                   <canvas id="dda-chart-status" height="220"></canvas>
                 </div>
+                <div class="dda-dash-chart-box">
+                  <h4>Change Types — Ranked</h4>
+                  <p class="dim dda-dash-ranked-hint">Same totals as the stacked chart below, ranked instead of charted twice.</p>
+                  <div id="dda-dash-ranked-changetypes"><p class="dim">Loading…</p></div>
+                </div>
                 <div class="dda-dash-chart-box dda-dash-chart-box-wide">
-                  <h4>Change Types by Region</h4>
+                  <h4>Change Types by Zone</h4>
                   <canvas id="dda-chart-change-types-region" height="220"></canvas>
                 </div>
               </div>
@@ -110,10 +118,10 @@
 
             <div class="card">
               <div class="card-header">
-                <h3>Region-wise Analysis</h3>
-                <span class="dim dda-filter-meta">Click a region to filter villages below</span>
+                <h3>Zone-wise Analysis</h3>
+                <span class="dim dda-filter-meta">Click a zone to filter villages below</span>
               </div>
-              <div id="dda-dash-regions"><p class="dim">Loading regions…</p></div>
+              <div id="dda-dash-regions"><p class="dim">Loading zones…</p></div>
             </div>
 
             <div class="card">
@@ -121,7 +129,7 @@
                 <h3>Village-wise Analysis</h3>
                 <div class="dda-reports-toolbar">
                   <span id="dda-dash-village-filter-label" class="dim dda-filter-meta hidden"></span>
-                  <button type="button" class="btn btn-ghost btn-sm hidden" id="btn-dash-village-clear">Show all regions</button>
+                  <button type="button" class="btn btn-ghost btn-sm hidden" id="btn-dash-village-clear">Show all zones</button>
                 </div>
               </div>
               <p class="sub dim">Click a village to view its detection history and compare runs.</p>
@@ -154,7 +162,7 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-header"><h3>Images by Region &amp; Village</h3></div>
+            <div class="card-header"><h3>Images by Zone &amp; Village</h3></div>
             <p class="sub dim">Zone/village comes from each image's own tag in the Image Library, not from detection history.</p>
             <div id="dda-dash-lib-locations"><p class="dim">Loading…</p></div>
           </div>
@@ -168,6 +176,6 @@
   <script src="/static/js/dda/shared.js?v=8"></script>
   <script src="/static/js/dda/app.js?v=31"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
-  <script src="/static/js/dda/home.js?v=15"></script>
+  <script src="/static/js/dda/home.js?v=16"></script>
 </body>
 </html>

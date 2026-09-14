@@ -196,18 +196,40 @@ function renderDashKpis(summary) {
   const el = document.getElementById('dda-dash-kpis');
   if (!el) return;
   const tiles = [
-    ['Total Detection Runs', summary.totalRuns],
-    ['Total Detected Changes', summary.totalDetectedChanges],
-    ['Total Unclassified', summary.totalUnclassified],
+    ['Detection Runs', summary.totalRuns],
+    ['Regions Detected', summary.totalDetectedChanges],
+    ['Confirmed', summary.totalConfirmed],
+    ['False Positive', summary.totalFalsePositive],
+    ['Submitted', summary.totalSubmitted],
     ['Avg Change %', dashPct(summary.avgChangePercentage)],
-    ['Regions Covered', summary.totalRegions],
-    ['Villages Covered', summary.totalVillages],
+    ['Zones Covered', `${summary.totalRegions}${summary.zonesTotal ? `/${summary.zonesTotal}` : ''}`],
+    ['Villages Covered', `${summary.totalVillages}${summary.villagesTotal ? `/${summary.villagesTotal}` : ''}`],
   ];
   el.innerHTML = tiles.map(([label, value]) => `
     <a class="stat-box dda-dash-kpi" href="/reports" title="Open Reports">
       <span class="value">${escapeHtml(String(value ?? '—'))}</span>
       <span class="label">${escapeHtml(label)}</span>
     </a>`).join('');
+}
+
+/** Ranked list of system-wide change-type totals — same numbers as the
+ * "Change Types by Zone" stacked chart, just ranked instead of charted a
+ * second time (a duplicate doughnut used to sit here and was dropped). */
+function renderRankedChangeTypes(changeTypes) {
+  const el = document.getElementById('dda-dash-ranked-changetypes');
+  if (!el) return;
+  const entries = Object.entries(changeTypes || {});
+  if (!entries.length) {
+    el.innerHTML = '<p class="dim">No classified changes yet.</p>';
+    return;
+  }
+  entries.sort((a, b) => b[1] - a[1]);
+  el.innerHTML = `<div class="dda-dash-ranked-list">${entries.map(([type, count]) => `
+    <div class="dda-dash-ranked-row">
+      <span class="dda-dash-ranked-swatch" style="background:${CHANGE_TYPE_COLORS[type] || '#64748b'}"></span>
+      <span class="dda-dash-ranked-label">${escapeHtml(type)}</span>
+      <span class="dda-dash-ranked-count">${count}</span>
+    </div>`).join('')}</div>`;
 }
 
 function renderDashLatest(run) {
@@ -261,13 +283,14 @@ async function loadDashboardSummary() {
     content?.classList.remove('hidden');
     renderDashKpis(summary);
     renderDashLatest(summary.latestRun);
+    renderRankedChangeTypes(summary.changeTypes);
     renderDashChart('dda-chart-status', {
       type: 'doughnut',
       data: {
         labels: ['Confirmed', 'False Positive', 'Submitted', 'Unclassified'],
         datasets: [{
           data: [summary.totalConfirmed, summary.totalFalsePositive, summary.totalSubmitted, summary.totalUnclassified],
-          backgroundColor: ['#16a34a', '#dc2626', '#6358d4', '#ca8a04'],
+          backgroundColor: ['#16a34a', '#dc2626', '#2563eb', '#ca8a04'],
         }],
       },
       options: {
@@ -343,7 +366,7 @@ async function loadDashboardRoles() {
       type: 'bar',
       data: {
         labels: roles.map((r) => roleLabel(r.role)),
-        datasets: [{ label: 'Detections', data: roles.map((r) => r.runsCount), backgroundColor: '#16a34a' }],
+        datasets: [{ label: 'Detections', data: roles.map((r) => r.runsCount), backgroundColor: '#2d2b2b' }],
       },
       options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
@@ -393,7 +416,7 @@ function renderDashRegionsTable(regions) {
     <table class="dda-reports-table">
       <thead>
         <tr>
-          <th>Region</th>
+          <th>Zone</th>
           <th>Runs</th>
           <th>Images</th>
           <th>Detected Changes</th>
@@ -434,7 +457,7 @@ function selectDashRegion(zone) {
   const label = document.getElementById('dda-dash-village-filter-label');
   const clearBtn = document.getElementById('btn-dash-village-clear');
   if (dashSelectedZone) {
-    label.textContent = `Filtered to region: ${dashSelectedZone}`;
+    label.textContent = `Filtered to zone: ${dashSelectedZone}`;
     label.classList.remove('hidden');
     clearBtn.classList.remove('hidden');
   } else {
@@ -452,7 +475,7 @@ async function loadDashboardRegions() {
       type: 'bar',
       data: {
         labels: dashRegionsCache.map((r) => r.zone),
-        datasets: [{ label: 'Detections', data: dashRegionsCache.map((r) => r.runsCount), backgroundColor: '#7a6aed' }],
+        datasets: [{ label: 'Detections', data: dashRegionsCache.map((r) => r.runsCount), backgroundColor: '#ec3013' }],
       },
       options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
       onClick: (i) => selectDashRegion(dashRegionsCache[i]?.zone),
@@ -476,7 +499,7 @@ function renderDashVillagesTable(villages) {
     <table class="dda-reports-table">
       <thead>
         <tr>
-          <th>Region</th>
+          <th>Zone</th>
           <th>Village</th>
           <th>Runs</th>
           <th>Images</th>
@@ -541,7 +564,7 @@ async function loadDashboardVillages(zone) {
       type: 'bar',
       data: {
         labels: top.map((v) => v.village),
-        datasets: [{ label: 'Detections', data: top.map((v) => v.runsCount), backgroundColor: '#6358d4' }],
+        datasets: [{ label: 'Detections', data: top.map((v) => v.runsCount), backgroundColor: '#e15b47' }],
       },
       options: {
         indexAxis: 'y',
@@ -636,12 +659,12 @@ function renderDashLocation(data) {
           {
             label: 'Previous',
             data: [data.previous.confirmed, data.previous.falsePositive, data.previous.submitted, data.previous.unclassified],
-            backgroundColor: '#c7c3f7',
+            backgroundColor: '#d7d3d3',
           },
           {
             label: 'Recent',
             data: [data.latest.confirmed, data.latest.falsePositive, data.latest.submitted, data.latest.unclassified],
-            backgroundColor: '#7a6aed',
+            backgroundColor: '#ec3013',
           },
         ],
       },
@@ -677,8 +700,8 @@ async function loadDashboardTrend() {
         datasets: [{
           label: 'Detection runs',
           data: buckets.map((b) => b.runsCount),
-          borderColor: '#7a6aed',
-          backgroundColor: 'rgba(122,106,237,0.15)',
+          borderColor: '#ec3013',
+          backgroundColor: 'rgba(236,48,19,0.12)',
           tension: 0.3,
           fill: true,
         }],
@@ -698,6 +721,66 @@ async function loadDashboardTrend() {
     });
   } catch (_) {
     // Chart stays absent — non-critical widget, other sections still work.
+  }
+}
+
+let dashLiveJobTimer = null;
+
+function dashElapsedLabel(startedAtIso) {
+  if (!startedAtIso) return '';
+  const started = new Date(startedAtIso).getTime();
+  if (Number.isNaN(started)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - started) / 1000));
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `started ${m}m ${s}s ago`;
+}
+
+/** Banner for a detection job that's actually running right now — real
+ * progress/stage/elapsed time from GET /api/dda/jobs, not a placeholder.
+ * Polls every 15s while a job is live so it doesn't look stuck, and stops
+ * polling itself once nothing is running. */
+function renderDashLiveBanner(jobs) {
+  const el = document.getElementById('dda-dash-live-banner');
+  if (!el) return;
+  const running = jobs.filter((j) => j.status === 'running');
+  const queued = jobs.filter((j) => j.status === 'queued');
+  if (!running.length) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    if (dashLiveJobTimer) {
+      clearInterval(dashLiveJobTimer);
+      dashLiveJobTimer = null;
+    }
+    return;
+  }
+  const job = running[0];
+  const loc = [job.zone, job.village].filter(Boolean).join(' · ');
+  const pct = Math.max(0, Math.min(100, Math.round(job.progressPct || 0)));
+  const meta = [job.method, job.progressStage, dashElapsedLabel(job.startedAt)].filter(Boolean).join(' · ');
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <span class="dda-dash-live-dot"></span>
+    <div class="dda-dash-live-info">
+      <div class="dda-dash-live-title">Detection job running${loc ? ` — ${escapeHtml(loc)}` : ''}</div>
+      <div class="dda-dash-live-meta">${escapeHtml(meta)}</div>
+    </div>
+    <div class="dda-dash-live-bar"><div class="dda-dash-live-bar-fill" style="width:${pct}%"></div></div>
+    ${queued.length ? `<span class="dda-dash-live-queued">${queued.length} queued</span>` : ''}
+    <a class="btn btn-ghost btn-sm" href="/detect">View progress</a>`;
+
+  if (!dashLiveJobTimer) {
+    dashLiveJobTimer = setInterval(loadDashboardLiveJob, 15000);
+  }
+}
+
+async function loadDashboardLiveJob() {
+  try {
+    const data = await ddaApi('GET', '/api/dda/jobs?limit=20');
+    const jobs = (data.jobs || []).filter((j) => j.status === 'running' || j.status === 'queued');
+    renderDashLiveBanner(jobs);
+  } catch (_) {
+    // Non-critical widget — leave banner as it was on a transient failure.
   }
 }
 
@@ -734,7 +817,7 @@ async function loadDashboardLibraryStats() {
         labels: lib.byFormat.map((f) => f.format),
         datasets: [{
           data: lib.byFormat.map((f) => f.count),
-          backgroundColor: ['#7a6aed', '#16a34a', '#ca8a04', '#2563eb', '#dc2626', '#64748b'],
+          backgroundColor: ['#2d2b2b', '#ec3013', '#d7d3d3', '#2563eb', '#16a34a', '#64748b'],
         }],
       },
       options: { responsive: true, plugins: { legend: { position: 'bottom' } } },
@@ -750,11 +833,11 @@ async function loadDashboardLibraryStats() {
       locEl.innerHTML = `
         <div class="dda-dash-overview-grid">
           <table class="dda-reports-table">
-            <thead><tr><th>Region</th><th>Images</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Images</th></tr></thead>
             <tbody>${zoneRows}</tbody>
           </table>
           <table class="dda-reports-table">
-            <thead><tr><th>Region</th><th>Village</th><th>Images</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Village</th><th>Images</th></tr></thead>
             <tbody>${villageRows}</tbody>
           </table>
         </div>
@@ -778,6 +861,7 @@ async function loadDashboard() {
   // have images even with zero runs yet, so this isn't gated behind
   // summary.totalRuns like the sections below it.
   loadDashboardLibraryStats();
+  loadDashboardLiveJob();
 
   const summary = await loadDashboardSummary();
   if (!summary || !summary.totalRuns) {

@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vedangsoft Detection Report</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=34" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=61" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-reports.css?v=2" />
 </head>
-<body>
+<body id="page-report-detail">
   <div class="app dda-app dda-report-page">
     <header class="dda-header dda-report-header">
       <div class="app-brand">
@@ -27,10 +28,21 @@
         <h1 id="report-title"></h1>
         <p class="dim" id="report-meta"></p>
         <div class="dda-report-stats" id="report-stats"></div>
+        <p class="dim dda-report-review-summary" id="report-review-summary"></p>
+        <div class="dda-report-actions-row">
+          <a class="btn btn-secondary btn-sm" id="report-csv-btn" href="#" download>Export CSV</a>
+          <a class="btn btn-secondary btn-sm" id="report-csv-confirmed-btn" href="#" download>Export confirmed</a>
+          <a class="btn btn-secondary btn-sm" id="report-geojson-btn" href="#" download>Export GeoJSON</a>
+          <button type="button" class="btn btn-primary btn-sm" id="report-submit-btn" disabled data-requires-permission="reports:edit" data-permission-mode="disable" data-permission-denied-title="Your role doesn't have permission to submit reports.">Submit confirmed</button>
+        </div>
+        <p class="dim" id="report-submit-msg"></p>
       </div>
       <div class="card dda-report-overlay-wrap">
         <h3>Change overlay</h3>
-        <img id="report-overlay" alt="Change overlay" class="dda-report-overlay" />
+        <div class="dda-report-overlay-frame">
+          <span class="dda-report-overlay-chip">Changes</span>
+          <img id="report-overlay" alt="Change overlay" class="dda-report-overlay" />
+        </div>
       </div>
       <div class="card">
         <h3>Detected regions</h3>
@@ -64,6 +76,6 @@
   </div>
   <script src="/static/js/dda/shared.js?v=8"></script>
   <script src="/static/js/dda/app.js?v=31"></script>
-  <script src="/static/js/dda/report_page.js?v=5"></script>
+  <script src="/static/js/dda/report_page.js?v=6"></script>
 </body>
 </html>

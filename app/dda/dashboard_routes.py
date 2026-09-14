@@ -300,6 +300,10 @@ def dashboard_summary(
     zones = {r["zone"] for r in rows}
     villages = {(r["zone"], r["village"]) for r in rows}
 
+    from .models import DdaVillage, DdaZone
+    zones_total = db.query(DdaZone).count()
+    villages_total = db.query(DdaVillage).count()
+
     return {
         "totalRuns": len(rows),
         "totalDetectedChanges": total_detected,
@@ -310,6 +314,8 @@ def dashboard_summary(
         "avgChangePercentage": round(sum(pct_values) / len(pct_values), 2) if pct_values else None,
         "totalRegions": len(zones),
         "totalVillages": len(villages),
+        "zonesTotal": zones_total,
+        "villagesTotal": villages_total,
         "changeTypes": _merge_change_type_counts(rows),
         "jobsQueued": db.query(DetectionJob).filter(DetectionJob.status == "queued", DetectionJob.created_by == user.id).count(),
         "jobsRunning": db.query(DetectionJob).filter(DetectionJob.status == "running", DetectionJob.created_by == user.id).count(),

@@ -1,0 +1,195 @@
+/* ============================================================
+   Modernist auth pages theme (from the Claude Design redesign).
+   Scoped entirely to #page-login / #page-forgot-password /
+   #page-reset-password so no other page is affected. Reuses the
+   shared --dm-* tokens declared once at :root in dda.css: flat
+   surfaces, hairline dividers, sharp corners, one accent color,
+   Archivo for headings. Pure visual/layout restyle — no markup
+   behavior, ids or JS hooks are changed by this file.
+   ============================================================ */
+
+#page-login,
+#page-forgot-password,
+#page-reset-password {
+  background: var(--dm-bg);
+}
+
+/* --- Shell: form panel centered in the full viewport (no side hero) --- */
+#page-login .dm-auth-shell,
+#page-forgot-password .dm-auth-shell,
+#page-reset-password .dm-auth-shell {
+  min-height: 100vh;
+}
+
+/* --- Form panel --- */
+#page-login .auth-page,
+#page-forgot-password .auth-page,
+#page-reset-password .auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--dm-bg);
+}
+
+/* Brand mark inside the card — the only branding on the page now that
+   there's no side hero panel. */
+#page-login .auth-brand,
+#page-forgot-password .auth-brand,
+#page-reset-password .auth-brand {
+  display: flex;
+  color: var(--dm-ink);
+}
+
+/* --- Flat card surface, sharp corners, no shadow --- */
+#page-login .card,
+#page-forgot-password .card,
+#page-reset-password .card {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 2rem;
+}
+#page-login .card-header,
+#page-forgot-password .card-header,
+#page-reset-password .card-header {
+  border-bottom-color: var(--dm-line);
+}
+#page-login .card-header h3,
+#page-forgot-password .card-header h3,
+#page-reset-password .card-header h3 {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  color: var(--dm-ink);
+}
+
+#page-login .auth-sub,
+#page-forgot-password .auth-sub,
+#page-reset-password .auth-sub {
+  color: var(--dm-ink-muted);
+}
+
+/* --- Inputs: sharp corners, hairline border --- */
+#page-login input[type="email"],
+#page-login input[type="password"],
+#page-login input[type="text"],
+#page-login input[type="tel"],
+#page-login select,
+#page-forgot-password input[type="email"],
+#page-reset-password input[type="password"] {
+  background: var(--dm-bg);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  color: var(--dm-ink);
+}
+#page-login input:focus,
+#page-login select:focus,
+#page-forgot-password input:focus,
+#page-reset-password input:focus {
+  border-color: var(--dm-accent);
+  box-shadow: 0 0 0 3px var(--dm-accent-100);
+}
+#page-login .form-group label,
+#page-forgot-password .form-group label,
+#page-reset-password .form-group label {
+  color: var(--dm-ink-muted);
+}
+#page-login .field-hint,
+#page-reset-password .field-hint {
+  color: var(--dm-ink-dim);
+}
+
+/* --- Phone input (country code + local number) --- */
+#page-login .dda-phone-input {
+  background: var(--dm-bg);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+}
+#page-login .dda-phone-input:focus-within {
+  border-color: var(--dm-accent);
+  box-shadow: 0 0 0 3px var(--dm-accent-100);
+}
+#page-login .dda-phone-input .dda-country-select {
+  border-right-color: var(--dm-line);
+}
+
+/* --- Sign-in method tabs (Password / Email OTP) --- */
+#page-login .dda-auth-tabs {
+  background: var(--dm-bg);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+}
+#page-login .dda-auth-tab.is-active {
+  background: var(--dm-surface);
+  color: var(--dm-ink);
+  box-shadow: none;
+  border: 1px solid var(--dm-line);
+}
+
+/* --- OTP code input --- */
+#page-login .dda-otp-input {
+  background: var(--dm-bg);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  color: var(--dm-ink);
+}
+
+/* --- Checkbox accent --- */
+#page-login .checkbox-group input[type="checkbox"] {
+  accent-color: var(--dm-accent);
+}
+
+/* --- Buttons: flat accent instead of the app-wide purple gradient --- */
+#page-login .btn,
+#page-forgot-password .btn,
+#page-reset-password .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#page-login .btn-primary,
+#page-forgot-password .btn-primary,
+#page-reset-password .btn-primary {
+  background: var(--dm-accent);
+}
+#page-login .btn-primary:hover,
+#page-forgot-password .btn-primary:hover,
+#page-reset-password .btn-primary:hover {
+  background: var(--dm-accent-hover);
+  filter: none;
+  box-shadow: none;
+}
+#page-login .btn-secondary,
+#page-forgot-password .btn-secondary,
+#page-reset-password .btn-secondary {
+  background: transparent;
+  border: 1px solid var(--dm-line);
+  color: var(--dm-ink);
+  border-radius: 0;
+}
+#page-login .btn-secondary:hover,
+#page-forgot-password .btn-secondary:hover,
+#page-reset-password .btn-secondary:hover {
+  background: var(--dm-bg);
+  border-color: var(--dm-line);
+}
+
+/* --- Links --- */
+#page-login .auth-forgot-link,
+#page-login .auth-toggle a,
+#page-forgot-password .auth-toggle a,
+#page-reset-password .auth-toggle a {
+  color: var(--dm-accent);
+}
+
+/* --- Alerts: sharp corners --- */
+#page-login .alert,
+#page-forgot-password .alert,
+#page-reset-password .alert {
+  border-radius: 0;
+}
+

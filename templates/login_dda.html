@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign In — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=47" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=61" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-auth.css?v=1" />
   <style>
     .auth-page {
       min-height: 100vh;
@@ -42,8 +43,9 @@
     }
   </style>
 </head>
-<body>
-  <div class="auth-page">
+<body id="page-login">
+  <div class="dm-auth-shell">
+    <div class="auth-page">
     <div class="auth-card">
       <div class="auth-brand">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
@@ -127,6 +129,7 @@
           <span id="toggle-to-login" class="hidden">Already have an account? <a id="show-login">Sign in</a></span>
         </div>
       </div>
+    </div>
     </div>
   </div>
 

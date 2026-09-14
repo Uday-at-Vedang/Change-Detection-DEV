@@ -11,6 +11,16 @@ from ..models import DetectionRun
 from .detect_service import _isoformat_ist
 
 
+def _detection_max_side() -> Optional[int]:
+    """Detection resolution used across the app (see get_load_max_side) — a
+    static config value, not per-run, but useful context on a report."""
+    try:
+        from ..detection_config import get_load_max_side
+        return get_load_max_side()
+    except Exception:
+        return None
+
+
 def _safe_filename(title: str, run_id: int) -> str:
     base = "".join(c if c.isalnum() or c in " -_" else "_" for c in (title or "report"))
     base = base.strip().replace(" ", "_")[:60] or "report"
@@ -33,6 +43,7 @@ def build_report_dict(run: DetectionRun, *, include_overlay_b64: bool = False, r
             "changePercentage": run.change_percentage,
             "detectionSensitivity": run.detection_sensitivity,
             "minRegionArea": run.min_region_area,
+            "detectionMaxSide": _detection_max_side(),
         },
         "regions": regions,
         "regionsCount": run.regions_count,

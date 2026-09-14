@@ -1,0 +1,269 @@
+/* ============================================================
+   Modernist Audit Log & Exception Log theme (Claude Design reskin).
+   Companion to the "Modernist dashboard theme" block in dda.css
+   (search that file for #tab-home) — same visual language, same
+   shared --dm-* tokens declared once at :root in dda.css. Purely
+   visual: no ids/classes added or removed, no JS behavior changed.
+
+   Scoped to this page's own containers: #tab-audit-log and
+   #tab-exception-log. The one exception is the exception-detail
+   modal (#exception-detail-modal), which the base template renders
+   as a sibling of .dda-main-col (outside #tab-exception-log) so it
+   can overlay the whole viewport — it is still scoped, just under
+   its own page-unique id instead of the tab container.
+   ============================================================ */
+
+/* --- Headings / hero --- */
+#tab-audit-log h1,
+#tab-exception-log h1,
+#tab-exception-log .card-header h3,
+#tab-audit-log .card-header h3 {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--dm-ink);
+}
+#tab-audit-log .sub,
+#tab-exception-log .sub {
+  color: var(--dm-ink-muted);
+}
+#tab-audit-log .dda-filter-meta,
+#tab-exception-log .dda-filter-meta {
+  color: var(--dm-ink-dim);
+  font-family: var(--dm-font);
+}
+
+/* --- Flat surfaces instead of soft shadow cards --- */
+#tab-audit-log .card,
+#tab-exception-log .card,
+#exception-detail-modal .card {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+#tab-audit-log .card-header,
+#tab-exception-log .card-header,
+#exception-detail-modal .card-header {
+  border-bottom: 2px solid var(--dm-line);
+}
+#tab-audit-log .dda-filter-bar,
+#tab-exception-log .dda-filter-bar {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+}
+#tab-audit-log .dda-filter-field,
+#tab-exception-log .dda-filter-field {
+  font-family: var(--dm-font);
+  color: var(--dm-ink-muted);
+}
+
+/* --- Buttons — flat accent instead of the app-wide purple gradient --- */
+#tab-audit-log .btn,
+#tab-exception-log .btn,
+#exception-detail-modal .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#tab-audit-log .btn-primary,
+#tab-exception-log .btn-primary {
+  background: var(--dm-accent);
+}
+#tab-audit-log .btn-primary:hover,
+#tab-exception-log .btn-primary:hover {
+  background: var(--dm-accent-hover);
+  filter: none;
+  box-shadow: none;
+}
+#tab-audit-log .btn-secondary,
+#tab-exception-log .btn-secondary,
+#exception-detail-modal .btn-secondary {
+  background: transparent;
+  border-color: var(--dm-line);
+  color: var(--dm-ink);
+}
+#tab-audit-log .btn-secondary:hover,
+#tab-exception-log .btn-secondary:hover,
+#exception-detail-modal .btn-secondary:hover {
+  background: var(--dm-bg);
+  border-color: var(--dm-line);
+}
+#tab-audit-log .btn-ghost,
+#tab-exception-log .btn-ghost {
+  color: var(--dm-accent);
+}
+#tab-audit-log .btn-ghost:hover,
+#tab-exception-log .btn-ghost:hover {
+  background: var(--dm-accent-100);
+  color: var(--dm-accent-hover);
+}
+
+/* --- Filter inputs: selects, search box, date trigger --- */
+#tab-audit-log .dda-filter-field select,
+#tab-audit-log .dda-filter-field .dda-search,
+#tab-audit-log input.dda-date-input:not(.dda-date-native),
+#tab-audit-log .dda-date-trigger,
+#tab-exception-log .dda-filter-field select,
+#tab-exception-log .dda-filter-field .dda-search,
+#tab-exception-log input.dda-date-input:not(.dda-date-native),
+#tab-exception-log .dda-date-trigger {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-surface);
+  color: var(--dm-ink);
+}
+#tab-exception-log .dda-check {
+  font-family: var(--dm-font);
+  color: var(--dm-ink-muted);
+}
+#tab-exception-log .dda-check input[type="checkbox"] {
+  accent-color: var(--dm-accent);
+}
+
+/* --- Tables — uppercase hairline headers, flat row dividers --- */
+#tab-audit-log .dda-logs-table th,
+#tab-exception-log .dda-logs-table th {
+  font-family: var(--dm-font);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  background: var(--dm-surface);
+  border-bottom: 2px solid var(--dm-line);
+}
+#tab-audit-log .dda-logs-table td,
+#tab-exception-log .dda-logs-table td {
+  border-bottom: 1px solid var(--dm-line);
+  color: var(--dm-ink);
+}
+#tab-audit-log .dda-logs-table tbody tr:hover,
+#tab-exception-log .dda-logs-table tbody tr:hover {
+  background: var(--dm-bg);
+}
+#tab-exception-log .dda-log-level {
+  border-radius: 2px;
+  font-family: var(--dm-font);
+}
+
+/* --- Badges / status tags — sharp corners instead of pills --- */
+#tab-audit-log .dda-badge,
+#tab-exception-log .dda-badge,
+#tab-audit-log .dda-action-badge,
+#tab-exception-log .dda-action-badge {
+  border-radius: 2px;
+  font-family: var(--dm-font);
+}
+
+/* --- Pagination --- */
+#tab-audit-log .pagination button,
+#tab-exception-log .pagination button {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-surface);
+  color: var(--dm-ink-muted);
+  font-family: var(--dm-font);
+}
+#tab-audit-log .pagination button:hover:not(:disabled),
+#tab-exception-log .pagination button:hover:not(:disabled) {
+  background: var(--dm-accent-100);
+  border-color: var(--dm-accent);
+  color: var(--dm-ink);
+}
+#tab-audit-log .pagination button.active,
+#tab-exception-log .pagination button.active {
+  background: var(--dm-accent);
+  border-color: var(--dm-accent);
+  color: #fff;
+  font-weight: 700;
+}
+#tab-audit-log .pagination .page-jump input,
+#tab-exception-log .pagination .page-jump input {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-surface);
+}
+
+/* --- Exception Log: Exceptions / Application Logs segmented switch --- */
+#tab-exception-log .dda-mode-toggle {
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  overflow: hidden;
+}
+#tab-exception-log .dda-mode-btn {
+  font-family: var(--dm-font);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--dm-ink-muted);
+  padding: 0.55rem 1.1rem;
+}
+#tab-exception-log .dda-mode-btn + .dda-mode-btn {
+  border-left: 1px solid var(--dm-line);
+}
+#tab-exception-log .dda-mode-btn:hover {
+  background: var(--dm-bg);
+}
+#tab-exception-log .dda-mode-btn.is-active {
+  background: var(--dm-ink);
+  color: #fff;
+}
+
+/* --- Exception Log: stat cards — flat hairline grid, no icons,
+   big Archivo numbers (icons stay in the DOM, just visually hidden
+   to match the flat numeric-tile look; nothing is removed). --- */
+#tab-exception-log .dda-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--dm-line);
+  border: 1px solid var(--dm-line);
+  margin: 0 0 1.25rem;
+}
+#tab-exception-log .dda-stat-card {
+  background: var(--dm-surface);
+  border: none;
+  border-radius: 0;
+  padding: 1rem 1.1rem;
+  text-align: left;
+}
+#tab-exception-log .dda-stat-icon {
+  display: none;
+}
+#tab-exception-log .dda-stat-value {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  font-size: 1.65rem;
+  line-height: 1.1;
+  color: var(--dm-ink);
+}
+#tab-exception-log .dda-stat-card.is-danger .dda-stat-value {
+  color: var(--danger);
+}
+#tab-exception-log .dda-stat-card.is-warn .dda-stat-value {
+  color: #b45309;
+}
+#tab-exception-log .dda-stat-label {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dm-ink-muted);
+}
+@media (max-width: 720px) {
+  #tab-exception-log .dda-stat-cards { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 420px) {
+  #tab-exception-log .dda-stat-cards { grid-template-columns: 1fr; }
+}
+
+/* --- Exception detail modal --- */
+#exception-detail-modal .dda-modal-panel {
+  border-radius: 0;
+}
+#exception-detail-modal .dda-log-msg {
+  color: var(--dm-ink);
+}

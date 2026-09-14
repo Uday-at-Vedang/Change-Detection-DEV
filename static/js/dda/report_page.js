@@ -49,11 +49,29 @@ async function loadReportPage() {
       ? `<div class="dda-stat"><span class="label">Sensitivity</span><span class="value">${Number(stats.detectionSensitivity).toFixed(2)}</span></div>` : '';
     const minAreaStat = stats.minRegionArea != null
       ? `<div class="dda-stat"><span class="label">Min region</span><span class="value">${Number(stats.minRegionArea).toLocaleString()} px</span></div>` : '';
+    const totalPxStat = stats.totalPixels != null
+      ? `<div class="dda-stat"><span class="label">Total px</span><span class="value">${Number(stats.totalPixels).toLocaleString()}</span></div>` : '';
+    const resStat = stats.detectionMaxSide != null
+      ? `<div class="dda-stat"><span class="label">Detection res</span><span class="value">${Number(stats.detectionMaxSide).toLocaleString()}px</span></div>` : '';
     document.getElementById('report-stats').innerHTML = `
       <div class="dda-stat"><span class="label">Change</span><span class="value">${(stats.changePercentage ?? 0).toFixed(2)}%</span></div>
       <div class="dda-stat"><span class="label">Changed px</span><span class="value">${(stats.changedPixels ?? 0).toLocaleString()}</span></div>
+      ${totalPxStat}
       <div class="dda-stat"><span class="label">Regions</span><span class="value">${data.regionsCount ?? (data.regions || []).length}</span></div>
-      ${sensStat}${minAreaStat}`;
+      ${resStat}${sensStat}${minAreaStat}`;
+
+    const regionsForSummary = data.regions || [];
+    const summaryCounts = { pending: 0, confirmed: 0, false_positive: 0, submitted: 0 };
+    regionsForSummary.forEach((r) => {
+      const st = r.reviewStatus || 'pending';
+      summaryCounts[st] = (summaryCounts[st] || 0) + 1;
+    });
+    const reviewSummaryEl = document.getElementById('report-review-summary');
+    if (reviewSummaryEl) {
+      reviewSummaryEl.innerHTML = regionsForSummary.length
+        ? `Review: <strong>${summaryCounts.confirmed}</strong> confirmed &middot; <strong>${summaryCounts.false_positive}</strong> false positive &middot; <strong>${summaryCounts.submitted}</strong> submitted &middot; <strong>${summaryCounts.pending}</strong> pending`
+        : '';
+    }
 
     const overlay = document.getElementById('report-overlay');
     if (overlay) {
@@ -95,6 +113,30 @@ async function loadReportPage() {
     if (pdfBtn) {
       pdfBtn.disabled = false;
       pdfBtn.onclick = () => { window.location.href = `/api/dda/reports/${runId}/pdf`; };
+    }
+
+    const csvBtn = document.getElementById('report-csv-btn');
+    if (csvBtn) csvBtn.href = `/api/dda/reports/${runId}/export.csv`;
+    const csvConfirmedBtn = document.getElementById('report-csv-confirmed-btn');
+    if (csvConfirmedBtn) csvConfirmedBtn.href = `/api/dda/reports/${runId}/export.csv?confirmed=1`;
+    const geojsonBtn = document.getElementById('report-geojson-btn');
+    if (geojsonBtn) geojsonBtn.href = `/api/dda/reports/${runId}/export.geojson`;
+
+    const submitBtn = document.getElementById('report-submit-btn');
+    if (submitBtn) {
+      submitBtn.disabled = summaryCounts.confirmed === 0;
+      submitBtn.onclick = async () => {
+        if (!confirm(`Submit ${summaryCounts.confirmed} confirmed region(s) to the departmental system?`)) return;
+        submitBtn.disabled = true;
+        const msg = document.getElementById('report-submit-msg');
+        try {
+          const res = await ddaApi('POST', `/api/dda/reports/${runId}/submit`);
+          if (msg) msg.textContent = res.message || `Submitted ${res.submittedCount ?? summaryCounts.confirmed} region(s).`;
+        } catch (err) {
+          if (msg) msg.textContent = err.message || 'Submit failed.';
+          submitBtn.disabled = false;
+        }
+      };
     }
 
     const viewBtn = document.getElementById('report-view-btn');

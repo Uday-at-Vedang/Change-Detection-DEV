@@ -6,7 +6,10 @@
   <title>Reports — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=35" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=50" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=61" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-sidebar.css?v=1" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-reports.css?v=2" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-result-modal.css?v=1" />
 </head>
 <body>
   <div class="app dda-app">
@@ -16,15 +19,20 @@
       {% include "partials/alerts_dda.html" %}
 
       <section id="tab-reports" class="dda-panel active" role="tabpanel">
-        <div class="card">
-          <div class="card-header">
-            <h3>Detection Reports</h3>
-            <div class="dda-reports-toolbar">
+        <div class="dda-hero dda-reports-hero">
+          <div class="dda-hero-row">
+            <div>
+              <h1>Reports</h1>
+              <p class="sub">Every detection run, with its status and review outcome. Download PDF or open the browser report.</p>
+            </div>
+            <div class="dda-dash-hero-actions">
               <span id="reports-filter-meta" class="dim dda-filter-meta"></span>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-reports-refresh">Refresh</button>
             </div>
           </div>
-          <p class="sub dim">Filter by text, status, source, area, or date. Download PDF or open the browser report.</p>
+        </div>
+
+        <div class="card dda-reports-filter-card">
           <div class="dda-filter-bar" id="reports-filter-bar">
             <label class="dda-filter-field">Search
               <input type="search" id="reports-filter" class="dda-search" placeholder="Title, area, status…" />
@@ -67,6 +75,9 @@
             </label>
             <button type="button" class="btn btn-ghost btn-sm" id="btn-reports-clear">Clear</button>
           </div>
+        </div>
+
+        <div class="card dda-reports-table-card">
           <div id="reports-list"><p class="dim">Loading reports…</p></div>
           <div class="pagination" id="reports-pagination"></div>
         </div>

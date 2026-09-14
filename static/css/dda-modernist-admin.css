@@ -1,0 +1,372 @@
+/* ============================================================
+   Modernist admin theme (Claude Design redesign) — applied to the
+   three RBAC configuration screens: Admin Menu, Admin Modules,
+   Roles & Users. Same visual language as the #tab-home dashboard
+   reskin in dda.css: flat surfaces, hairline dividers, sharp
+   corners, one accent color, Archivo for headings. Reuses the
+   shared --dm-* tokens declared at :root in dda.css — nothing is
+   redeclared here.
+
+   Scoping: every rule is qualified by one of the three page
+   container ids (#tab-admin-menu / #tab-admin-modules /
+   #tab-admin-roles-users) or, for the modal dialogs that live
+   outside those containers in the DOM, by the modal's own id
+   (each id below is unique to one of these three pages). Nothing
+   here touches the bare/global .card, .btn-primary, .table rules.
+   ============================================================ */
+
+/* ---------------------------------------------------------------
+   Page heading
+   --------------------------------------------------------------- */
+#tab-admin-menu .dda-hero h1,
+#tab-admin-modules .dda-hero h1,
+#tab-admin-roles-users .dda-hero h1 {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--dm-ink);
+}
+
+/* ---------------------------------------------------------------
+   Flat surfaces — cards and modal panels lose the soft shadow /
+   rounded corners in favor of a hairline border, same treatment
+   as the dashboard cards.
+   --------------------------------------------------------------- */
+#tab-admin-menu .card,
+#tab-admin-modules .card,
+#tab-admin-roles-users .card,
+#menu-item-modal .dda-modal-panel,
+#module-modal .dda-modal-panel,
+#module-view-modal .dda-modal-panel,
+#role-modal .dda-modal-panel,
+#perm-modal .dda-modal-panel,
+#user-modal .dda-modal-panel {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#tab-admin-menu .card-header,
+#tab-admin-modules .card-header,
+#tab-admin-roles-users .card-header,
+#menu-item-modal .card-header,
+#module-modal .card-header,
+#module-view-modal .card-header,
+#role-modal .card-header,
+#perm-modal .card-header,
+#user-modal .card-header {
+  border-bottom: 1px solid var(--dm-line);
+}
+
+/* ---------------------------------------------------------------
+   Buttons — flat accent instead of the app-wide purple gradient,
+   sharp corners, Archivo weight. Scoped to these pages/modals only.
+   --------------------------------------------------------------- */
+#tab-admin-menu .btn,
+#tab-admin-modules .btn,
+#tab-admin-roles-users .btn,
+#menu-item-modal .btn,
+#module-modal .btn,
+#module-view-modal .btn,
+#role-modal .btn,
+#perm-modal .btn,
+#user-modal .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#tab-admin-menu .btn-primary,
+#tab-admin-modules .btn-primary,
+#tab-admin-roles-users .btn-primary,
+#menu-item-modal .btn-primary,
+#module-modal .btn-primary,
+#role-modal .btn-primary,
+#perm-modal .btn-primary,
+#user-modal .btn-primary {
+  background: var(--dm-accent);
+}
+#tab-admin-menu .btn-primary:hover,
+#tab-admin-modules .btn-primary:hover,
+#tab-admin-roles-users .btn-primary:hover,
+#menu-item-modal .btn-primary:hover,
+#module-modal .btn-primary:hover,
+#role-modal .btn-primary:hover,
+#perm-modal .btn-primary:hover,
+#user-modal .btn-primary:hover {
+  background: var(--dm-accent-hover);
+  filter: none;
+  box-shadow: none;
+}
+#tab-admin-menu .btn-secondary,
+#tab-admin-modules .btn-secondary,
+#tab-admin-roles-users .btn-secondary,
+#menu-item-modal .btn-secondary,
+#module-modal .btn-secondary,
+#module-view-modal .btn-secondary,
+#role-modal .btn-secondary,
+#perm-modal .btn-secondary,
+#user-modal .btn-secondary {
+  background: transparent;
+  border-color: var(--dm-line);
+  color: var(--dm-ink);
+}
+#tab-admin-menu .btn-secondary:hover,
+#tab-admin-modules .btn-secondary:hover,
+#tab-admin-roles-users .btn-secondary:hover,
+#menu-item-modal .btn-secondary:hover,
+#module-modal .btn-secondary:hover,
+#module-view-modal .btn-secondary:hover,
+#role-modal .btn-secondary:hover,
+#perm-modal .btn-secondary:hover,
+#user-modal .btn-secondary:hover {
+  background: var(--dm-bg);
+  border-color: var(--dm-line);
+}
+#tab-admin-menu .btn-danger,
+#tab-admin-modules .btn-danger,
+#tab-admin-roles-users .btn-danger {
+  border-radius: 0;
+}
+#tab-admin-menu .btn-ghost,
+#tab-admin-modules .btn-ghost,
+#tab-admin-roles-users .btn-ghost {
+  color: var(--dm-accent);
+}
+#tab-admin-menu .btn-ghost:hover,
+#tab-admin-modules .btn-ghost:hover,
+#tab-admin-roles-users .btn-ghost:hover {
+  background: var(--dm-accent-100);
+  color: var(--dm-accent-hover);
+}
+
+/* ---------------------------------------------------------------
+   Status / system badges — sharpen the pill corners and switch to
+   the accent palette instead of green/red.
+   --------------------------------------------------------------- */
+#tab-admin-menu .dda-status-badge,
+#tab-admin-modules .dda-status-badge,
+#tab-admin-roles-users .dda-status-badge {
+  border-radius: 2px;
+}
+#tab-admin-menu .dda-status-badge.is-active,
+#tab-admin-modules .dda-status-badge.is-active,
+#tab-admin-roles-users .dda-status-badge.is-active {
+  background: var(--dm-accent-100);
+  color: var(--dm-accent-hover);
+}
+#tab-admin-menu .dda-status-badge.is-inactive,
+#tab-admin-modules .dda-status-badge.is-inactive,
+#tab-admin-roles-users .dda-status-badge.is-inactive {
+  background: var(--dm-line);
+  color: var(--dm-ink-muted);
+}
+#tab-admin-roles-users .dda-badge-system {
+  border-radius: 2px;
+  border-color: var(--dm-line);
+  color: var(--dm-ink-muted);
+}
+
+/* ---------------------------------------------------------------
+   Search inputs / select toolbars — flat hairline fields.
+   --------------------------------------------------------------- */
+#tab-admin-modules .dda-search,
+#tab-admin-roles-users .dda-search,
+#tab-admin-modules .dda-table-toolbar select,
+#tab-admin-roles-users .dda-table-toolbar select {
+  border-radius: 0;
+  border: 1px solid var(--dm-line);
+  background: var(--dm-surface);
+  color: var(--dm-ink);
+}
+#tab-admin-modules .dda-table-toolbar,
+#tab-admin-roles-users .dda-table-toolbar {
+  color: var(--dm-ink-muted);
+}
+
+/* ---------------------------------------------------------------
+   Tables — uppercase hairline headers, same technique as the
+   dashboard's .dda-reports-table override (reused verbatim here
+   since Modules/Users render into the same table class).
+   --------------------------------------------------------------- */
+#tab-admin-modules .dda-reports-table th,
+#tab-admin-roles-users .dda-reports-table th {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  border: none;
+  border-bottom: 2px solid var(--dm-line);
+  background: transparent;
+}
+#tab-admin-modules .dda-reports-table td,
+#tab-admin-roles-users .dda-reports-table td {
+  border: none;
+  border-bottom: 1px solid var(--dm-line);
+}
+#tab-admin-modules .dda-reports-table tbody tr:hover,
+#tab-admin-roles-users .dda-reports-table tbody tr:hover {
+  background: var(--dm-bg);
+}
+
+#perm-modal .dda-perm-matrix th {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-ink-muted);
+  border: none;
+  border-bottom: 2px solid var(--dm-line);
+  background: transparent;
+}
+#perm-modal .dda-perm-matrix td {
+  border: none;
+  border-bottom: 1px solid var(--dm-line);
+}
+#perm-modal .dda-perm-matrix input[type="checkbox"],
+#role-modal input[type="checkbox"],
+#menu-item-modal input[type="checkbox"],
+#user-modal input[type="checkbox"] {
+  accent-color: var(--dm-accent);
+}
+
+/* ---------------------------------------------------------------
+   Pagination — flat, sharp corners, accent active state instead
+   of the app-wide gradient pill.
+   --------------------------------------------------------------- */
+#tab-admin-modules .pagination button,
+#tab-admin-roles-users .pagination button {
+  border-radius: 0;
+  border-color: var(--dm-line);
+}
+#tab-admin-modules .pagination button:hover:not(:disabled),
+#tab-admin-roles-users .pagination button:hover:not(:disabled) {
+  background: var(--dm-accent-100);
+  border-color: var(--dm-accent);
+  color: var(--dm-ink);
+}
+#tab-admin-modules .pagination button.active,
+#tab-admin-roles-users .pagination button.active {
+  background: var(--dm-accent);
+  color: #fff;
+  border-color: var(--dm-accent);
+}
+
+/* ---------------------------------------------------------------
+   Admin Menu — menu item list rendered as a fused hairline list
+   (same "1px gap on a line-colored background" technique the
+   dashboard KPI grid uses) instead of individually bordered,
+   rounded, shadowed rows.
+   --------------------------------------------------------------- */
+#tab-admin-menu .dda-admin-2col {
+  grid-template-columns: 1.4fr 1fr;
+}
+#tab-admin-menu .dda-menu-list {
+  gap: 1px;
+  background: var(--dm-line);
+  border: 1px solid var(--dm-line);
+}
+#tab-admin-menu .dda-menu-item-row {
+  border: none;
+  border-radius: 0;
+  background: var(--dm-surface);
+}
+#tab-admin-menu .dda-menu-item-row.is-child {
+  background: var(--dm-bg);
+}
+#tab-admin-menu .dda-menu-item-order button {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-surface);
+}
+#tab-admin-menu .dda-menu-item-order button:hover:not(:disabled) {
+  color: var(--dm-accent);
+  border-color: var(--dm-accent);
+}
+#tab-admin-menu .dda-menu-item-meta code {
+  background: var(--dm-bg);
+  border-radius: 0;
+}
+
+/* Instructions panel */
+#tab-admin-menu .dda-admin-side-panel code {
+  background: var(--dm-bg);
+  border-radius: 0;
+  color: var(--dm-accent);
+}
+
+/* Module Keys — rendered as a row of flat chips instead of a
+   stacked list, matching the mockup's tag row. */
+#tab-admin-menu .dda-module-keys {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+#tab-admin-menu .dda-module-keys code {
+  background: var(--dm-bg);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  color: var(--dm-ink);
+  align-self: auto;
+}
+
+/* ---------------------------------------------------------------
+   Roles & Users — role hierarchy as a fused hairline list, wider
+   ratio for the users column to match the mockup's proportions.
+   --------------------------------------------------------------- */
+#tab-admin-roles-users .dda-admin-2col-roles {
+  grid-template-columns: 1fr 1.4fr;
+}
+#tab-admin-roles-users .dda-role-list {
+  gap: 1px;
+  background: var(--dm-line);
+  border: 1px solid var(--dm-line);
+}
+#tab-admin-roles-users .dda-role-card {
+  border: none;
+  border-radius: 0;
+  background: var(--dm-surface);
+}
+#tab-admin-roles-users .dda-role-card.is-inactive {
+  background: var(--dm-bg);
+}
+
+/* ---------------------------------------------------------------
+   Form fields inside these pages' modals — flat hairline inputs
+   instead of the app-wide rounded/shadowed style.
+   --------------------------------------------------------------- */
+#menu-item-modal input[type="text"],
+#menu-item-modal select,
+#module-modal input[type="text"],
+#module-modal select,
+#role-modal input[type="text"],
+#role-modal input[type="number"],
+#user-modal input[type="text"],
+#user-modal input[type="email"],
+#user-modal input[type="password"],
+#user-modal input[type="tel"],
+#user-modal select {
+  border-radius: 0;
+  border-color: var(--dm-line);
+}
+#menu-item-modal input[type="text"]:focus,
+#menu-item-modal select:focus,
+#module-modal input[type="text"]:focus,
+#module-modal select:focus,
+#role-modal input[type="text"]:focus,
+#role-modal input[type="number"]:focus,
+#user-modal input[type="text"]:focus,
+#user-modal input[type="email"]:focus,
+#user-modal input[type="password"]:focus,
+#user-modal input[type="tel"]:focus,
+#user-modal select:focus {
+  border-color: var(--dm-accent);
+  box-shadow: 0 0 0 3px var(--dm-accent-100);
+}
+#user-modal .dda-phone-input {
+  border-radius: 0;
+  border-color: var(--dm-line);
+}
+#user-modal .dda-phone-input:focus-within {
+  border-color: var(--dm-accent);
+  box-shadow: 0 0 0 3px var(--dm-accent-100);
+}

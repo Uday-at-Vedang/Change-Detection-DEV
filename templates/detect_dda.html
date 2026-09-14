@@ -6,7 +6,10 @@
   <title>Change Detection — Vedangsoft Change Detection</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/static/css/style.css?v=35" />
-  <link rel="stylesheet" href="/static/css/dda.css?v=60" />
+  <link rel="stylesheet" href="/static/css/dda.css?v=61" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-sidebar.css?v=1" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-detect.css?v=1" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-result-modal.css?v=1" />
 </head>
 <body>
   <div class="app dda-app">
@@ -16,6 +19,10 @@
       {% include "partials/alerts_dda.html" %}
 
       <section id="tab-detect" class="dda-panel active" role="tabpanel">
+      <div class="dda-detect-hero">
+        <h1>Change Detection</h1>
+        <p class="sub">Compare a before/after image pair and detect changes.</p>
+      </div>
       <div class="dda-layout">
         <aside class="dda-sidebar card">
           <div class="card-header">
@@ -162,31 +169,31 @@
           </div>
         </main>
       </div>
+
+      <div id="dda-preflight-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+        <div class="dda-modal-panel card dda-preflight-panel">
+          <div class="card-header">
+            <h3 id="dda-preflight-title">Check these images before running detection</h3>
+          </div>
+          <ul id="dda-preflight-list" class="dda-preflight-list"></ul>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="dda-preflight-cancel">Stop</button>
+            <button type="button" class="btn btn-primary" id="dda-preflight-continue">Continue anyway</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="dda-picker-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
+        <div class="dda-modal-panel card">
+          <div class="card-header">
+            <h3 id="dda-picker-title">Select image</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="dda-picker-close">Close</button>
+          </div>
+          <div id="dda-picker-list" class="dda-picker-grid"></div>
+          <div class="pagination" id="dda-picker-pagination"></div>
+        </div>
+      </div>
       </section>
-    </div>
-  </div>
-
-  <div id="dda-preflight-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
-    <div class="dda-modal-panel card dda-preflight-panel">
-      <div class="card-header">
-        <h3 id="dda-preflight-title">Check these images before running detection</h3>
-      </div>
-      <ul id="dda-preflight-list" class="dda-preflight-list"></ul>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" id="dda-preflight-cancel">Stop</button>
-        <button type="button" class="btn btn-primary" id="dda-preflight-continue">Continue anyway</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="dda-picker-modal" class="dda-modal hidden" role="dialog" aria-modal="true">
-    <div class="dda-modal-panel card">
-      <div class="card-header">
-        <h3 id="dda-picker-title">Select image</h3>
-        <button type="button" class="btn btn-secondary btn-sm" id="dda-picker-close">Close</button>
-      </div>
-      <div id="dda-picker-list" class="dda-picker-grid"></div>
-      <div class="pagination" id="dda-picker-pagination"></div>
     </div>
   </div>
 

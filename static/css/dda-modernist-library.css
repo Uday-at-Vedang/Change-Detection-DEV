@@ -1,0 +1,226 @@
+/* ============================================================
+   Modernist Image Library theme (Claude Design redesign).
+   Scoped entirely to #tab-library so the rest of the app keeps its
+   existing look until/unless it gets redesigned too: flat surfaces,
+   hairline dividers, sharp corners, one accent color, Archivo for
+   headings. Tokens (--dm-*) are shared globals declared once at
+   :root in dda.css — reused here, not redeclared.
+
+   Note: the image-viewer / manage-folders / bulk-upload modals and
+   the folder right-click menu are rendered outside the #tab-library
+   DOM subtree (they're siblings appended at the end of <body> in
+   library_dda.html), but their ids (#dda-image-viewer-modal,
+   #dda-manage-modal, #dda-bulk-upload-modal, #dda-tree-menu) only
+   ever exist on this page's markup, so anchoring rules to those ids
+   is just as safe as nesting under #tab-library — no other page can
+   be affected.
+   ============================================================ */
+
+#tab-library h1,
+#tab-library .card-header h3,
+#tab-library #lib-grid-title,
+#dda-image-viewer-title,
+#dda-manage-title,
+#dda-bulk-upload-title {
+  font-family: var(--dm-font);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Flat, hairline-bordered surfaces instead of soft shadow cards */
+#tab-library .card,
+#tab-library .dda-storage-info,
+#dda-image-viewer-modal .dda-modal-panel,
+#dda-manage-modal .dda-modal-panel,
+#dda-bulk-upload-modal .dda-modal-panel {
+  background: var(--dm-surface);
+  border: 1px solid var(--dm-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+#tab-library .card-header { border-bottom-color: var(--dm-line); }
+#dda-image-viewer-modal .card-header,
+#dda-manage-modal .card-header,
+#dda-bulk-upload-modal .card-header { border-bottom-color: var(--dm-line); }
+
+/* Buttons — flat accent instead of the app-wide purple gradient,
+   scoped to this page (+ its modals) only so other pages are
+   untouched. */
+#tab-library .btn,
+#dda-image-viewer-modal .btn,
+#dda-manage-modal .btn,
+#dda-bulk-upload-modal .btn,
+#dda-tree-menu button {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#tab-library .btn-primary,
+#dda-image-viewer-modal .btn-primary,
+#dda-manage-modal .btn-primary,
+#dda-bulk-upload-modal .btn-primary {
+  background: var(--dm-accent);
+}
+#tab-library .btn-primary:hover,
+#dda-image-viewer-modal .btn-primary:hover,
+#dda-manage-modal .btn-primary:hover,
+#dda-bulk-upload-modal .btn-primary:hover {
+  background: var(--dm-accent-hover);
+  filter: none;
+  box-shadow: none;
+}
+#tab-library .btn-secondary,
+#dda-image-viewer-modal .btn-secondary,
+#dda-manage-modal .btn-secondary,
+#dda-bulk-upload-modal .btn-secondary {
+  background: transparent;
+  border-color: var(--dm-line);
+  color: var(--dm-ink);
+}
+#tab-library .btn-secondary:hover,
+#dda-image-viewer-modal .btn-secondary:hover,
+#dda-manage-modal .btn-secondary:hover,
+#dda-bulk-upload-modal .btn-secondary:hover {
+  background: var(--dm-bg);
+  border-color: var(--dm-line);
+}
+#tab-library .btn-danger,
+#dda-image-viewer-modal .btn-danger,
+#dda-manage-modal .btn-danger {
+  box-shadow: none;
+}
+#tab-library .btn-danger:hover,
+#dda-image-viewer-modal .btn-danger:hover,
+#dda-manage-modal .btn-danger:hover {
+  box-shadow: none;
+}
+#tab-library .btn-ghost { color: var(--dm-accent); }
+#tab-library .btn-ghost:hover { background: var(--dm-accent-100); color: var(--dm-accent-hover); }
+
+/* Inputs, selects, search fields — sharp corners + hairline border */
+#tab-library input[type="text"],
+#tab-library input[type="search"],
+#tab-library input[type="date"],
+#tab-library input[type="url"],
+#tab-library select,
+#tab-library .dda-search,
+#dda-image-viewer-modal select,
+#dda-image-viewer-modal input[type="url"],
+#dda-manage-modal input[type="text"],
+#dda-manage-modal select,
+#dda-bulk-upload-modal input[type="text"] {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-surface);
+}
+#tab-library input:focus,
+#tab-library select:focus,
+#dda-image-viewer-modal select:focus,
+#dda-manage-modal input:focus,
+#dda-manage-modal select:focus {
+  border-color: var(--dm-accent);
+  box-shadow: 0 0 0 3px var(--dm-accent-100);
+}
+
+/* --- Folder tree sidebar --- */
+#tab-library .dda-folder-path,
+#tab-library .dda-tree-hint { color: var(--dm-ink-muted); }
+#tab-library .dda-tree-toolbar-btn { color: var(--dm-ink-muted); }
+#tab-library .dda-tree-toolbar-btn:hover { color: var(--dm-accent); }
+#tab-library .dda-tree-all,
+#tab-library .dda-tree-node-btn,
+#tab-library .dda-tree-year,
+#tab-library .dda-tree-zone > button,
+#tab-library .dda-tree-village {
+  border-radius: 0;
+  color: var(--dm-ink);
+}
+#tab-library .dda-tree-all:hover,
+#tab-library .dda-tree-node-btn:hover,
+#tab-library .dda-tree-year:hover,
+#tab-library .dda-tree-zone > button:hover,
+#tab-library .dda-tree-village:hover {
+  background: var(--dm-accent-100);
+  color: var(--dm-accent);
+}
+#tab-library .dda-tree-all.active,
+#tab-library .dda-tree-node-btn.active,
+#tab-library .dda-tree-year.active,
+#tab-library .dda-tree-village.active {
+  background: var(--dm-accent-100);
+  color: var(--dm-accent);
+  border-left: 2px solid var(--dm-accent);
+  padding-left: calc(0.5rem - 2px);
+}
+#tab-library .dda-tree-children { border-left-color: var(--dm-line); }
+#tab-library .dda-tree-hit { background: var(--dm-accent-100); border-radius: 0; }
+#tab-library .dda-tree-node-btn.is-drop-target {
+  outline-color: var(--dm-accent);
+  background: var(--dm-accent-100);
+  color: var(--dm-accent);
+}
+#dda-tree-menu {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  box-shadow: none;
+}
+#dda-tree-menu button:hover { background: var(--dm-accent-100); color: var(--dm-accent); }
+
+/* --- Upload card --- */
+#tab-library .dda-dropzone {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-bg);
+}
+#tab-library .dda-dropzone.is-dragover {
+  border-color: var(--dm-accent);
+  background: var(--dm-accent-100);
+}
+#tab-library .dda-progress-bar { border-radius: 0; background: var(--dm-line); }
+#tab-library .dda-progress-fill { background: var(--dm-accent); }
+#tab-library .dda-storage-info summary { color: var(--dm-ink-muted); }
+#tab-library .dda-storage-info summary:hover { color: var(--dm-accent); }
+#tab-library .dda-path-code { border-radius: 0; border-color: var(--dm-line); background: var(--dm-bg); }
+
+/* --- Same-area pairs --- */
+#tab-library .dda-area-pair {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  background: var(--dm-surface);
+}
+
+/* --- Image grid --- */
+#tab-library .dda-grid { gap: 1px; background: var(--dm-line); border: 1px solid var(--dm-line); }
+#tab-library .dda-card-img {
+  border-radius: 0;
+  border: none;
+  background: var(--dm-surface);
+  transition: none;
+}
+#tab-library .dda-card-img:hover { border-color: transparent; outline: 2px solid var(--dm-accent); outline-offset: -2px; }
+#tab-library .dda-card-delete-btn { border-radius: 0; background: rgba(32, 30, 29, 0.68); }
+#tab-library .dda-card-delete-btn:hover { background: var(--dm-accent); }
+#tab-library .dda-card-img .meta { color: var(--dm-ink-muted); }
+
+/* --- Pagination --- */
+#tab-library .pagination button { border-radius: 0; }
+#tab-library .pagination button.active { background: var(--dm-accent); border-color: var(--dm-accent); }
+#tab-library .pagination button:hover:not(:disabled):not(.active) {
+  border-color: var(--dm-accent);
+  color: var(--dm-accent);
+}
+
+/* --- Modals (viewer / manage folders / bulk upload) --- */
+#dda-image-viewer-modal .dda-image-viewer-wrap { border-radius: 0; border-color: var(--dm-line); background: var(--dm-bg); }
+#dda-image-viewer-modal .dda-view-btn { border-radius: 0; }
+#dda-image-viewer-modal .dda-view-btn.active { background: var(--dm-accent-100); color: var(--dm-accent); }
+#dda-image-viewer-modal .dda-map-canvas { border-radius: 0; }
+#dda-manage-modal .dda-manage-section h4,
+#dda-bulk-upload-modal .dda-manage-section h4 { font-family: var(--dm-font); font-weight: 700; color: var(--dm-ink); }
+#dda-bulk-upload-modal .dda-logs-table th { color: var(--dm-ink-muted); }
+#dda-bulk-upload-modal .dda-logs-table td,
+#dda-bulk-upload-modal .dda-logs-table th { border-bottom-color: var(--dm-line); }
+
+@media (max-width: 900px) {
+  #tab-library .dda-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}
