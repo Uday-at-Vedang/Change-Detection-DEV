@@ -45,9 +45,15 @@ class ImageLibrary(Base):
     capture_date = Column(DateTime, nullable=True)
     # Administrative location picked on upload. Independent of the folder tree:
     # the same zone/village can appear under several folders, and pairing uses
-    # it as a strong "same place" signal.
-    zone_id = Column(Integer, ForeignKey("dda_zones.id"), nullable=True, index=True)
-    village_id = Column(Integer, ForeignKey("dda_villages.id"), nullable=True, index=True)
+    # it as a strong "same place" signal. Required, not just conventionally —
+    # an "Unassigned" image was a recurring real problem (thousands of images
+    # landed with no location via bulk upload / filesystem sync and cluttered
+    # every zone/village breakdown), so this is enforced NOT NULL at the DB
+    # level too (see bootstrap.py's migration list) so no insert path —
+    # including ones outside this app's own upload endpoints — can create an
+    # unassigned row.
+    zone_id = Column(Integer, ForeignKey("dda_zones.id"), nullable=False, index=True)
+    village_id = Column(Integer, ForeignKey("dda_villages.id"), nullable=False, index=True)
     year = Column(Integer, nullable=True, index=True)
     source = Column(String(32), default="")  # satellite | drone | ""
     uploaded_by = Column(String(100), default="")

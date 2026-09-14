@@ -692,6 +692,16 @@ async function uploadBulkLibraryFiles(nodeId, entries, { onProgress } = {}) {
 
 async function uploadLibraryFiles(files, { nodeId, preserveFolders = true, entries = null } = {}) {
   if (uploadLibraryFiles._busy) return 0;
+  // Every upload path (drag-drop, file picker, form submit) funnels through
+  // here, so this is the one place to enforce it: a zone and village are
+  // required, full stop — no more images landing as "Unassigned".
+  const zoneId = document.getElementById('upload-zone')?.value || '';
+  const villageId = document.getElementById('upload-village')?.value || '';
+  if (!zoneId || !villageId) {
+    const msg = 'Select a zone and village before uploading — every image needs a location.';
+    showDdaError?.(msg);
+    throw new Error(msg);
+  }
   const type = currentUploadImageType();
   let workEntries = entries;
   if (!workEntries) {

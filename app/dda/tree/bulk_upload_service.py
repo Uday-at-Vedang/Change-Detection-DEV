@@ -14,15 +14,20 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.orm import Session
 
+from ..models import DdaVillage, DdaZone
 from .image_service import IMAGE_TYPES, upload_image
 from .models import ImageLibrary
 from .tree_service import get_or_create_node_by_path
 
 logger = logging.getLogger(__name__)
 
-TEMPLATE_HEADERS = ["File Name", "Folder Path", "Image Type", "Capture Date", "Manual Bounds"]
-TEMPLATE_EXAMPLE_ROW = ["example_before.tif", "Central Delhi/Sector 5/2025", "GeoTIFF", "2025-01-15", ""]
-_REQUIRED_COLUMNS = ("File Name", "Folder Path", "Image Type")
+TEMPLATE_HEADERS = ["File Name", "Folder Path", "Zone", "Village", "Image Type", "Capture Date", "Manual Bounds"]
+TEMPLATE_EXAMPLE_ROW = ["example_before.tif", "Central Delhi/Sector 5/2025", "Central Delhi", "Sector 5", "GeoTIFF", "2025-01-15", ""]
+# Zone/Village are required, not just conventionally: every image needs a
+# location so it shows up correctly in the dashboard's zone/village
+# breakdowns instead of piling up as "Unassigned" (a real, recurring problem
+# with this exact template before these two columns existed).
+_REQUIRED_COLUMNS = ("File Name", "Folder Path", "Zone", "Village", "Image Type")
 
 
 def _basename(value: str) -> str:
@@ -45,17 +50,19 @@ def build_bulk_upload_template() -> bytes:
     ws.title = "Images"
     ws.append(TEMPLATE_HEADERS)
     ws.append(TEMPLATE_EXAMPLE_ROW)
-    for col_idx, width in enumerate((30, 45, 16, 16, 22), start=1):
+    for col_idx, width in enumerate((30, 45, 18, 18, 16, 16, 22), start=1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
 
     dv = DataValidation(type="list", formula1='"' + ",".join(sorted(IMAGE_TYPES)) + '"', allow_blank=False)
     ws.add_data_validation(dv)
-    dv.add("C2:C1000")
+    dv.add("E2:E1000")
 
     instructions = wb.create_sheet("Instructions")
     instructions.append(["Column", "Required", "Notes"])
     instructions.append(["File Name", "Yes", "Must match the name of one of the files you upload alongside this sheet. Pasting a full path (e.g. copied from File Explorer) is fine too — only the filename part is used."])
     instructions.append(["Folder Path", "Yes", "Slash-separated, e.g. Central Delhi/Sector 5/2025 — missing folders are created automatically."])
+    instructions.append(["Zone", "Yes", "Must match an existing Zone name exactly (see Zone / District master)."])
+    instructions.append(["Village", "Yes", "Must match an existing Village name within that Zone (see Village / Location master)."])
     instructions.append(["Image Type", "Yes", "One of: " + ", ".join(sorted(IMAGE_TYPES))])
     instructions.append(["Capture Date", "No", "YYYY-MM-DD"])
     instructions.append(["Manual Bounds", "No", "West,South,East,North — only used if the image has no embedded georeferencing."])
@@ -73,6 +80,8 @@ class ManifestRow:
     row_number: int
     file_name: str
     folder_path: str
+    zone: str
+    village: str
     image_type: str
     capture_date: Optional[str]
     manual_bounds: Optional[str]
@@ -113,6 +122,8 @@ def parse_bulk_manifest(xlsx_bytes: bytes) -> tuple[List[ManifestRow], List[dict
 
         file_name = _basename(cell("File Name"))
         folder_path = cell("Folder Path")
+        zone = cell("Zone")
+        village = cell("Village")
         image_type = cell("Image Type") or "GeoTIFF"
         capture_date = cell("Capture Date") or None
         manual_bounds = cell("Manual Bounds") or None
@@ -120,14 +131,37 @@ def parse_bulk_manifest(xlsx_bytes: bytes) -> tuple[List[ManifestRow], List[dict
         if not file_name or not folder_path:
             errors.append({"row": row_number, "file": file_name, "reason": "File Name and Folder Path are required"})
             continue
+        if not zone or not village:
+            errors.append({"row": row_number, "file": file_name, "reason": "Zone and Village are required"})
+            continue
         if image_type not in IMAGE_TYPES:
             errors.append({"row": row_number, "file": file_name, "reason": f"Image Type must be one of: {', '.join(sorted(IMAGE_TYPES))}"})
             continue
         valid.append(ManifestRow(
             row_number=row_number, file_name=file_name, folder_path=folder_path,
+            zone=zone, village=village,
             image_type=image_type, capture_date=capture_date, manual_bounds=manual_bounds,
         ))
     return valid, errors
+
+
+def _resolve_zone_village_by_name(db: Session, zone_name: str, village_name: str) -> tuple[int, int]:
+    """Case-insensitive name lookup — the manifest carries human-readable
+    Zone/Village names (matching the master data), not ids."""
+    zone = db.query(DdaZone).filter(DdaZone.name.ilike(zone_name.strip())).first()
+    if not zone:
+        raise HTTPException(status_code=400, detail=f"Zone '{zone_name}' not found. Check the Zone / District master.")
+    village = (
+        db.query(DdaVillage)
+        .filter(DdaVillage.zone_id == zone.id, DdaVillage.name.ilike(village_name.strip()))
+        .first()
+    )
+    if not village:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Village '{village_name}' not found under zone '{zone_name}'. Check the Village / Location master.",
+        )
+    return zone.id, village.id
 
 
 @dataclass
@@ -157,6 +191,7 @@ async def bulk_upload_images(
             continue
         matched_names.add(key)
         try:
+            zone_id, village_id = _resolve_zone_village_by_name(db, row.zone, row.village)
             node = get_or_create_node_by_path(db, row.folder_path, created_by=uploaded_by)
             already_existed = (
                 db.query(ImageLibrary)
@@ -169,6 +204,8 @@ async def bulk_upload_images(
                 capture_date=row.capture_date,
                 uploaded_by=uploaded_by,
                 manual_bounds=row.manual_bounds,
+                zone_id=zone_id,
+                village_id=village_id,
             )
             entry = {"row": row.row_number, "file": row.file_name, "folder": node.node_path, "imageId": img.id}
             (result.duplicates if already_existed else result.created).append(entry)

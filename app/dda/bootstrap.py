@@ -121,6 +121,25 @@ def init_dda_database():
                     conn.commit()
                 except Exception:
                     conn.rollback()
+            # Enforce "every image has a zone and village" at the database
+            # level, not just in application code — this used to be
+            # optional, which is how thousands of images ended up
+            # "Unassigned" (bulk upload with no location columns, and the
+            # filesystem sync auto-indexing files with none to give).
+            # MySQL-only (SQLite can't ALTER a column's nullability); this
+            # fails harmlessly and keeps retrying on every startup until any
+            # pre-existing NULL rows are cleaned up, at which point it
+            # sticks — same best-effort pattern as every other statement
+            # above.
+            for stmt in (
+                "ALTER TABLE dda_image_library MODIFY COLUMN zone_id INTEGER NOT NULL",
+                "ALTER TABLE dda_image_library MODIFY COLUMN village_id INTEGER NOT NULL",
+            ):
+                try:
+                    conn.execute(sa_text(stmt))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
             try:
                 conn.execute(sa_text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)"

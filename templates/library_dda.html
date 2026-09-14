@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/css/style.css?v=35" />
   <link rel="stylesheet" href="/static/css/dda.css?v=61" />
   <link rel="stylesheet" href="/static/css/dda-modernist-sidebar.css?v=1" />
-  <link rel="stylesheet" href="/static/css/dda-modernist-library.css?v=1" />
+  <link rel="stylesheet" href="/static/css/dda-modernist-library.css?v=2" />
 </head>
 <body>
   <div class="app dda-app">
@@ -75,14 +75,14 @@
                     </select>
                   </div>
                   <div class="form-group">
-                    <label for="upload-zone">Zone / District</label>
-                    <select id="upload-zone" aria-label="Select zone or district">
+                    <label for="upload-zone">Zone / District <span class="dda-required-mark" title="Required">*</span></label>
+                    <select id="upload-zone" aria-label="Select zone or district" required>
                       <option value="">— Select zone —</option>
                     </select>
                   </div>
                   <div class="form-group">
-                    <label for="upload-village">Village / Location</label>
-                    <select id="upload-village" aria-label="Select village or location">
+                    <label for="upload-village">Village / Location <span class="dda-required-mark" title="Required">*</span></label>
+                    <select id="upload-village" aria-label="Select village or location" required>
                       <option value="">— Select village —</option>
                     </select>
                   </div>
@@ -95,7 +95,7 @@
                     <input type="text" id="upload-manual-bounds" placeholder="optional, e.g. 77.5,12.9,77.6,13.0" />
                   </div>
                 </div>
-                <p class="sub dim">Choose a <strong>zone</strong> and/or a <strong>village</strong> for this upload. Pairing uses that location together with folder, capture date, filename, and map overlap. The folder name is used as a hint when you leave these blank.</p>
+                <p class="sub dim">A <strong>zone</strong> and <strong>village</strong> are required for every upload — images without a location are no longer accepted, so nothing shows up as "Unassigned."</p>
                 <div id="dda-upload-dropzone" class="dda-dropzone" tabindex="0">
                   <p class="dda-dropzone-title">Drag &amp; drop files or a folder</p>
                   <p class="dim" id="upload-accept-hint">GeoTIFF, PNG, or JPEG. Multiple files and nested folders are supported.</p>
@@ -323,7 +323,7 @@
   <script src="/static/js/dda/app.js?v=31"></script>
   <script src="/static/js/dda/tree.js?v=8"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=22"></script>
+  <script src="/static/js/dda/library.js?v=23"></script>
   <script src="/static/js/dda/pairs.js?v=12"></script>
   <script src="/static/js/dda/notifications.js?v=5"></script>
 </body>

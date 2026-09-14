@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..config import ALLOWED_EXTENSIONS, get_library_roots, get_storage_root
 from ..seed_data import DELHI_ZONES
-from .models import ImageLibrary, TreeNode
+from .models import TreeNode
 from .path_service import ensure_node_directory, storage_root
 from .path_slugs import unique_slug
 from .tree_service import create_node
@@ -85,16 +85,10 @@ def migrate_flat_year_folders(db: Session) -> dict:
                 if path.resolve() != target.resolve():
                     shutil.move(str(path), str(target))
                 rel = target.relative_to(root).as_posix()
-                if not db.query(ImageLibrary).filter(ImageLibrary.file_path == rel).first():
-                    db.add(ImageLibrary(
-                        node_id=year_node.id,
-                        image_name=target.name,
-                        image_type="GeoTIFF",
-                        file_path=rel,
-                        uploaded_by="migration",
-                        file_size_bytes=target.stat().st_size,
-                    ))
-                    indexed += 1
+                # zone_id/village_id are required (NOT NULL); this legacy path has
+                # no location info to give a migrated image, so the file is moved
+                # into the tree but left un-indexed — same reasoning as the
+                # filesystem sync's own skip (see sync_service.py).
                 moved += 1
             try:
                 if entry.is_dir() and not any(entry.iterdir()):

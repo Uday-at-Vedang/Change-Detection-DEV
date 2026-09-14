@@ -224,3 +224,7 @@
 @media (max-width: 900px) {
   #tab-library .dda-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
+
+/* Required-field marker on the upload form's Zone/Village labels — these
+   are now mandatory (see upload_image()'s validation). */
+#tab-library .dda-required-mark { color: var(--dm-accent); }

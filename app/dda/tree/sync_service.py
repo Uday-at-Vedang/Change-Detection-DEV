@@ -263,25 +263,19 @@ def _index_image_file(
                 stats["imagesUpdated"] += 1
         return False
 
-    img = ImageLibrary(
-        node_id=node.id,
-        image_name=file_path.name,
-        image_type=_image_type_for(file_path),
-        file_path=rel_file,
-        capture_date=_infer_capture_date(file_path, node),
-        uploaded_by="filesystem-sync",
-        file_size_bytes=stat.st_size,
-        thumb_cache_key=hashlib.sha256(rel_file.encode()).hexdigest()[:32],
-        width=meta.width,
-        height=meta.height,
-        has_georef=meta.has_georef,
-        bounds_json=bounds_to_json(meta.bounds_wgs84) or "",
-        format=meta.format,
+    # zone_id/village_id are required (NOT NULL) and there's no reliable way
+    # to derive them from a bare file on disk — a file found by the sync
+    # (rather than uploaded through the app, which does collect a location)
+    # is left un-indexed rather than creating an "Unassigned" row. It stays
+    # on disk and will be picked up automatically once someone uploads it
+    # properly (with a zone/village) through the Image Library UI, which
+    # de-dupes by file_path.
+    logger.info(
+        "Not indexing %s: found on disk but the filesystem sync has no zone/village for it "
+        "(upload it through the Image Library to tag a location)", rel_file,
     )
-    db.add(img)
-    db.flush()
-    logger.info("Indexed image from disk: %s", rel_file)
-    return True
+    stats["imagesNeedLocation"] = stats.get("imagesNeedLocation", 0) + 1
+    return False
 
 
 def _node_path_for_images_folder(rel_path: str) -> Optional[str]:
@@ -360,6 +354,7 @@ def sync_from_filesystem(db: Session, *, check_orphans: bool = True) -> dict:
         "imagesIndexed": 0,
         "imagesUpdated": 0,
         "imagesSkipped": 0,
+        "imagesNeedLocation": 0,
         "orphansFlagged": 0,
         "foldersSkipped": 0,
     }

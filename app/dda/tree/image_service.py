@@ -177,24 +177,31 @@ def resolve_location(
     zone_id: Optional[int],
     village_id: Optional[int],
 ) -> tuple[Optional[int], Optional[int]]:
-    """Validate an optional zone/village choice; a village implies its zone."""
+    """Validate a required zone/village choice; a village implies its zone.
+
+    Both are mandatory — every image must be tagged with exactly one zone
+    and one village at upload time. This used to be optional, which is how
+    thousands of images ended up "Unassigned" (bulk upload and filesystem
+    sync both created rows with no location); the database itself now also
+    rejects a NULL zone_id/village_id, so this check exists for a clear,
+    early error message rather than an opaque IntegrityError."""
     from ..models import DdaVillage, DdaZone
 
     zid = int(zone_id) if zone_id else None
     vid = int(village_id) if village_id else None
-    if vid:
-        village = db.query(DdaVillage).filter(DdaVillage.id == vid).first()
-        if not village:
-            raise HTTPException(status_code=404, detail="Location (village) not found")
-        if zid and village.zone_id != zid:
-            raise HTTPException(
-                status_code=400,
-                detail="The selected location does not belong to the selected zone.",
-            )
-        return village.zone_id, village.id
-    if zid and not db.query(DdaZone).filter(DdaZone.id == zid).first():
-        raise HTTPException(status_code=404, detail="Zone not found")
-    return zid, None
+    if not vid:
+        raise HTTPException(status_code=400, detail="A village is required for every image upload.")
+    village = db.query(DdaVillage).filter(DdaVillage.id == vid).first()
+    if not village:
+        raise HTTPException(status_code=404, detail="Location (village) not found")
+    if zid and village.zone_id != zid:
+        raise HTTPException(
+            status_code=400,
+            detail="The selected location does not belong to the selected zone.",
+        )
+    if not zid and not village.zone_id:
+        raise HTTPException(status_code=400, detail="A zone is required for every image upload.")
+    return village.zone_id, village.id
 
 
 def location_names(db: Session) -> tuple[dict[int, str], dict[int, str]]:
