@@ -2,6 +2,35 @@
  * change comparison, reports feed, and charts. Replaces the old
  * greeting+3-cards Home page in place. */
 
+// ---------------------------------------------------------------- Tabs ----
+// Overview / Charts & Graphs / Breakdown / Image Library, one visible at a
+// time via small card-style tabs, so the dashboard doesn't force one long
+// scroll through every section and sub-section.
+const DASH_TABS = ['overview', 'charts', 'breakdown', 'library'];
+function activateDashTab(tab) {
+  DASH_TABS.forEach((t) => {
+    const panel = document.getElementById(`dash-tab-${t}`);
+    if (panel) panel.hidden = t !== tab;
+  });
+  document.querySelectorAll('#dda-dash-tab-switch .dda-dash-tab-card').forEach((card) => {
+    const active = card.dataset.tab === tab;
+    card.classList.toggle('is-active', active);
+    card.setAttribute('aria-selected', String(active));
+  });
+  // Chart.js lays a canvas out at 0x0 if it was created while its container
+  // had `hidden` set; force every existing chart to recompute now that its
+  // panel is actually visible. Covers both the Charts & Graphs canvases and
+  // the Image Library's format doughnut.
+  if (tab === 'charts' || tab === 'library') {
+    Object.values(dashCharts).forEach((chart) => {
+      try { chart.resize(); } catch (_) { /* chart may have been destroyed/replaced */ }
+    });
+  }
+}
+document.querySelectorAll('#dda-dash-tab-switch .dda-dash-tab-card').forEach((card) => {
+  card.addEventListener('click', () => activateDashTab(card.dataset.tab));
+});
+
 function formatHomeDate(iso) {
   return typeof formatDateIst === 'function' ? formatDateIst(iso) : (iso || '—');
 }
@@ -270,7 +299,9 @@ async function loadDashboardSummary() {
 function applyDashboardSummary(summary) {
   dashSummaryCache = summary;
   const empty = document.getElementById('dda-dash-empty');
-  const content = document.getElementById('dda-dash-content');
+  // Only the Overview tab's KPI/Latest-result cards hide behind the empty
+  // state — Charts & Graphs, Breakdown, and Image Library stay reachable.
+  const overviewGrid = document.getElementById('dda-dash-overview-grid');
   if (!summary.totalRuns) {
     const filtered = !!dashDateParams();
     const heading = empty?.querySelector('h3');
@@ -284,11 +315,11 @@ function applyDashboardSummary(summary) {
     }
     if (cta) cta.classList.toggle('hidden', filtered);
     empty?.classList.remove('hidden');
-    content?.classList.add('hidden');
+    overviewGrid?.classList.add('hidden');
     return summary;
   }
   empty?.classList.add('hidden');
-  content?.classList.remove('hidden');
+  overviewGrid?.classList.remove('hidden');
   renderDashKpis(summary);
   renderDashLatest(summary.latestRun);
   renderRankedChangeTypes(summary.changeTypes);
@@ -886,6 +917,11 @@ async function loadDashboard() {
     const data = await ddaApi('GET', `/api/dda/dashboard/bootstrap${qs ? `?${qs}` : ''}`);
     const summary = applyDashboardSummary(data.summary || {});
     if (!summary || !summary.totalRuns) {
+      // Charts & Graphs / Breakdown stay reachable via tabs — clear placeholders.
+      renderDashRolesTable([]);
+      dashRegionsCache = [];
+      renderDashRegionsTable([]);
+      renderDashVillagesTable([]);
       markDashUpdated();
       return;
     }

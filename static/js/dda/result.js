@@ -293,6 +293,17 @@ function showDdaResult(data) {
   }
 
   if (titleEl) titleEl.textContent = data.title || 'Detection Result';
+  closeResultTitleEdit();
+  const titleEditBtn = document.getElementById('result-title-edit-btn');
+  if (titleEditBtn) {
+    // Only a saved run (has an id) can be renamed. toggle() first, then
+    // re-run permission gating scoped to this button so a user without
+    // reports:edit still never sees it, regardless of id state.
+    titleEditBtn.classList.toggle('hidden', !data.id);
+    if (data.id && typeof applyPermissionGating === 'function') {
+      applyPermissionGating(window.ddaPermissions || {}, titleEditBtn.parentElement);
+    }
+  }
 
   const stats = data.statistics || {};
   const pct = (stats.changePercentage ?? 0).toFixed(2);
@@ -1029,6 +1040,60 @@ document.getElementById('dda-toggle-report-btn')?.addEventListener('click', (e) 
   layout.classList.toggle('report-hidden', nowHidden);
   btn.textContent = nowHidden ? 'Show Report' : 'Hide Report';
   btn.setAttribute('aria-expanded', String(!nowHidden));
+});
+
+function closeResultTitleEdit() {
+  document.getElementById('result-modal-title-wrap')?.classList.remove('hidden');
+  document.getElementById('result-modal-title-edit')?.classList.add('hidden');
+}
+
+function openResultTitleEdit() {
+  const titleWrap = document.getElementById('result-modal-title-wrap');
+  const editRow = document.getElementById('result-modal-title-edit');
+  const input = document.getElementById('result-title-input');
+  const msg = document.getElementById('result-title-msg');
+  if (!titleWrap || !editRow || !input) return;
+  input.value = ddaCurrentResult?.title || '';
+  if (msg) msg.textContent = '';
+  titleWrap.classList.add('hidden');
+  editRow.classList.remove('hidden');
+  input.focus();
+  input.select();
+}
+
+async function saveResultTitle() {
+  const input = document.getElementById('result-title-input');
+  const msg = document.getElementById('result-title-msg');
+  const saveBtn = document.getElementById('result-title-save-btn');
+  const runId = ddaCurrentResult?.id;
+  if (!input || !runId) return;
+  const title = input.value.trim();
+  if (!title) {
+    if (msg) msg.textContent = 'Title cannot be empty.';
+    return;
+  }
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const res = await ddaApi('PATCH', `/api/dda/reports/${runId}/title`, {
+      body: JSON.stringify({ title }),
+    });
+    ddaCurrentResult.title = res.title;
+    const titleEl = document.getElementById('result-modal-title');
+    if (titleEl) titleEl.textContent = res.title;
+    closeResultTitleEdit();
+  } catch (err) {
+    if (msg) msg.textContent = err.message || 'Could not save title.';
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+document.getElementById('result-title-edit-btn')?.addEventListener('click', openResultTitleEdit);
+document.getElementById('result-title-cancel-btn')?.addEventListener('click', closeResultTitleEdit);
+document.getElementById('result-title-save-btn')?.addEventListener('click', saveResultTitle);
+document.getElementById('result-title-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveResultTitle(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeResultTitleEdit(); }
 });
 
 document.getElementById('result-modal-close')?.addEventListener('click', closeDdaResultModal);

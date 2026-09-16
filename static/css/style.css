@@ -1088,6 +1088,41 @@ input:focus, select:focus, textarea:focus {
   font-weight: 600;
   margin: 0;
 }
+.result-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.result-title-edit-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.result-modal-title-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.result-title-input {
+  flex: 1 1 320px;
+  min-width: 200px;
+  max-width: 480px;
+  padding: 0.45rem 0.65rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.result-title-msg { font-size: 0.8rem; }
 .result-modal-header-actions {
   display: flex;
   align-items: center;

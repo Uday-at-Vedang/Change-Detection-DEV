@@ -175,3 +175,47 @@ def notify_report(run_id: int, body: ReportNotifyBody, db: Session = Depends(get
     if not sent:
         raise HTTPException(status_code=400, detail=error or "Failed to send report email")
     return {"ok": True, "message": f"Report link sent to {body.email.strip()}.", "reportUrl": report_url}
+
+
+class ReportTitleBody(BaseModel):
+    title: str
+
+
+@router.patch("/reports/{run_id}/title")
+def update_report_title(
+    run_id: int,
+    body: ReportTitleBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_module_permission("reports", "edit")),
+):
+    """Rename a report. The auto-generated 'before.tif vs after.tif' title
+    is rarely the name someone wants on a shared report, so this lets it be
+    edited after the fact without touching the underlying run data.
+
+    The Reports list (reports.js) shows a job's own cached title ahead of
+    the run's, for any run that still has a matching DetectionJob row — so
+    that job's params_json is updated too, or the list would keep showing
+    the old name even though the run and the report page are both current."""
+    _require_dda()
+    run = _get_user_run(db, run_id, user.id)
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty.")
+    if len(title) > 255:
+        raise HTTPException(status_code=400, detail="Title must be 255 characters or fewer.")
+    run.title = title
+
+    import json as _json
+
+    from .models import DetectionJob
+    job = db.query(DetectionJob).filter(DetectionJob.run_id == run.id).first()
+    if job:
+        try:
+            params = _json.loads(job.params_json or "{}")
+        except _json.JSONDecodeError:
+            params = {}
+        params["title"] = title
+        job.params_json = _json.dumps(params)
+
+    db.commit()
+    return {"ok": True, "title": run.title}

@@ -3,7 +3,12 @@
 <div class="result-modal-backdrop hidden" id="result-modal">
   <div class="result-modal">
     <div class="result-modal-header">
-      <h3 id="result-modal-title">Detection Result</h3>
+      <div class="result-modal-title-wrap" id="result-modal-title-wrap">
+        <h3 id="result-modal-title">Detection Result</h3>
+        <button type="button" class="btn-icon result-title-edit-btn hidden" id="result-title-edit-btn" title="Edit report title" aria-label="Edit report title" data-requires-permission="reports:edit">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        </button>
+      </div>
       <div class="result-modal-header-actions">
         <button type="button" class="btn btn-secondary btn-sm" id="dda-toggle-stats-btn" aria-expanded="true" aria-controls="result-stats">Hide Details</button>
         <button type="button" class="btn btn-secondary btn-sm" id="dda-toggle-report-btn" aria-expanded="true" aria-controls="result-modal-side">Hide Report</button>
@@ -11,6 +16,12 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
+    </div>
+    <div class="result-modal-title-edit hidden" id="result-modal-title-edit">
+      <input type="text" id="result-title-input" maxlength="255" class="result-title-input" />
+      <button type="button" class="btn btn-primary btn-sm" id="result-title-save-btn">Save</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="result-title-cancel-btn">Cancel</button>
+      <span class="dim result-title-msg" id="result-title-msg"></span>
     </div>
     <div class="result-stats" id="result-stats"></div>
     <div class="dda-view-toolbar">
