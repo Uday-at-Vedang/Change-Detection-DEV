@@ -2,6 +2,35 @@
  * change comparison, reports feed, and charts. Replaces the old
  * greeting+3-cards Home page in place. */
 
+// ---------------------------------------------------------------- Tabs ----
+// Overview / Charts & Graphs / Breakdown / Image Library, one visible at a
+// time via small card-style tabs, so the dashboard doesn't force one long
+// scroll through every section and sub-section.
+const DASH_TABS = ['overview', 'charts', 'breakdown', 'library'];
+function activateDashTab(tab) {
+  DASH_TABS.forEach((t) => {
+    const panel = document.getElementById(`dash-tab-${t}`);
+    if (panel) panel.hidden = t !== tab;
+  });
+  document.querySelectorAll('#dda-dash-tab-switch .dda-dash-tab-card').forEach((card) => {
+    const active = card.dataset.tab === tab;
+    card.classList.toggle('is-active', active);
+    card.setAttribute('aria-selected', String(active));
+  });
+  // Chart.js lays a canvas out at 0x0 if it was created while its container
+  // had `hidden` set; force every existing chart to recompute now that its
+  // panel is actually visible. Covers both the Charts & Graphs canvases and
+  // the Image Library's format doughnut.
+  if (tab === 'charts' || tab === 'library') {
+    Object.values(dashCharts).forEach((chart) => {
+      try { chart.resize(); } catch (_) { /* chart may have been destroyed/replaced */ }
+    });
+  }
+}
+document.querySelectorAll('#dda-dash-tab-switch .dda-dash-tab-card').forEach((card) => {
+  card.addEventListener('click', () => activateDashTab(card.dataset.tab));
+});
+
 function formatHomeDate(iso) {
   return typeof formatDateIst === 'function' ? formatDateIst(iso) : (iso || '—');
 }
@@ -262,7 +291,12 @@ async function loadDashboardSummary() {
     const summary = await ddaApi('GET', dashUrl('/api/dda/dashboard/summary'));
     dashSummaryCache = summary;
     const empty = document.getElementById('dda-dash-empty');
-    const content = document.getElementById('dda-dash-content');
+    // Only the Overview tab's KPI/Latest-result cards hide behind the empty
+    // state now — Charts & Graphs, Breakdown, and Image Library stay
+    // reachable via the tab switcher regardless of whether any detection
+    // has run yet (Image Library in particular has its own data, unrelated
+    // to detection history).
+    const overviewGrid = document.getElementById('dda-dash-overview-grid');
     if (!summary.totalRuns) {
       const filtered = !!dashDateParams();
       const heading = empty?.querySelector('h3');
@@ -276,11 +310,11 @@ async function loadDashboardSummary() {
       }
       if (cta) cta.classList.toggle('hidden', filtered);
       empty?.classList.remove('hidden');
-      content?.classList.add('hidden');
+      overviewGrid?.classList.add('hidden');
       return summary;
     }
     empty?.classList.add('hidden');
-    content?.classList.remove('hidden');
+    overviewGrid?.classList.remove('hidden');
     renderDashKpis(summary);
     renderDashLatest(summary.latestRun);
     renderRankedChangeTypes(summary.changeTypes);
@@ -865,6 +899,15 @@ async function loadDashboard() {
 
   const summary = await loadDashboardSummary();
   if (!summary || !summary.totalRuns) {
+    // Charts & Graphs and Breakdown are still reachable via the tab
+    // switcher even with zero runs — render their real "nothing yet"
+    // messages now instead of leaving the initial "Loading…" placeholder
+    // stuck forever (it used to not matter since the whole area was
+    // hidden; now a user can actually click into these tabs).
+    renderDashRolesTable([]);
+    dashRegionsCache = [];
+    renderDashRegionsTable([]);
+    renderDashVillagesTable([]);
     markDashUpdated();
     return;
   }

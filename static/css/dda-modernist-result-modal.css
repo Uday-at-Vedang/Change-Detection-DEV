@@ -260,3 +260,23 @@
 #page-report-detail .dda-header.dda-report-header {
   margin: 0 !important;
 }
+
+/* --- Editable report title --- */
+#result-modal .result-title-edit-btn {
+  border-radius: 0;
+  color: var(--dm-ink-muted);
+}
+#result-modal .result-title-edit-btn:hover { background: var(--dm-accent-100); color: var(--dm-accent); }
+#result-modal .result-title-input {
+  border-radius: 0;
+  border-color: var(--dm-line);
+  font-family: var(--dm-font);
+}
+#result-modal .result-modal-title-edit .btn {
+  border-radius: 0;
+  font-family: var(--dm-font);
+  font-weight: 700;
+}
+#result-modal .result-modal-title-edit .btn-primary { background: var(--dm-accent); }
+#result-modal .result-modal-title-edit .btn-primary:hover { background: var(--dm-accent-hover); filter: none; box-shadow: none; }
+#result-modal .result-title-msg { color: var(--dm-accent); }
