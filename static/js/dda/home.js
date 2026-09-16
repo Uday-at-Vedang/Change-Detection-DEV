@@ -182,7 +182,7 @@ async function loadHomeGreeting() {
   const el = document.getElementById('dda-home-greeting');
   if (!el) return;
   try {
-    const me = await ddaApi('GET', '/api/me');
+    const me = typeof ensureDdaMe === 'function' ? await ensureDdaMe() : await ddaApi('GET', '/api/me');
     el.textContent = me.full_name ? `Welcome, ${me.full_name}` : 'Welcome';
   } catch (_) {
     // Not authenticated — the page-load redirect to /login should already
@@ -260,60 +260,64 @@ function renderDashLatest(run) {
 async function loadDashboardSummary() {
   try {
     const summary = await ddaApi('GET', dashUrl('/api/dda/dashboard/summary'));
-    dashSummaryCache = summary;
-    const empty = document.getElementById('dda-dash-empty');
-    const content = document.getElementById('dda-dash-content');
-    if (!summary.totalRuns) {
-      const filtered = !!dashDateParams();
-      const heading = empty?.querySelector('h3');
-      const body = empty?.querySelector('p');
-      const cta = empty?.querySelector('a');
-      if (heading) heading.textContent = filtered ? 'No runs in this date range' : 'No detections yet';
-      if (body) {
-        body.textContent = filtered
-          ? 'Try clearing the From/To filter or picking a wider range.'
-          : 'Run your first comparison to start populating the dashboard with detection statistics, region/village breakdowns, and reports.';
-      }
-      if (cta) cta.classList.toggle('hidden', filtered);
-      empty?.classList.remove('hidden');
-      content?.classList.add('hidden');
-      return summary;
-    }
-    empty?.classList.add('hidden');
-    content?.classList.remove('hidden');
-    renderDashKpis(summary);
-    renderDashLatest(summary.latestRun);
-    renderRankedChangeTypes(summary.changeTypes);
-    renderDashChart('dda-chart-status', {
-      type: 'doughnut',
-      data: {
-        labels: ['Confirmed', 'False Positive', 'Submitted', 'Unclassified'],
-        datasets: [{
-          data: [summary.totalConfirmed, summary.totalFalsePositive, summary.totalSubmitted, summary.totalUnclassified],
-          backgroundColor: ['#16a34a', '#dc2626', '#2563eb', '#ca8a04'],
-        }],
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { position: 'bottom' },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                const pct = total ? Math.round((ctx.parsed / total) * 100) : 0;
-                return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
-              },
-            },
-          },
-        },
-      },
-    });
-    return summary;
+    return applyDashboardSummary(summary);
   } catch (err) {
     document.getElementById('dda-dash-kpis').innerHTML = `<p class="dim">Could not load overview: ${escapeHtml(err.message || 'error')}</p>`;
     return null;
   }
+}
+
+function applyDashboardSummary(summary) {
+  dashSummaryCache = summary;
+  const empty = document.getElementById('dda-dash-empty');
+  const content = document.getElementById('dda-dash-content');
+  if (!summary.totalRuns) {
+    const filtered = !!dashDateParams();
+    const heading = empty?.querySelector('h3');
+    const body = empty?.querySelector('p');
+    const cta = empty?.querySelector('a');
+    if (heading) heading.textContent = filtered ? 'No runs in this date range' : 'No detections yet';
+    if (body) {
+      body.textContent = filtered
+        ? 'Try clearing the From/To filter or picking a wider range.'
+        : 'Run your first comparison to start populating the dashboard with detection statistics, region/village breakdowns, and reports.';
+    }
+    if (cta) cta.classList.toggle('hidden', filtered);
+    empty?.classList.remove('hidden');
+    content?.classList.add('hidden');
+    return summary;
+  }
+  empty?.classList.add('hidden');
+  content?.classList.remove('hidden');
+  renderDashKpis(summary);
+  renderDashLatest(summary.latestRun);
+  renderRankedChangeTypes(summary.changeTypes);
+  renderDashChart('dda-chart-status', {
+    type: 'doughnut',
+    data: {
+      labels: ['Confirmed', 'False Positive', 'Submitted', 'Unclassified'],
+      datasets: [{
+        data: [summary.totalConfirmed, summary.totalFalsePositive, summary.totalSubmitted, summary.totalUnclassified],
+        backgroundColor: ['#16a34a', '#dc2626', '#2563eb', '#ca8a04'],
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = total ? Math.round((ctx.parsed / total) * 100) : 0;
+              return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+  return summary;
 }
 
 function roleLabel(role) {
@@ -360,19 +364,23 @@ async function loadDashboardRoles() {
   const el = document.getElementById('dda-dash-roles');
   try {
     const data = await ddaApi('GET', dashUrl('/api/dda/dashboard/roles'));
-    const roles = data.roles || [];
-    renderDashRolesTable(roles);
-    renderDashChart('dda-chart-roles', {
-      type: 'bar',
-      data: {
-        labels: roles.map((r) => roleLabel(r.role)),
-        datasets: [{ label: 'Detections', data: roles.map((r) => r.runsCount), backgroundColor: '#2d2b2b' }],
-      },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
-    });
+    applyDashboardRoles(data.roles || []);
   } catch (err) {
     if (el) el.innerHTML = `<p class="dim">Could not load role breakdown: ${escapeHtml(err.message || 'error')}</p>`;
   }
+}
+
+function applyDashboardRoles(roles) {
+  const el = document.getElementById('dda-dash-roles');
+  renderDashRolesTable(roles);
+  renderDashChart('dda-chart-roles', {
+    type: 'bar',
+    data: {
+      labels: roles.map((r) => roleLabel(r.role)),
+      datasets: [{ label: 'Detections', data: roles.map((r) => r.runsCount), backgroundColor: '#2d2b2b' }],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+  });
 }
 
 let dashRegionsCache = [];
@@ -469,21 +477,25 @@ function selectDashRegion(zone) {
 async function loadDashboardRegions() {
   try {
     const data = await ddaApi('GET', dashUrl('/api/dda/dashboard/regions'));
-    dashRegionsCache = data.regions || [];
-    renderDashRegionsTable(dashRegionsCache);
-    renderDashChart('dda-chart-regions', {
-      type: 'bar',
-      data: {
-        labels: dashRegionsCache.map((r) => r.zone),
-        datasets: [{ label: 'Detections', data: dashRegionsCache.map((r) => r.runsCount), backgroundColor: '#ec3013' }],
-      },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
-      onClick: (i) => selectDashRegion(dashRegionsCache[i]?.zone),
-    });
-    renderChangeTypesByRegionChart(dashRegionsCache);
+    applyDashboardRegions(data.regions || []);
   } catch (err) {
     document.getElementById('dda-dash-regions').innerHTML = `<p class="dim">Could not load regions: ${escapeHtml(err.message || 'error')}</p>`;
   }
+}
+
+function applyDashboardRegions(regions) {
+  dashRegionsCache = regions;
+  renderDashRegionsTable(dashRegionsCache);
+  renderDashChart('dda-chart-regions', {
+    type: 'bar',
+    data: {
+      labels: dashRegionsCache.map((r) => r.zone),
+      datasets: [{ label: 'Detections', data: dashRegionsCache.map((r) => r.runsCount), backgroundColor: '#ec3013' }],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    onClick: (i) => selectDashRegion(dashRegionsCache[i]?.zone),
+  });
+  renderChangeTypesByRegionChart(dashRegionsCache);
 }
 
 let dashSelectedVillageKey = '';
@@ -549,41 +561,41 @@ async function loadDashboardVillages(zone) {
     if (zone) params.set('zone', zone);
     const qs = params.toString();
     const data = await ddaApi('GET', `/api/dda/dashboard/villages${qs ? `?${qs}` : ''}`);
-    const villages = data.villages || [];
-    renderDashVillagesTable(villages);
-    // Default the Change Comparison card to the busiest village instead of
-    // leaving it empty until someone clicks a row — nothing to disambiguate
-    // when there's only one, and it's the most useful starting point either way.
-    if (villages.length && !dashSelectedVillageKey) {
-      dashSelectedVillageKey = `${villages[0].zone} ${villages[0].village}`;
-      renderDashVillagesTable(villages);
-      loadDashboardLocation(villages[0].zone, villages[0].village);
-    }
-    const top = villages.slice(0, 15);
-    renderDashChart('dda-chart-villages', {
-      type: 'bar',
-      data: {
-        labels: top.map((v) => v.village),
-        datasets: [{ label: 'Detections', data: top.map((v) => v.runsCount), backgroundColor: '#e15b47' }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
-      },
-      onClick: (i) => {
-        const v = top[i];
-        if (!v) return;
-        dashSelectedVillageKey = `${v.zone} ${v.village}`;
-        renderDashVillagesTable(villages);
-        loadDashboardLocation(v.zone, v.village);
-        document.getElementById('dda-dash-location-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      },
-    });
+    applyDashboardVillages(data.villages || []);
   } catch (err) {
     if (el) el.innerHTML = `<p class="dim">Could not load villages: ${escapeHtml(err.message || 'error')}</p>`;
   }
+}
+
+function applyDashboardVillages(villages) {
+  renderDashVillagesTable(villages);
+  if (villages.length && !dashSelectedVillageKey) {
+    dashSelectedVillageKey = `${villages[0].zone} ${villages[0].village}`;
+    renderDashVillagesTable(villages);
+    loadDashboardLocation(villages[0].zone, villages[0].village);
+  }
+  const top = villages.slice(0, 15);
+  renderDashChart('dda-chart-villages', {
+    type: 'bar',
+    data: {
+      labels: top.map((v) => v.village),
+      datasets: [{ label: 'Detections', data: top.map((v) => v.runsCount), backgroundColor: '#e15b47' }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+    onClick: (i) => {
+      const v = top[i];
+      if (!v) return;
+      dashSelectedVillageKey = `${v.zone} ${v.village}`;
+      renderDashVillagesTable(villages);
+      loadDashboardLocation(v.zone, v.village);
+      document.getElementById('dda-dash-location-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+  });
 }
 
 function dashClassRow(label, r) {
@@ -692,36 +704,39 @@ async function loadDashboardLocation(zone, village) {
 async function loadDashboardTrend() {
   try {
     const data = await ddaApi('GET', '/api/dda/dashboard/trend?months=6');
-    const buckets = data.buckets || [];
-    renderDashChart('dda-chart-trend', {
-      type: 'line',
-      data: {
-        labels: buckets.map((b) => b.label),
-        datasets: [{
-          label: 'Detection runs',
-          data: buckets.map((b) => b.runsCount),
-          borderColor: '#ec3013',
-          backgroundColor: 'rgba(236,48,19,0.12)',
-          tension: 0.3,
-          fill: true,
-        }],
-      },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
-      onClick: (i) => {
-        const period = buckets[i]?.period; // "YYYY-MM"
-        if (!period) return;
-        const [y, m] = period.split('-').map(Number);
-        const lastDay = new Date(y, m, 0).getDate();
-        const from = document.getElementById('dash-filter-from');
-        const to = document.getElementById('dash-filter-to');
-        if (from) from.value = `${period}-01`;
-        if (to) to.value = `${period}-${String(lastDay).padStart(2, '0')}`;
-        loadDashboard();
-      },
-    });
+    applyDashboardTrend(data.buckets || []);
   } catch (_) {
     // Chart stays absent — non-critical widget, other sections still work.
   }
+}
+
+function applyDashboardTrend(buckets) {
+  renderDashChart('dda-chart-trend', {
+    type: 'line',
+    data: {
+      labels: buckets.map((b) => b.label),
+      datasets: [{
+        label: 'Detection runs',
+        data: buckets.map((b) => b.runsCount),
+        borderColor: '#ec3013',
+        backgroundColor: 'rgba(236,48,19,0.12)',
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    onClick: (i) => {
+      const period = buckets[i]?.period; // "YYYY-MM"
+      if (!period) return;
+      const [y, m] = period.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const from = document.getElementById('dash-filter-from');
+      const to = document.getElementById('dash-filter-to');
+      if (from) from.value = `${period}-01`;
+      if (to) to.value = `${period}-${String(lastDay).padStart(2, '0')}`;
+      loadDashboard();
+    },
+  });
 }
 
 let dashLiveJobTimer = null;
@@ -776,9 +791,10 @@ function renderDashLiveBanner(jobs) {
 
 async function loadDashboardLiveJob() {
   try {
-    const data = await ddaApi('GET', '/api/dda/jobs?limit=20');
-    const jobs = (data.jobs || []).filter((j) => j.status === 'running' || j.status === 'queued');
-    renderDashLiveBanner(jobs);
+    const jobs = typeof getDdaNotifyJobs === 'function'
+      ? await getDdaNotifyJobs()
+      : ((await ddaApi('GET', '/api/dda/jobs?limit=20')).jobs || []);
+    renderDashLiveBanner((jobs || []).filter((j) => j.status === 'running' || j.status === 'queued'));
   } catch (_) {
     // Non-critical widget — leave banner as it was on a transient failure.
   }
@@ -863,18 +879,24 @@ async function loadDashboard() {
   loadDashboardLibraryStats();
   loadDashboardLiveJob();
 
-  const summary = await loadDashboardSummary();
-  if (!summary || !summary.totalRuns) {
+  try {
+    const params = new URLSearchParams(dashDateParams());
+    params.set('months', '6');
+    const qs = params.toString();
+    const data = await ddaApi('GET', `/api/dda/dashboard/bootstrap${qs ? `?${qs}` : ''}`);
+    const summary = applyDashboardSummary(data.summary || {});
+    if (!summary || !summary.totalRuns) {
+      markDashUpdated();
+      return;
+    }
+    applyDashboardRoles(data.roles || []);
+    applyDashboardRegions(data.regions || []);
+    applyDashboardVillages(data.villages || []);
+    applyDashboardTrend((data.trend && data.trend.buckets) || []);
     markDashUpdated();
-    return;
+  } catch (err) {
+    document.getElementById('dda-dash-kpis').innerHTML = `<p class="dim">Could not load overview: ${escapeHtml(err.message || 'error')}</p>`;
   }
-  await Promise.all([
-    loadDashboardRoles(),
-    loadDashboardRegions(),
-    loadDashboardVillages(''),
-    loadDashboardTrend(),
-  ]);
-  markDashUpdated();
 }
 
 document.getElementById('btn-dash-refresh')?.addEventListener('click', loadDashboard);

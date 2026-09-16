@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -12,10 +13,16 @@ from sqlalchemy.orm import Session
 
 from ...database import get_db
 from ...models import User
-from ..config import IS_DDA_MODE
+from ..config import IS_DDA_MODE, get_storage_root
 from ..dda_auth import current_dda_user, get_user_role
 from ..rbac.permissions import require_module_permission
-from .bulk_upload_service import build_bulk_upload_template, bulk_upload_images, parse_bulk_manifest
+from .bulk_upload_service import (
+    BulkDefaults,
+    build_bulk_upload_template,
+    bulk_upload_images,
+    parse_bulk_manifest,
+    zone_village_names,
+)
 from .image_service import (
     IMAGE_TYPE_EXTENSIONS,
     IMAGE_TYPES,
@@ -213,6 +220,8 @@ def api_list_images(
     capture_date_from: Optional[str] = None,
     capture_date_to: Optional[str] = None,
     source: Optional[str] = None,
+    limit: Optional[int] = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
@@ -228,6 +237,10 @@ def api_list_images(
         capture_date_from=capture_date_from,
         capture_date_to=capture_date_to,
         source=source,
+        include_bounds=False,
+        slim=True,
+        limit=limit if limit is not None else 50,
+        offset=offset,
     )
 
 
@@ -344,17 +357,64 @@ def api_bulk_upload_template(
     )
 
 
+@router.get("/tree/bulk-upload/config")
+def api_bulk_upload_config(
+    user: User = Depends(require_module_permission("library", "view")),
+):
+    """Main folder for this environment — Excel General Folder paths are relative to it."""
+    _require_dda()
+    root = get_storage_root()
+    return {
+        "mainFolder": str(root),
+        "imageTypes": sorted(IMAGE_TYPES),
+        "sources": ["satellite", "drone"],
+    }
+
+
 @router.post("/tree/bulk-upload")
 async def api_bulk_upload(
     excel: UploadFile = File(...),
     files: List[UploadFile] = File(...),
+    year: str = Form(""),
+    source: str = Form(""),
+    image_type: str = Form(""),
+    zone_id: str = Form(""),
+    village_id: str = Form(""),
+    filenames: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_module_permission("library", "create")),
 ):
     _require_dda()
     xlsx_bytes = await excel.read()
     rows, row_errors = parse_bulk_manifest(xlsx_bytes)
-    result = await bulk_upload_images(db, rows, files, uploaded_by=user.email or str(user.id))
+
+    zid = _optional_int(zone_id, "zone_id")
+    vid = _optional_int(village_id, "village_id")
+    zone_name, village_name = zone_village_names(db, zid, vid)
+
+    name_map = {}
+    if filenames:
+        try:
+            raw = json.loads(filenames)
+            if isinstance(raw, dict):
+                name_map = {str(k).strip().lower(): str(v).strip() for k, v in raw.items() if v}
+        except Exception:
+            raise HTTPException(status_code=400, detail="filenames must be a JSON object of originalName → serverFilename")
+
+    defaults = BulkDefaults(
+        year=(year or "").strip() or None,
+        source=(source or "").strip().lower() or None,
+        image_type=(image_type or "").strip() or None,
+        zone=zone_name or None,
+        village=village_name or None,
+        filenames=name_map,
+    )
+    # Always run defaults so empty Image Type gets GeoTIFF.
+    result = await bulk_upload_images(
+        db, rows, files,
+        uploaded_by=user.email or str(user.id),
+        defaults=defaults,
+    )
     result.errors = row_errors + result.errors
     return {
         "status": True,
@@ -368,6 +428,7 @@ async def api_bulk_upload(
             "errors": len(result.errors),
             "unmatchedFiles": len(result.unmatched_files),
         },
+        "mainFolder": str(get_storage_root()),
     }
 
 

@@ -309,6 +309,18 @@ THUMB_MAX_SIZE = 200  # max width or height for history thumbnails
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+
+@app.middleware("http")
+async def _static_cache_control(request: Request, call_next):
+    """Long-lived cache for versioned /static assets (?v= busting on script tags)."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers.setdefault(
+            "Cache-Control",
+            "public, max-age=31536000, immutable",
+        )
+    return response
+
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
@@ -1063,6 +1075,8 @@ def history(
     request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    paged: int = Query(0, ge=0, le=1),
 ):
     if IS_DDA_MODE:
         from .dda.dda_auth import get_dda_user
@@ -1082,11 +1096,13 @@ def history(
         filt = DetectionRun.user_id == user.id
         if auto_ids:
             filt = or_(filt, DetectionRun.id.in_(auto_ids))
-        runs = db.query(DetectionRun).filter(filt).order_by(DetectionRun.created_at.desc()).limit(limit).all()
+        query = db.query(DetectionRun).filter(filt)
     else:
         user = get_or_create_guest_user(db)
-        runs = db.query(DetectionRun).filter(DetectionRun.user_id == user.id).order_by(DetectionRun.created_at.desc()).limit(limit).all()
-    return [
+        query = db.query(DetectionRun).filter(DetectionRun.user_id == user.id)
+    total = query.count() if paged else None
+    runs = query.order_by(DetectionRun.created_at.desc()).offset(offset).limit(limit).all()
+    items = [
         {
             "id": r.id,
             "title": r.title,
@@ -1104,6 +1120,9 @@ def history(
         }
         for r in runs
     ]
+    if paged:
+        return {"items": items, "total": int(total or 0), "offset": offset, "limit": limit}
+    return items
 
 
 @app.get("/api/history/{run_id}")

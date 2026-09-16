@@ -2,7 +2,7 @@
 routes/pages, and by the navbar to filter which menu items a user sees."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -30,6 +30,32 @@ def get_user_role_row(user: User, db: Session) -> Optional[Role]:
 def get_role_rank(user: User, db: Session) -> Optional[int]:
     role = get_user_role_row(user, db)
     return role.rank if role else None
+
+
+def _role_permission_rows(role: Optional[Role], db: Session) -> Dict[int, RolePermission]:
+    if not role:
+        return {}
+    return {
+        p.module_id: p
+        for p in db.query(RolePermission).filter(RolePermission.role_id == role.id).all()
+    }
+
+
+def user_permissions_map(user: User, db: Session) -> dict:
+    """One role + one permissions query for every module (no per-action N+1)."""
+    role = get_user_role_row(user, db)
+    modules = db.query(Module).all()
+    perms = _role_permission_rows(role, db)
+    out = {}
+    for m in modules:
+        p = perms.get(m.id)
+        out[m.key] = {
+            "view": bool(p and p.can_view),
+            "create": bool(p and p.can_create),
+            "edit": bool(p and p.can_edit),
+            "delete": bool(p and p.can_delete),
+        }
+    return out
 
 
 def user_can(user: User, db: Session, module_key: str, action: str = "view") -> bool:
@@ -77,28 +103,31 @@ def resolve_user_menu(user: User, db: Session) -> List[MenuItem]:
     a group item ("Configuration") which is only shown once it has at least
     one visible child — otherwise a role with no admin access would see an
     empty, dead group header."""
+    role = get_user_role_row(user, db)
+    can_view_module_ids = {
+        mid
+        for mid, p in _role_permission_rows(role, db).items()
+        if p.can_view
+    }
 
     def _visible(item: MenuItem) -> bool:
         if item.module_id is None:
             return True
-        module = db.query(Module).filter(Module.id == item.module_id).first()
-        return bool(module and user_can(user, db, module.key, "view"))
+        return item.module_id in can_view_module_ids
 
-    top_level = (
+    items = (
         db.query(MenuItem)
-        .filter(MenuItem.is_active.is_(True), MenuItem.parent_id.is_(None))
+        .filter(MenuItem.is_active.is_(True))
         .order_by(MenuItem.sort_order)
         .all()
     )
+    children_by_parent: dict[Optional[int], list] = {}
+    for item in items:
+        children_by_parent.setdefault(item.parent_id, []).append(item)
 
     visible = []
-    for item in top_level:
-        children = (
-            db.query(MenuItem)
-            .filter(MenuItem.is_active.is_(True), MenuItem.parent_id == item.id)
-            .order_by(MenuItem.sort_order)
-            .all()
-        )
+    for item in children_by_parent.get(None, []):
+        children = children_by_parent.get(item.id, [])
         item.visible_children = [c for c in children if _visible(c)]
         is_group = bool(children)
         if (item.visible_children if is_group else _visible(item)):

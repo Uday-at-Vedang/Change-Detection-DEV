@@ -36,10 +36,21 @@ function formatNotifyTime(iso) {
 async function fetchNotifyJobs() {
   try {
     const data = await ddaApi('GET', '/api/dda/jobs?limit=25');
-    return data.jobs || [];
+    const jobs = data.jobs || [];
+    window.ddaNotifyJobs = jobs;
+    window._ddaNotifyJobsLoaded = true;
+    return jobs;
   } catch (_) {
-    return [];
+    return window.ddaNotifyJobs || [];
   }
+}
+
+/** Shared jobs list for Detect resume / home live banner — avoids a second fetch. */
+async function getDdaNotifyJobs({ force } = {}) {
+  if (!force && window._ddaNotifyJobsLoaded) {
+    return window.ddaNotifyJobs || [];
+  }
+  return fetchNotifyJobs();
 }
 
 function updateNotifyBadge(jobs) {
@@ -179,3 +190,4 @@ function initNotifications() {
 document.addEventListener('DOMContentLoaded', initNotifications);
 window.markDdaJobSeen = markJobSeen;
 window.refreshDdaNotifications = refreshNotifications;
+window.getDdaNotifyJobs = getDdaNotifyJobs;

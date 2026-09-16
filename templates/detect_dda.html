@@ -145,8 +145,12 @@
             <div class="card" id="dda-area-pairs-card">
               <div class="card-header">
                 <h3>Same-area pairs</h3>
+                <div class="dda-lib-grid-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-load-area-pairs">Load pairs</button>
+                </div>
               </div>
-              <div id="dda-compare-pairs" class="dda-area-pairs dda-compare-pairs"></div>
+              <div id="dda-compare-pairs" class="dda-area-pairs dda-compare-pairs"><p class="dim">Click <strong>Load pairs</strong> when you need same-area suggestions (kept off the initial page load).</p></div>
+              <div class="pagination" id="dda-compare-pairs-pagination"></div>
             </div>
             <div class="card">
               <div class="card-header">
@@ -200,13 +204,13 @@
   {% include "partials/result_modal_dda.html" %}
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/static/js/dda/shared.js?v=8"></script>
-  <script src="/static/js/dda/app.js?v=31"></script>
+  <script src="/static/js/dda/shared.js?v=14"></script>
+  <script src="/static/js/dda/app.js?v=32"></script>
   <script src="/static/js/dda/tree.js?v=8"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/pairs.js?v=12"></script>
+  <script src="/static/js/dda/pairs.js?v=14"></script>
   <script src="/static/js/dda/result.js?v=29"></script>
-  <script src="/static/js/dda/compare.js?v=30"></script>
-  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/compare.js?v=31"></script>
+  <script src="/static/js/dda/notifications.js?v=6"></script>
 </body>
 </html>

@@ -35,7 +35,7 @@ async function initDda() {
   if (!needsLibrary && !needsDetect) return;
   try {
     const [me, cfg, localCfg] = await Promise.all([
-      ddaApi('GET', '/api/dda/me').catch(() => null),
+      (typeof ensureDdaMe === 'function' ? ensureDdaMe() : ddaApi('GET', '/api/me')).catch(() => null),
       ddaApi('GET', '/api/dda/config'),
       ddaApi('GET', '/api/dda/local/config'),
     ]);
@@ -72,10 +72,16 @@ async function initDda() {
     }
 
     if (needsLibrary) {
-      await Promise.all([
-        typeof loadTree === 'function' ? loadTree() : Promise.resolve(),
-        loadLibraryImages({ resetPage: true }),
-      ]);
+      // Grid first — tree must not block first paint of images.
+      loadLibraryImages({ resetPage: true });
+      if (typeof loadTree === 'function') {
+        loadTree().catch(() => {
+          const treeEl = document.getElementById('lib-tree');
+          if (treeEl && !treeEl.querySelector('.dda-tree-node, .dda-tree-item')) {
+            treeEl.innerHTML = '<p class="dim">Could not load folders.</p>';
+          }
+        });
+      }
     }
   } catch (err) {
     showDdaError(err.message || 'Failed to load library');
@@ -169,11 +175,6 @@ async function loadLibraryImages(opts) {
       return loadLibraryImages();
     }
     renderLibGrid();
-    if (typeof loadAreaPairs === 'function') {
-      const run = () => loadAreaPairs({ nodeId: selectedNode.id || null });
-      if (typeof deferIdle === 'function') deferIdle(run);
-      else setTimeout(run, 0);
-    }
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
   }
@@ -206,7 +207,7 @@ document.getElementById('btn-refresh-lib')?.addEventListener('click', async () =
   const emailEl = document.getElementById('dda-user-email');
   if (!emailEl) return;
   try {
-    const me = await ddaApi('GET', '/api/me');
+    const me = typeof ensureDdaMe === 'function' ? await ensureDdaMe() : await ddaApi('GET', '/api/me');
     emailEl.textContent = me.email || '';
     const avatarEl = document.getElementById('dda-user-avatar');
     if (avatarEl) avatarEl.textContent = (me.full_name || me.email || '?').trim().charAt(0).toUpperCase();

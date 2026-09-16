@@ -138,10 +138,14 @@
             <div class="card" id="dda-area-pairs-card">
               <div class="card-header">
                 <h3>Same-area pairs</h3>
-                <span class="dim" id="dda-area-pairs-hint"></span>
+                <div class="dda-lib-grid-actions">
+                  <span class="dim" id="dda-area-pairs-hint"></span>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-load-area-pairs">Load pairs</button>
+                </div>
               </div>
               <p class="sub">Each pair is exactly <strong>two images</strong>, never reused. Matching uses location, folder, capture date, filename, and geographic overlap. Oldest is <strong>Before</strong>, newest is <strong>After</strong>.</p>
-              <div id="dda-area-pairs" class="dda-area-pairs"><p class="dim">Loading pairs…</p></div>
+              <div id="dda-area-pairs" class="dda-area-pairs"><p class="dim">Click <strong>Load pairs</strong> to find same-area pairs for the current folder (kept off the initial page load so large libraries stay fast).</p></div>
+              <div class="pagination" id="dda-area-pairs-pagination"></div>
             </div>
           <div class="card">
             <div class="card-header">
@@ -275,13 +279,57 @@
         <h3 id="dda-bulk-upload-title">Bulk upload (Excel)</h3>
         <button type="button" class="btn btn-secondary btn-sm" id="dda-bulk-upload-close">Close</button>
       </div>
-      <p class="sub dim">Upload many images in one go. An Excel sheet tells us which folder and image type each file goes to — different rows can point to different folders, and missing folders are created automatically.</p>
+      <p class="sub dim">Paths in the Excel sheet are <strong>relative to this server’s Main folder</strong>. Fill General Folder / Zone / Village / Image Type in the sheet (or use the defaults below for blank cells). Each file can have its own server filename.</p>
+      <div class="dda-manage-section">
+        <h4>Main folder (this server)</h4>
+        <pre id="bulk-main-folder" class="dda-path-code">Loading…</pre>
+      </div>
       <div class="dda-manage-section">
         <h4>1. Get the template</h4>
         <a class="btn btn-secondary btn-sm" id="btn-bulk-upload-template" href="/api/dda/tree/bulk-upload/template" download>Download Excel template</a>
       </div>
       <div class="dda-manage-section">
-        <h4>2. Fill it in, then upload the sheet and the matching image files</h4>
+        <h4>2. Defaults for blank Excel cells</h4>
+        <div class="location-row dda-upload-row">
+          <div class="form-group">
+            <label for="bulk-image-type">Image type</label>
+            <select id="bulk-image-type">
+              <option value="">— From Excel —</option>
+              <option>GeoTIFF</option>
+              <option>PNG</option>
+              <option>JPEG</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="bulk-year">Year</label>
+            <select id="bulk-year">
+              <option value="">— From Excel —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="bulk-source">Source</label>
+            <select id="bulk-source">
+              <option value="">— From Excel —</option>
+              <option value="satellite">Satellite</option>
+              <option value="drone">Drone</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="bulk-zone">Zone / District</label>
+            <select id="bulk-zone">
+              <option value="">— From Excel —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="bulk-village">Village / Location</label>
+            <select id="bulk-village">
+              <option value="">— From Excel —</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="dda-manage-section">
+        <h4>3. Excel sheet + image files</h4>
         <div class="location-row">
           <label class="btn btn-secondary btn-sm dda-file-btn">Choose Excel file
             <input type="file" id="bulk-upload-excel" accept=".xlsx" />
@@ -293,6 +341,19 @@
             <input type="file" id="bulk-upload-files" accept=".tif,.tiff,.png,.jpg,.jpeg" multiple />
           </label>
           <span id="bulk-upload-files-name" class="dim">No files selected.</span>
+        </div>
+        <p id="bulk-upload-type-error" class="dda-upload-type-error hidden" role="alert"></p>
+        <div id="bulk-upload-file-list-wrap" class="dda-upload-file-list-wrap hidden">
+          <table class="dda-upload-file-table" id="bulk-upload-file-table">
+            <thead>
+              <tr>
+                <th>Original name</th>
+                <th>Server filename</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody id="bulk-upload-file-tbody"></tbody>
+          </table>
         </div>
       </div>
       <div id="bulk-upload-progress" class="dda-upload-progress hidden">
@@ -319,12 +380,12 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/static/js/dda/shared.js?v=8"></script>
-  <script src="/static/js/dda/app.js?v=31"></script>
+  <script src="/static/js/dda/shared.js?v=14"></script>
+  <script src="/static/js/dda/app.js?v=32"></script>
   <script src="/static/js/dda/tree.js?v=8"></script>
   <script src="/static/js/dda/map.js?v=4"></script>
-  <script src="/static/js/dda/library.js?v=23"></script>
-  <script src="/static/js/dda/pairs.js?v=12"></script>
-  <script src="/static/js/dda/notifications.js?v=5"></script>
+  <script src="/static/js/dda/library.js?v=24"></script>
+  <script src="/static/js/dda/pairs.js?v=14"></script>
+  <script src="/static/js/dda/notifications.js?v=6"></script>
 </body>
 </html>

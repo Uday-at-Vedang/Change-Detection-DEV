@@ -142,6 +142,26 @@ function buildImageMetaHtml(img) {
   ].join('');
 }
 
+// --- Current user (shared across chip / initDda / home greeting) ---
+
+let _ddaMePromise = null;
+
+/** Fetch `/api/me` once per page load and cache on `window.ddaMe`. */
+function ensureDdaMe() {
+  if (window.ddaMe) return Promise.resolve(window.ddaMe);
+  if (_ddaMePromise) return _ddaMePromise;
+  _ddaMePromise = ddaApi('GET', '/api/me')
+    .then((me) => {
+      window.ddaMe = me;
+      return me;
+    })
+    .catch((err) => {
+      _ddaMePromise = null;
+      throw err;
+    });
+  return _ddaMePromise;
+}
+
 // --- Dynamic role permissions (drives show/hide/disable in the UI so it
 // always matches whatever's set in the Roles & Users permission matrix,
 // without hardcoding any role name in a template or JS file). ---

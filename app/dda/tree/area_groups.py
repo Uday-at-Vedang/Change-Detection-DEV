@@ -330,15 +330,22 @@ def _clip_to_cell(b: tuple[float, float, float, float], cell: tuple[int, int], s
 
 
 def _public_image(img: dict, item: Optional["_Item"] = None) -> dict:
-    """Drop heavy fields after pairing so the HTTP payload stays small."""
-    out = dict(img)
-    out.pop("bounds", None)
-    if item is not None:
-        out["zoneId"] = item.zone
-        out["villageId"] = item.village
-        out["zoneName"] = item.zone_name
-        out["villageName"] = item.village_name
-    return out
+    """Keep only fields the pairs UI needs (id/path/dates/location)."""
+    zone_id = item.zone if item is not None else img.get("zoneId")
+    village_id = item.village if item is not None else img.get("villageId")
+    return {
+        "id": img.get("id"),
+        "path": img.get("path"),
+        "filename": img.get("filename") or img.get("imageName"),
+        "imageName": img.get("imageName") or img.get("filename"),
+        "captureDate": img.get("captureDate"),
+        "nodeId": img.get("nodeId"),
+        "nodePath": img.get("nodePath") or "",
+        "zoneId": zone_id,
+        "villageId": village_id,
+        "zoneName": (item.zone_name if item is not None else None) or img.get("zoneName") or "",
+        "villageName": (item.village_name if item is not None else None) or img.get("villageName") or "",
+    }
 
 
 class ResolvedLocation(NamedTuple):
@@ -748,27 +755,47 @@ def build_area_groups(
     return {
         "groups": groups,
         "unpaired": unpaired,
+        "unpairedCount": len(unpaired),
         "totalImages": n,
         "pairedImages": len(used),
     }
 
 
-def load_cached_area_groups(db) -> dict:
-    """Build same-area groups once per library fingerprint, then reuse in-process."""
+def _area_groups_response(payload: dict, *, include_unpaired: bool) -> dict:
+    unpaired = payload.get("unpaired") or []
+    out = {
+        "groups": payload.get("groups") or [],
+        "unpairedCount": int(payload.get("unpairedCount", len(unpaired))),
+        "totalImages": payload.get("totalImages", 0),
+        "pairedImages": payload.get("pairedImages", 0),
+        "unpaired": unpaired if include_unpaired else [],
+    }
+    return out
+
+
+def load_cached_area_groups(
+    db,
+    node_id: Optional[int] = None,
+    *,
+    include_unpaired: bool = False,
+) -> dict:
+    """Build same-area groups for a folder (or whole library), cached by fingerprint+node."""
     from .image_service import library_fingerprint, list_all_images
     from .library_cache import get_area_groups_cache, set_area_groups_cache
 
     fp = library_fingerprint(db)
-    cached = get_area_groups_cache(fp)
+    cache_node = int(node_id or 0)
+    cached = get_area_groups_cache(fp, cache_node)
     if cached is not None:
-        return cached
-    images = list_all_images(db, include_bounds=True, slim=True)
+        return _area_groups_response(cached, include_unpaired=include_unpaired)
+    images = list_all_images(db, node_id=node_id, include_bounds=True, slim=True)
     payload = build_area_groups(images, build_location_index(db))
-    set_area_groups_cache(fp, payload)
-    return payload
+    set_area_groups_cache(fp, payload, cache_node)
+    return _area_groups_response(payload, include_unpaired=include_unpaired)
 
 
 def filter_area_groups_for_node(payload: dict, node) -> dict:
+    """Legacy post-filter; prefer scoping via load_cached_area_groups(node_id=...)."""
     prefix = (getattr(node, "node_path", None) or "").rstrip("/")
     node_id = getattr(node, "id", None)
 
@@ -784,6 +811,7 @@ def filter_area_groups_for_node(payload: dict, node) -> dict:
     return {
         "groups": groups,
         "unpaired": unpaired,
+        "unpairedCount": len(unpaired),
         "totalImages": payload.get("totalImages", 0),
         "pairedImages": sum(len(g.get("images") or []) for g in groups),
     }

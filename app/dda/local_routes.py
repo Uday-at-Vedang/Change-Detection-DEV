@@ -119,7 +119,7 @@ def local_images(
     capture_date_from: Optional[str] = Query(None),
     capture_date_to: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
-    limit: Optional[int] = Query(None, ge=1, le=500),
+    limit: Optional[int] = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
@@ -138,7 +138,7 @@ def local_images(
         source=source,
         include_bounds=False,
         slim=True,
-        limit=limit,
+        limit=limit if limit is not None else 50,
         offset=offset,
     )
 
@@ -146,19 +146,22 @@ def local_images(
 @router.get("/local/area-groups")
 def local_area_groups(
     node_id: Optional[int] = Query(None),
+    include_unpaired: int = Query(0, ge=0, le=1),
     db: Session = Depends(get_db),
     user: User = Depends(current_dda_user),
 ):
     """Images covering the same place, with oldest → Before and newest → After."""
     _require_dda()
-    from .tree.area_groups import filter_area_groups_for_node, load_cached_area_groups
+    from .tree.area_groups import load_cached_area_groups
     from .tree.tree_service import get_node_or_404
 
-    payload = load_cached_area_groups(db)
     if node_id:
-        node = get_node_or_404(db, node_id)
-        return filter_area_groups_for_node(payload, node)
-    return payload
+        get_node_or_404(db, node_id)
+    return load_cached_area_groups(
+        db,
+        node_id=node_id,
+        include_unpaired=bool(include_unpaired),
+    )
 
 
 @router.get("/local/thumb")

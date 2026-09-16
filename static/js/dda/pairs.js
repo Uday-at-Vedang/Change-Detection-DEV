@@ -1,6 +1,9 @@
 /** Same-area pairing: oldest = Before, newest = After, with manual override. */
 
-const areaPairsState = { groups: [], unpaired: [], overrides: {}, autoApplied: false };
+const areaPairsState = { groups: [], unpaired: [], unpairedCount: 0, overrides: {}, autoApplied: false, loadedKey: null };
+const PAIRS_PER_PAGE = 20;
+let areaPairsPage = 0;
+let comparePairsPage = 0;
 
 function _pairDateLabel(img) {
   if (!img) return '';
@@ -112,19 +115,13 @@ function renderAreaPairRows(container, groups, { compact } = {}) {
         if (typeof showDdaError === 'function') {
           showDdaError('A pair must be two different images. The same file cannot be Before and After.');
         }
-        renderAreaPairRows(document.getElementById('dda-area-pairs'), areaPairsState.groups);
-        const cmp = document.getElementById('dda-compare-pairs');
-        if (cmp && areaPairsState.groups.length) {
-          renderAreaPairRows(cmp, areaPairsState.groups, { compact: true });
-        }
+        renderLibAreaPairs();
+        renderCompareAreaPairs();
         return;
       }
       areaPairsState.overrides[group.id] = { beforePath, afterPath };
-      renderAreaPairRows(document.getElementById('dda-area-pairs'), areaPairsState.groups);
-      const cmp = document.getElementById('dda-compare-pairs');
-      if (cmp && areaPairsState.groups.length) {
-        renderAreaPairRows(cmp, areaPairsState.groups, { compact: true });
-      }
+      renderLibAreaPairs();
+      renderCompareAreaPairs();
     };
     beforeSel?.addEventListener('change', saveOverride);
     afterSel?.addEventListener('change', saveOverride);
@@ -224,30 +221,96 @@ function applyPairFromUrl() {
   }
 }
 
-async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
+function renderLibAreaPairs() {
+  const libBox = document.getElementById('dda-area-pairs');
+  const pag = document.getElementById('dda-area-pairs-pagination');
+  if (!libBox) return;
+  const groups = areaPairsState.groups || [];
+  if (!groups.length) {
+    renderAreaPairRows(libBox, []);
+    if (pag) pag.innerHTML = '';
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAIRS_PER_PAGE));
+  if (areaPairsPage > totalPages - 1) areaPairsPage = Math.max(0, totalPages - 1);
+  const start = areaPairsPage * PAIRS_PER_PAGE;
+  renderAreaPairRows(libBox, groups.slice(start, start + PAIRS_PER_PAGE));
+  if (typeof renderPaginationControls === 'function' && pag) {
+    renderPaginationControls(pag, areaPairsPage, totalPages, (p) => {
+      areaPairsPage = p;
+      renderLibAreaPairs();
+    });
+  } else if (pag) {
+    pag.innerHTML = '';
+  }
+}
+
+function renderCompareAreaPairs() {
+  const cmpBox = document.getElementById('dda-compare-pairs');
+  const pag = document.getElementById('dda-compare-pairs-pagination');
+  if (!cmpBox) return;
+  const groups = areaPairsState.groups || [];
+  if (!groups.length) {
+    cmpBox.innerHTML = '<p class="dim">No same-area pairs loaded yet. Click <strong>Load pairs</strong> or switch to Automatic.</p>';
+    if (pag) pag.innerHTML = '';
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAIRS_PER_PAGE));
+  if (comparePairsPage > totalPages - 1) comparePairsPage = Math.max(0, totalPages - 1);
+  const start = comparePairsPage * PAIRS_PER_PAGE;
+  renderAreaPairRows(cmpBox, groups.slice(start, start + PAIRS_PER_PAGE), { compact: true });
+  if (typeof renderPaginationControls === 'function' && pag) {
+    renderPaginationControls(pag, comparePairsPage, totalPages, (p) => {
+      comparePairsPage = p;
+      renderCompareAreaPairs();
+    });
+  } else if (pag) {
+    pag.innerHTML = '';
+  }
+}
+
+async function loadAreaPairs({ nodeId, autoFillCompare, includeUnpaired, force } = {}) {
   const libBox = document.getElementById('dda-area-pairs');
   const hint = document.getElementById('dda-area-pairs-hint');
   const cmpBox = document.getElementById('dda-compare-pairs');
+  const cacheKey = String(nodeId || 0);
+  if (!force && areaPairsState.loadedKey === cacheKey && (areaPairsState.groups || []).length) {
+    renderLibAreaPairs();
+    renderCompareAreaPairs();
+    populateAutoAreaSelect();
+    applyPairFromUrl();
+    return areaPairsState;
+  }
+  // Detect Automatic needs unpaired for dropdowns; Library Load pairs does not.
+  const wantUnpaired = includeUnpaired != null
+    ? !!includeUnpaired
+    : !!(document.getElementById('slot-t1') && typeof getDetectMode === 'function' && getDetectMode() === 'automatic');
   const params = new URLSearchParams();
   if (nodeId) params.set('node_id', String(nodeId));
+  if (wantUnpaired) params.set('include_unpaired', '1');
+  if (libBox) libBox.innerHTML = '<p class="dim">Loading pairs…</p>';
+  if (cmpBox) cmpBox.innerHTML = '<p class="dim">Loading pairs…</p>';
   try {
     const data = await ddaApi('GET', '/api/dda/local/area-groups' + (params.toString() ? `?${params}` : ''));
     areaPairsState.groups = data.groups || [];
     areaPairsState.unpaired = data.unpaired || [];
+    areaPairsState.unpairedCount = data.unpairedCount != null
+      ? data.unpairedCount
+      : areaPairsState.unpaired.length;
+    areaPairsState.loadedKey = cacheKey;
+    areaPairsPage = 0;
+    comparePairsPage = 0;
     window.ddaState = window.ddaState || {};
     window.ddaState.areaGroups = areaPairsState.groups;
     const n = areaPairsState.groups.length;
-    const unpaired = areaPairsState.unpaired.length;
+    const unpaired = areaPairsState.unpairedCount;
     if (hint) {
       hint.textContent = n
         ? `${n} pair${n === 1 ? '' : 's'} · ${unpaired} unpaired`
-        : (unpaired ? `${unpaired} image(s) not yet paired` : '');
+        : (unpaired ? `${unpaired} image(s) not yet paired` : 'No pairs found');
     }
-    renderAreaPairRows(libBox, areaPairsState.groups);
-    if (cmpBox) {
-      if (!areaPairsState.groups.length) cmpBox.innerHTML = '';
-      else renderAreaPairRows(cmpBox, areaPairsState.groups, { compact: true });
-    }
+    renderLibAreaPairs();
+    renderCompareAreaPairs();
     populateAutoAreaSelect();
     applyPairFromUrl();
     if (typeof populateSelects === 'function' && typeof selectSourceItems === 'function') {
@@ -264,10 +327,39 @@ async function loadAreaPairs({ nodeId, autoFillCompare } = {}) {
       }
       areaPairsState.autoApplied = true;
     }
+    const loadBtn = document.getElementById('btn-load-area-pairs');
+    if (loadBtn) loadBtn.textContent = 'Refresh';
   } catch (err) {
-    if (libBox) libBox.innerHTML = `<p class="dim">Could not load same-area pairs: ${escapeHtml(err.message || 'error')}</p>`;
+    const msg = `<p class="dim">Could not load same-area pairs: ${escapeHtml(err.message || 'error')}</p>`;
+    if (libBox) libBox.innerHTML = msg;
+    if (cmpBox) cmpBox.innerHTML = msg;
   }
 }
+
+function bindAreaPairsLoadButton() {
+  document.querySelectorAll('#btn-load-area-pairs').forEach((btn) => {
+    if (btn.dataset.bound) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const nodeId = window.ddaState?.selectedNode?.id
+          || (typeof compareState !== 'undefined' ? compareState.selectedNode?.id : null)
+          || null;
+        await loadAreaPairs({
+          nodeId,
+          force: true,
+          includeUnpaired: !!document.getElementById('slot-t1'),
+          autoFillCompare: !!document.getElementById('slot-t1'),
+        });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+bindAreaPairsLoadButton();
 
 window.loadAreaPairs = loadAreaPairs;
 window.areaPairsState = areaPairsState;

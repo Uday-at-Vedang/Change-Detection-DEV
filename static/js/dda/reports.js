@@ -6,7 +6,9 @@ function formatReportDate(iso) {
 
 let allReportRows = [];
 let reportsPage = 0;
-const REPORTS_PER_PAGE = 10;
+const REPORTS_PER_PAGE = 25;
+let reportsTotal = 0;
+let reportsServerPaged = true;
 
 function reportFilterState() {
   return {
@@ -71,23 +73,22 @@ function updateReportsMeta(shown, total) {
 function renderReportsTable(rows) {
   const el = document.getElementById('reports-list');
   if (!el) return;
-  updateReportsMeta(rows.length, allReportRows.length);
+  const totalForMeta = reportsServerPaged ? reportsTotal : allReportRows.length;
+  updateReportsMeta(rows.length, totalForMeta || rows.length);
 
-  if (!allReportRows.length) {
+  if (!allReportRows.length && !reportsTotal) {
     el.innerHTML = '<p class="dim">No detection reports yet. Run a comparison on the Change Detection page.</p>';
     document.getElementById('reports-pagination')?.replaceChildren();
     return;
   }
   if (!rows.length) {
-    el.innerHTML = '<p class="dim">No reports match these filters. Clear filters to see everything.</p>';
+    el.innerHTML = '<p class="dim">No reports match these filters on this page. Clear filters or try another page.</p>';
     document.getElementById('reports-pagination')?.replaceChildren();
     return;
   }
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / REPORTS_PER_PAGE));
-  reportsPage = Math.max(0, Math.min(reportsPage, totalPages - 1));
-  const start = reportsPage * REPORTS_PER_PAGE;
-  const pageRows = rows.slice(start, start + REPORTS_PER_PAGE);
+  // Server already returned one page; client filters apply within that page.
+  const pageRows = rows;
 
   el.innerHTML = `
       <table class="dda-reports-table">
@@ -122,18 +123,11 @@ function renderReportsTable(rows) {
         </tbody>
       </table>`;
 
-  el.querySelectorAll('[data-view-run]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const runId = btn.dataset.viewRun;
-      if (!runId) return;
-      window.location.href = `/dda/reports/${runId}`;
-    });
-  });
-
+  const totalPages = Math.max(1, Math.ceil((reportsTotal || rows.length) / REPORTS_PER_PAGE));
   if (typeof renderPaginationControls === 'function') {
     renderPaginationControls(document.getElementById('reports-pagination'), reportsPage, totalPages, (p) => {
       reportsPage = p;
-      renderReportsTable(rows);
+      loadReportsList({ keepFilters: true });
     });
   }
 }
@@ -160,59 +154,71 @@ function clearReportsFilters() {
   applyReportsFilter();
 }
 
-async function loadReportsList() {
+function _historyToRows(history) {
+  return (history || []).map((r) => ({
+    kind: 'run',
+    id: r.id,
+    runId: r.id,
+    title: r.title,
+    status: 'completed',
+    autoScheduled: String(r.title || '').startsWith('[Auto]'),
+    zone: r.zone || '',
+    village: r.village || '',
+    changePct: r.changePercentage,
+    regions: r.regionsCount,
+    createdAt: r.createdAt,
+  }));
+}
+
+function _jobsToRows(jobs) {
+  return (jobs || []).map((j) => ({
+    kind: 'job',
+    id: j.id,
+    runId: j.runId,
+    title: j.title || `${j.basePath} vs ${j.comparisonPath}`,
+    status: j.status,
+    autoScheduled: !!j.autoScheduled,
+    zone: j.zone || j.report?.zone || '',
+    village: j.village || j.report?.village || '',
+    changePct: j.report?.changePercentage,
+    regions: j.report?.regionsCount,
+    createdAt: j.createdAt,
+    error: j.errorMessage,
+  }));
+}
+
+async function loadReportsList(opts = {}) {
   const el = document.getElementById('reports-list');
   if (!el) return;
+  if (!opts.keepFilters) reportsPage = 0;
   el.innerHTML = '<p class="dim">Loading reports…</p>';
   try {
-    let jobs = [];
-    try {
-      const jobsData = await ddaApi('GET', '/api/dda/jobs?limit=100');
-      jobs = jobsData.jobs || [];
-    } catch (_) {
-      /* jobs API optional — history still works */
-    }
-    const history = await ddaApi('GET', '/api/history');
+    const offset = reportsPage * REPORTS_PER_PAGE;
+    const [jobsData, historyPage] = await Promise.all([
+      ddaApi('GET', '/api/dda/jobs?limit=25').catch(() => ({ jobs: [] })),
+      ddaApi('GET', `/api/history?limit=${REPORTS_PER_PAGE}&offset=${offset}&paged=1`),
+    ]);
+    const jobs = jobsData.jobs || [];
+    const history = historyPage.items || [];
+    reportsTotal = historyPage.total != null ? historyPage.total : history.length;
+    reportsServerPaged = true;
+
     const rows = [];
-
-    jobs.forEach((j) => {
-      rows.push({
-        kind: 'job',
-        id: j.id,
-        runId: j.runId,
-        title: j.title || `${j.basePath} vs ${j.comparisonPath}`,
-        status: j.status,
-        autoScheduled: !!j.autoScheduled,
-        zone: j.zone || j.report?.zone || '',
-        village: j.village || j.report?.village || '',
-        changePct: j.report?.changePercentage,
-        regions: j.report?.regionsCount,
-        createdAt: j.createdAt,
-        error: j.errorMessage,
+    // Active/recent jobs only on first page so they stay visible without a huge merge.
+    if (reportsPage === 0) {
+      _jobsToRows(jobs).forEach((row) => {
+        if (row.status === 'completed' && row.runId) return;
+        rows.push(row);
       });
+    }
+    _historyToRows(history).forEach((row) => {
+      if (rows.some((x) => x.runId === row.runId)) return;
+      rows.push(row);
     });
 
-    (history || []).forEach((r) => {
-      if (rows.some((x) => x.runId === r.id)) return;
-      rows.push({
-        kind: 'run',
-        id: r.id,
-        runId: r.id,
-        title: r.title,
-        status: 'completed',
-        autoScheduled: String(r.title || '').startsWith('[Auto]'),
-        zone: r.zone || '',
-        village: r.village || '',
-        changePct: r.changePercentage,
-        regions: r.regionsCount,
-        createdAt: r.createdAt,
-      });
-    });
-
-    rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     allReportRows = rows;
     syncReportZoneOptions();
-    applyReportsFilter();
+    renderReportsTable(filteredReportRows());
   } catch (err) {
     el.innerHTML = `<p class="dim">Could not load reports: ${err.message}</p>`;
   }
@@ -221,17 +227,16 @@ async function loadReportsList() {
 window.loadReportsList = loadReportsList;
 window.applyReportsFilter = applyReportsFilter;
 
-document.getElementById('btn-reports-refresh')?.addEventListener('click', loadReportsList);
+document.getElementById('btn-reports-refresh')?.addEventListener('click', () => loadReportsList());
 document.getElementById('btn-reports-clear')?.addEventListener('click', clearReportsFilters);
 ['reports-filter', 'reports-filter-status', 'reports-filter-source', 'reports-filter-zone',
   'reports-filter-from', 'reports-filter-to', 'reports-filter-sort'].forEach((id) => {
   const el = document.getElementById(id);
   if (!el) return;
-  el.addEventListener(el.tagName === 'INPUT' && el.type === 'search' ? 'input' : 'change', applyReportsFilter);
+  el.addEventListener('input', () => applyReportsFilter());
+  el.addEventListener('change', () => applyReportsFilter());
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-  if (document.getElementById('tab-reports')?.classList.contains('active')) {
-    loadReportsList();
-  }
-});
+if (document.getElementById('reports-list')) {
+  loadReportsList();
+}

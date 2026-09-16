@@ -285,16 +285,7 @@ def _load_dataset(
     return rows
 
 
-@router.get("/dashboard/summary")
-def dashboard_summary(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    _require_dda()
-    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
-
+def _summary_from_rows(rows: list[dict], db: Session, user: User) -> dict:
     total_detected = sum((r["run"].regions_count or 0) for r in rows)
     pct_values = [r["run"].change_percentage for r in rows if r["run"].change_percentage is not None]
     zones = {r["zone"] for r in rows}
@@ -323,15 +314,7 @@ def dashboard_summary(
     }
 
 
-@router.get("/dashboard/regions")
-def dashboard_regions(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    _require_dda()
-    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+def _regions_from_rows(rows: list[dict], db: Session) -> list[dict]:
     by_zone: dict[str, list] = defaultdict(list)
     for r in rows:
         by_zone[r["zone"]].append(r)
@@ -358,19 +341,10 @@ def dashboard_regions(
             "lastDetectionAt": _isoformat_ist(max(i["run"].created_at for i in items)),
         })
     out.sort(key=lambda x: x["runsCount"], reverse=True)
-    return {"regions": out}
+    return out
 
 
-@router.get("/dashboard/roles")
-def dashboard_roles(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    """Detection activity grouped by the role of the user who ran it."""
-    _require_dda()
-    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+def _roles_from_rows(rows: list[dict]) -> list[dict]:
     by_role: dict[str, list] = defaultdict(list)
     for r in rows:
         by_role[r["role"]].append(r)
@@ -393,19 +367,10 @@ def dashboard_roles(
             "lastDetectionAt": _isoformat_ist(max(i["run"].created_at for i in items)),
         })
     out.sort(key=lambda x: (_rank(x["role"]), x["role"]))
-    return {"roles": out}
+    return out
 
 
-@router.get("/dashboard/villages")
-def dashboard_villages(
-    zone: Optional[str] = Query(None),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    _require_dda()
-    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+def _villages_from_rows(rows: list[dict], db: Session, zone: Optional[str] = None) -> list[dict]:
     if zone:
         rows = [r for r in rows if r["zone"] == zone]
     by_village: dict[tuple, list] = defaultdict(list)
@@ -434,18 +399,10 @@ def dashboard_villages(
             "lastDetectionAt": _isoformat_ist(max(i["run"].created_at for i in items)),
         })
     out.sort(key=lambda x: x["runsCount"], reverse=True)
-    return {"villages": out}
+    return out
 
 
-@router.get("/dashboard/trend")
-def dashboard_trend(
-    months: int = Query(6, ge=1, le=24),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_dda_user),
-):
-    _require_dda()
-    rows = _load_dataset(db, user)
-
+def _trend_from_rows(rows: list[dict], months: int = 6) -> list[dict]:
     now = datetime.now(timezone.utc)
     keys = []
     y, m = now.year, now.month
@@ -468,7 +425,7 @@ def dashboard_trend(
             counts[key]["runsCount"] += 1
             counts[key]["detectedChanges"] += (r["run"].regions_count or 0)
 
-    buckets = [
+    return [
         {
             "period": f"{y}-{m:02d}",
             "label": f"{MONTH_NAMES[m]} {y}",
@@ -477,7 +434,87 @@ def dashboard_trend(
         }
         for (y, m) in keys
     ]
-    return {"buckets": buckets}
+
+
+@router.get("/dashboard/bootstrap")
+def dashboard_bootstrap(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    months: int = Query(6, ge=1, le=24),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Single payload for home dashboard — one `_load_dataset` pass."""
+    _require_dda()
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+    return {
+        "summary": _summary_from_rows(rows, db, user),
+        "roles": _roles_from_rows(rows),
+        "regions": _regions_from_rows(rows, db),
+        "villages": _villages_from_rows(rows, db),
+        "trend": {"buckets": _trend_from_rows(rows, months=months)},
+    }
+
+
+@router.get("/dashboard/summary")
+def dashboard_summary(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    _require_dda()
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+    return _summary_from_rows(rows, db, user)
+
+
+@router.get("/dashboard/regions")
+def dashboard_regions(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    _require_dda()
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+    return {"regions": _regions_from_rows(rows, db)}
+
+
+@router.get("/dashboard/roles")
+def dashboard_roles(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    """Detection activity grouped by the role of the user who ran it."""
+    _require_dda()
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+    return {"roles": _roles_from_rows(rows)}
+
+
+@router.get("/dashboard/villages")
+def dashboard_villages(
+    zone: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    _require_dda()
+    rows = _load_dataset(db, user, date_from=date_from, date_to=date_to)
+    return {"villages": _villages_from_rows(rows, db, zone=zone)}
+
+
+@router.get("/dashboard/trend")
+def dashboard_trend(
+    months: int = Query(6, ge=1, le=24),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_dda_user),
+):
+    _require_dda()
+    rows = _load_dataset(db, user)
+    return {"buckets": _trend_from_rows(rows, months=months)}
 
 
 @router.get("/dashboard/location")

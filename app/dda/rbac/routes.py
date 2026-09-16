@@ -14,7 +14,7 @@ from ...database import get_db
 from ...models import User
 from ..dda_auth import current_dda_user
 from .models import MenuItem, Module, Role, RolePermission
-from .permissions import require_module_permission, user_can
+from .permissions import require_module_permission, user_can, user_permissions_map
 
 router = APIRouter()
 
@@ -91,16 +91,7 @@ def my_permissions(db: Session = Depends(get_db), user: User = Depends(current_d
     show/hide/disable in the UI (Upload, Run detection, Delete, etc.) so
     the frontend always matches whatever's set in the Roles & Users
     permission matrix, without hardcoding any role name."""
-    modules = db.query(Module).all()
-    return {
-        m.key: {
-            "view": user_can(user, db, m.key, "view"),
-            "create": user_can(user, db, m.key, "create"),
-            "edit": user_can(user, db, m.key, "edit"),
-            "delete": user_can(user, db, m.key, "delete"),
-        }
-        for m in modules
-    }
+    return user_permissions_map(user, db)
 
 
 # ---------------------------------------------------------------- Roles ----

@@ -183,10 +183,23 @@ function setDetectMode(mode, { applyPair } = { applyPair: true }) {
       ? `Automatic: the system selects the oldest image as <strong>Before</strong> and the newest as <strong>After</strong> for the chosen area. Set the interval and time, then click <strong>Start schedule</strong> — it does not run when the app launches. Use <strong>Run automatic detection</strong> for a one-off run.`
       : 'Manual: pick the Before and After images yourself (dropdowns, library cards, or drag-and-drop), then run change detection. Manual runs are not scheduled.';
   }
-  if (compareState.mode === 'automatic' && applyPair !== false && typeof applySelectedAutoPair === 'function') {
-    applySelectedAutoPair();
+  if (compareState.mode === 'automatic') {
+    ensureDetectPairsLoaded({ applyPair: applyPair !== false });
+  } else if (applyPair !== false && typeof applySelectedAutoPair === 'function') {
+    // no-op for manual
   }
   updateRunButton();
+}
+
+async function ensureDetectPairsLoaded({ applyPair } = {}) {
+  if (typeof loadAreaPairs !== 'function') return;
+  const nodeId = compareState.selectedNode?.id || null;
+  await loadAreaPairs({
+    nodeId,
+    includeUnpaired: true,
+    autoFillCompare: !!applyPair,
+  });
+  if (applyPair && typeof applySelectedAutoPair === 'function') applySelectedAutoPair();
 }
 
 function initDetectMode() {
@@ -588,14 +601,6 @@ async function loadCompareLibraryGrid(opts) {
     ensureDdaState().libraryItems = page.items;
     populateSelects(selectSourceItems(page.items));
     renderCompareGrid(page.items, page.total);
-    if (typeof loadAreaPairs === 'function' && !opts?.keepPage) {
-      const run = () => loadAreaPairs({
-        nodeId: compareState.selectedNode?.id || null,
-        autoFillCompare: true,
-      });
-      if (typeof deferIdle === 'function') deferIdle(run);
-      else setTimeout(run, 0);
-    }
   } catch (err) {
     grid.innerHTML = `<p class="dim">Could not load images: ${err.message}</p>`;
     if (typeof showDdaError === 'function') showDdaError(err.message);
@@ -949,8 +954,9 @@ async function pollJobUntilDone(jobId) {
 async function resumeActiveJobIfAny() {
   let jobs;
   try {
-    const data = await ddaApi('GET', '/api/dda/jobs?limit=20');
-    jobs = data.jobs || [];
+    jobs = typeof getDdaNotifyJobs === 'function'
+      ? await getDdaNotifyJobs()
+      : ((await ddaApi('GET', '/api/dda/jobs?limit=20')).jobs || []);
   } catch (_) {
     return;
   }
@@ -1082,6 +1088,10 @@ function initCompareTab() {
   loadCompareLibraryGrid();
   if (typeof loadTree === 'function') loadTree().catch(() => {});
   resumeActiveJobIfAny();
+  // Automatic mode loads pairs from setDetectMode; ?pair= on Manual still needs a fetch.
+  if (new URLSearchParams(window.location.search).get('pair') && compareState.mode !== 'automatic') {
+    ensureDetectPairsLoaded({ applyPair: false });
+  }
 }
 
 window.loadCompareLibraryGrid = loadCompareLibraryGrid;

@@ -615,6 +615,7 @@ async function loadUploadLocations() {
   if (previousZone) zoneSel.value = previousZone;
   renderUploadVillageOptions();
   renderLibFilterLocationOptions();
+  fillBulkZoneOptions();
 
   if (!zoneSel.dataset.bound) {
     zoneSel.dataset.bound = '1';
@@ -809,8 +810,6 @@ async function uploadLibraryFiles(files, { nodeId, preserveFolders = true, entri
       }
     }
     if (progFill) progFill.style.width = '100%';
-    if (ok && typeof window.ddaState?.rescan === 'function') await window.ddaState.rescan();
-    else if (ok && typeof loadLibraryImages === 'function') await loadLibraryImages({ resetPage: true });
     if (errors.length && ok) {
       showDdaError?.(`${ok} uploaded, ${errors.length} failed. ${errors[0]}`);
     } else if (errors.length) {
@@ -819,6 +818,16 @@ async function uploadLibraryFiles(files, { nodeId, preserveFolders = true, entri
       const nameHint = storedNames.length === 1 ? ` Saved as ${storedNames[0]}.` : '';
       showDdaSuccess?.(`Uploaded ${ok} image${ok === 1 ? '' : 's'}.${nameHint}`);
       clearUploadTypeError();
+    }
+    // Refresh after toast so a tree/grid failure cannot swallow upload success.
+    if (ok) {
+      try {
+        if (typeof loadTree === 'function') await loadTree();
+        if (typeof loadLibraryImages === 'function') await loadLibraryImages({ resetPage: true });
+        else if (typeof window.ddaState?.refreshImages === 'function') await window.ddaState.refreshImages();
+      } catch (_) {
+        /* upload already succeeded — leave the success toast visible */
+      }
     }
     pendingUploadEntries = [];
     pendingUploadFiles = [];
@@ -1041,9 +1050,118 @@ window.updateLibDeleteSelectedBtn = updateLibDeleteSelectedBtn;
 
 // --- Bulk upload (Excel manifest + files) ---------------------------------
 
+let bulkPendingEntries = [];
+
+function populateBulkYearOptions() {
+  const sel = document.getElementById('bulk-year');
+  if (!sel || sel.options.length > 1) return;
+  const now = new Date().getFullYear();
+  for (let y = now + 1; y >= 1990; y--) {
+    const opt = document.createElement('option');
+    opt.value = String(y);
+    opt.textContent = String(y);
+    sel.appendChild(opt);
+  }
+}
+
+function renderBulkVillageOptions() {
+  const villageSel = document.getElementById('bulk-village');
+  if (!villageSel) return;
+  const zoneId = document.getElementById('bulk-zone')?.value || '';
+  const previous = villageSel.value;
+  const list = zoneId
+    ? uploadLocations.villages.filter((v) => String(v.zoneId) === String(zoneId))
+    : uploadLocations.villages;
+  villageSel.innerHTML = '<option value="">— From Excel —</option>' + list.map((v) => {
+    const label = zoneId ? v.name : `${v.name} · ${v.zoneName || ''}`;
+    return `<option value="${v.id}">${escapeHtml(label)}</option>`;
+  }).join('');
+  if (previous && list.some((v) => String(v.id) === String(previous))) villageSel.value = previous;
+}
+
+function fillBulkZoneOptions() {
+  const zoneSel = document.getElementById('bulk-zone');
+  if (!zoneSel) return;
+  const previous = zoneSel.value;
+  zoneSel.innerHTML = '<option value="">— From Excel —</option>' + uploadLocations.zones
+    .map((z) => `<option value="${z.id}">${escapeHtml(z.name)}</option>`).join('');
+  if (previous) zoneSel.value = previous;
+  renderBulkVillageOptions();
+}
+
+async function loadBulkUploadConfig() {
+  const el = document.getElementById('bulk-main-folder');
+  try {
+    const data = await ddaApi('GET', '/api/dda/tree/bulk-upload/config');
+    if (el) el.textContent = data.mainFolder || '(not set)';
+  } catch (_) {
+    if (el) el.textContent = '(could not load Main folder)';
+  }
+}
+
+function renderBulkFileList() {
+  const wrap = document.getElementById('bulk-upload-file-list-wrap');
+  const tbody = document.getElementById('bulk-upload-file-tbody');
+  const nameEl = document.getElementById('bulk-upload-files-name');
+  if (!wrap || !tbody) return;
+  const n = bulkPendingEntries.length;
+  if (nameEl) {
+    nameEl.textContent = n ? `${n} file${n === 1 ? '' : 's'} selected.` : 'No files selected.';
+  }
+  if (!n) {
+    wrap.classList.add('hidden');
+    tbody.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  tbody.innerHTML = bulkPendingEntries.map((entry, idx) => `
+    <tr data-idx="${idx}">
+      <td class="dda-upload-orig">${escapeHtml(entry.file.name)}</td>
+      <td><input type="text" class="upload-server-name bulk-server-name" value="${escapeHtml(entry.serverName)}" aria-label="Server filename" /></td>
+      <td>${typeof formatBytes === 'function' ? formatBytes(entry.file.size) : entry.file.size}</td>
+    </tr>`).join('');
+  tbody.querySelectorAll('.bulk-server-name').forEach((input) => {
+    input.addEventListener('change', () => {
+      const idx = parseInt(input.closest('tr').dataset.idx, 10);
+      if (bulkPendingEntries[idx]) {
+        bulkPendingEntries[idx].serverName = (input.value || '').trim() || bulkPendingEntries[idx].file.name;
+      }
+    });
+  });
+}
+
+function setBulkPendingFiles(files) {
+  const type = document.getElementById('bulk-image-type')?.value || '';
+  const errEl = document.getElementById('bulk-upload-type-error');
+  let list = Array.from(files || []);
+  if (type && typeof splitFilesForImageType === 'function') {
+    const { accepted, rejected } = splitFilesForImageType(list, type);
+    list = accepted;
+    if (errEl) {
+      if (rejected.length) {
+        errEl.textContent = `Skipped ${rejected.length} file(s) that do not match ${type}: ${rejected.map((f) => f.name).slice(0, 5).join(', ')}${rejected.length > 5 ? '…' : ''}`;
+        errEl.classList.remove('hidden');
+      } else {
+        errEl.classList.add('hidden');
+        errEl.textContent = '';
+      }
+    }
+  } else if (errEl) {
+    errEl.classList.add('hidden');
+  }
+  bulkPendingEntries = list.map((file) => ({
+    file,
+    serverName: file.name,
+  }));
+  renderBulkFileList();
+}
+
 function openBulkUploadModal() {
   document.getElementById('bulk-upload-result')?.classList.add('hidden');
   document.getElementById('dda-bulk-upload-modal')?.classList.remove('hidden');
+  populateBulkYearOptions();
+  fillBulkZoneOptions();
+  loadBulkUploadConfig();
 }
 function closeBulkUploadModal() {
   document.getElementById('dda-bulk-upload-modal')?.classList.add('hidden');
@@ -1055,15 +1173,18 @@ document.getElementById('dda-bulk-upload-modal')?.addEventListener('click', (e) 
   if (e.target.id === 'dda-bulk-upload-modal') closeBulkUploadModal();
 });
 
+document.getElementById('bulk-zone')?.addEventListener('change', renderBulkVillageOptions);
+document.getElementById('bulk-image-type')?.addEventListener('change', () => {
+  const input = document.getElementById('bulk-upload-files');
+  if (input?.files?.length) setBulkPendingFiles(input.files);
+});
+
 document.getElementById('bulk-upload-excel')?.addEventListener('change', (e) => {
   const f = e.target.files?.[0];
   document.getElementById('bulk-upload-excel-name').textContent = f ? f.name : 'No file selected.';
 });
 document.getElementById('bulk-upload-files')?.addEventListener('change', (e) => {
-  const n = e.target.files?.length || 0;
-  document.getElementById('bulk-upload-files-name').textContent = n
-    ? `${n} file${n === 1 ? '' : 's'} selected.`
-    : 'No files selected.';
+  setBulkPendingFiles(e.target.files);
 });
 
 function renderBulkUploadResult(data) {
@@ -1091,9 +1212,8 @@ function renderBulkUploadResult(data) {
 
 document.getElementById('btn-bulk-upload-submit')?.addEventListener('click', async () => {
   const excelInput = document.getElementById('bulk-upload-excel');
-  const filesInput = document.getElementById('bulk-upload-files');
   const excelFile = excelInput?.files?.[0];
-  const imageFiles = Array.from(filesInput?.files || []);
+  const imageFiles = bulkPendingEntries.map((e) => e.file);
   if (!excelFile) { showDdaError?.('Choose the filled-in Excel sheet first.'); return; }
   if (!imageFiles.length) { showDdaError?.('Choose the image files listed in the sheet.'); return; }
 
@@ -1106,9 +1226,29 @@ document.getElementById('btn-bulk-upload-submit')?.addEventListener('click', asy
   if (progLabel) progLabel.textContent = `Uploading ${imageFiles.length} file${imageFiles.length === 1 ? '' : 's'}…`;
   if (progFill) progFill.style.width = '0%';
 
+  const filenames = {};
+  bulkPendingEntries.forEach((e) => {
+    if (e.serverName && e.serverName !== e.file.name) {
+      filenames[e.file.name] = e.serverName;
+    } else if (e.serverName) {
+      filenames[e.file.name] = e.serverName;
+    }
+  });
+
   const form = new FormData();
   form.append('excel', excelFile);
   imageFiles.forEach((f) => form.append('files', f));
+  const year = document.getElementById('bulk-year')?.value || '';
+  const source = document.getElementById('bulk-source')?.value || '';
+  const imageType = document.getElementById('bulk-image-type')?.value || '';
+  const zoneId = document.getElementById('bulk-zone')?.value || '';
+  const villageId = document.getElementById('bulk-village')?.value || '';
+  if (year) form.append('year', year);
+  if (source) form.append('source', source);
+  if (imageType) form.append('image_type', imageType);
+  if (zoneId) form.append('zone_id', zoneId);
+  if (villageId) form.append('village_id', villageId);
+  if (Object.keys(filenames).length) form.append('filenames', JSON.stringify(filenames));
 
   try {
     const data = await uploadWithProgress('/api/dda/tree/bulk-upload', form, (loaded, total) => {
@@ -1119,7 +1259,13 @@ document.getElementById('btn-bulk-upload-submit')?.addEventListener('click', asy
     const created = data.summary?.created || 0;
     if (created) {
       showDdaSuccess?.(`Bulk upload complete — ${created} image${created === 1 ? '' : 's'} added.`);
-      if (typeof window.ddaState?.rescan === 'function') await window.ddaState.rescan();
+      try {
+        if (typeof loadTree === 'function') await loadTree();
+        if (typeof loadLibraryImages === 'function') await loadLibraryImages({ resetPage: true });
+        else if (typeof window.ddaState?.refreshImages === 'function') await window.ddaState.refreshImages();
+      } catch (_) {
+        /* bulk upload already succeeded — leave the success toast visible */
+      }
     } else {
       showDdaError?.('No images were created — see the results below.');
     }
