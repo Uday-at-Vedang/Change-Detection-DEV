@@ -17,23 +17,50 @@ from .models import User, LoginHistory, PasswordResetToken, LoginOtp
 
 logger = logging.getLogger(__name__)
 
-_env_secret = os.environ.get("SECRET_KEY", "").strip()
-if _env_secret:
-    SECRET_KEY = _env_secret
-else:
-    # Never fall back to a fixed/shared string here — a hardcoded value in
-    # source is visible to anyone with the repo, and could be used to forge a
-    # valid login cookie for any user id without ever knowing a password.
-    # A fresh random secret per process closes that hole; the trade-off is
-    # every existing session is invalidated on each restart until a
-    # persistent SECRET_KEY is set in the environment (see .env.example).
-    SECRET_KEY = secrets.token_hex(32)
-    logger.warning(
-        "SECRET_KEY env var not set — generated a random one-time secret for "
-        "this process (existing sessions will be invalidated on restart). "
-        "Set SECRET_KEY to a persistent random string in your environment, "
-        "especially in production — see .env.example."
-    )
+
+def _is_huggingface_space() -> bool:
+    """True on a real HF Space, not local `.env` SPACE_ID=local-dev/..."""
+    sid = os.environ.get("SPACE_ID", "").strip().lower()
+    return bool(sid) and not sid.startswith("local")
+
+
+def _secret_key_file():
+    from pathlib import Path
+    if _is_huggingface_space():
+        return Path.home() / "data" / ".secret_key"
+    return Path(__file__).resolve().parent.parent / "data" / ".secret_key"
+
+
+def _load_or_create_secret() -> str:
+    env_secret = os.environ.get("SECRET_KEY", "").strip()
+    if env_secret:
+        return env_secret
+    path = _secret_key_file()
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    except OSError:
+        pass
+    secret = secrets.token_hex(32)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(secret, encoding="utf-8")
+        logger.warning(
+            "SECRET_KEY env var not set — persisted a generated secret to %s "
+            "so logins survive process restarts. Set SECRET_KEY in the Space "
+            "secrets for a rebuild-safe value.",
+            path,
+        )
+    except OSError:
+        logger.warning(
+            "SECRET_KEY env var not set — generated a one-time secret for this "
+            "process (sessions die on restart). Set SECRET_KEY in the environment."
+        )
+    return secret
+
+
+SECRET_KEY = _load_or_create_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 COOKIE_NAME = "satellite_token"
@@ -55,15 +82,14 @@ if _COOKIE_SECURE_ENV in ("1", "true", "yes"):
 elif _COOKIE_SECURE_ENV in ("0", "false", "no"):
     IS_SECURE_COOKIE = False
 else:
-    # Render sets RENDER=true on its platform (genuine HTTPS hosting).
-    # Deliberately NOT keying off SPACE_ID: this project's own .env sets
-    # SPACE_ID=local-dev/satdetect-dev for *local* HTTP dev (to force
-    # "hosted" UI behavior, unrelated to HTTPS), so treating any SPACE_ID as
-    # "we're on HTTPS" would wrongly mark local dev secure and silently drop
-    # the auth cookie (verified via smoke test — this was the actual bug).
-    # A genuine Hugging Face Spaces deployment should set COOKIE_SECURE=true
-    # explicitly via the branch above.
-    IS_SECURE_COOKIE = bool(os.environ.get("RENDER"))
+    # Local `.env` uses SPACE_ID=local-dev/... over HTTP — must stay insecure.
+    # Real Hugging Face Spaces are HTTPS and often run inside huggingface.co
+    # iframe, which drops SameSite=Lax cookies unless they are Secure + None.
+    IS_SECURE_COOKIE = bool(os.environ.get("RENDER")) or _is_huggingface_space()
+
+# SameSite=None is required for the Hugging Face embed iframe; it also
+# requires Secure=True. First-party local HTTP keeps Lax.
+COOKIE_SAMESITE = "none" if IS_SECURE_COOKIE else "lax"
 
 
 def get_client_ip(request: Request) -> str:

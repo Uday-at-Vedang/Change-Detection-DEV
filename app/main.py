@@ -28,6 +28,7 @@ from PIL import Image, ImageOps
 from .auth import (
     ALGORITHM,
     COOKIE_NAME,
+    COOKIE_SAMESITE,
     IS_SECURE_COOKIE,
     LOGIN_OTP_EXPIRE_MINUTES,
     LOGIN_OTP_RESEND_SECONDS,
@@ -403,7 +404,7 @@ def _auth_response(token: str, user: User, remember: bool = False):
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         secure=IS_SECURE_COOKIE,
         path="/",
     )
@@ -540,7 +541,12 @@ def logout(request: Request, db: Session = Depends(get_db)):
             revoke_user_sessions(user)
             db.commit()
     response = JSONResponse(content={"ok": True})
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(
+        COOKIE_NAME,
+        path="/",
+        secure=IS_SECURE_COOKIE,
+        samesite=COOKIE_SAMESITE,
+    )
     return response
 
 

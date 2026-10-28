@@ -162,6 +162,15 @@
       await ddaApi('POST', '/api/auth/login/verify-otp', {
         body: JSON.stringify({ otpToken: pendingOtp?.token, code }),
       });
+      try {
+        await ddaApi('GET', '/api/me');
+      } catch (_) {
+        showDdaError(
+          'Sign-in succeeded, but this browser blocked the session cookie. Open the app in its own tab (not the Hugging Face embed): '
+          + window.location.origin,
+        );
+        return;
+      }
       window.location.href = '/';
     } catch (err) {
       showDdaError(err.message || 'Invalid sign-in code.');
@@ -294,6 +303,15 @@
             remember_me,
           }),
         });
+        try {
+          await ddaApi('GET', '/api/me');
+        } catch (_) {
+          showDdaError(
+            'Sign-in succeeded, but this browser blocked the session cookie. Open the app in its own tab (not the Hugging Face embed): '
+            + window.location.origin,
+          );
+          return;
+        }
         window.location.href = '/';
         return;
       }

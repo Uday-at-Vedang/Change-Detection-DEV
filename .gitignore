@@ -16,6 +16,7 @@ data/library_sources/**/*.TIF
 data/library_sources/**/*.TIFF
 !library_sources/**/.gitkeep
 .env
+data/.secret_key
 *.egg-info/
 dist/
 build/
